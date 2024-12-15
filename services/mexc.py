@@ -46,12 +46,13 @@ async def get_new_activities():
             with open(JSON_FILE, 'w') as file: 
                 json.dump(activities_data, file)
 
+        last_activity = max(activities_data['activities'], key=lambda x: x['activity_id'], default={'activity_id':0})
         data = response.json()['data']
         new_activities = []
         for activity in data:
             activity_id = activity.get('id')
 
-            if activity_id not in [a['activity_id'] for a in activities_data['activities']]:
+            if activity_id > last_activity['activity_id']:
                 activity_name = activity.get('activityName', 'N/A')
                 introduction = activity.get('introduction', 'Разделите..')
                 start_time = datetime.fromtimestamp(activity.get('startTime', 0) / 1000)
