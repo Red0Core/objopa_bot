@@ -1,6 +1,7 @@
 import asyncio
-from config import ZA_IDEU_CHAT_ID
+from config import ZA_IDEU_CHAT_ID, OBZHORA_CHAT_ID
 from services.mexc import get_new_activities
+from tasks.cbr_task import send_daily_cbr_rates
 
 async def scheduled_message(bot):
     await bot.send_message(
@@ -15,4 +16,4 @@ async def scheduled_message(bot):
         await asyncio.sleep(600)
 
 async def on_startup(bot):
-    asyncio.create_task(scheduled_message(bot))
+    asyncio.gather(scheduled_message(bot), send_daily_cbr_rates(bot, OBZHORA_CHAT_ID))

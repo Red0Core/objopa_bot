@@ -2,6 +2,7 @@ from curl_cffi.requests import AsyncSession
 from datetime import datetime
 import json
 from config import JSON_FILE
+from logger import logger
 
 # Запрос через curl_cffi на мекс
 async def get_mexc_token_airdrop():
@@ -34,6 +35,7 @@ async def get_new_activities():
     response = await get_mexc_token_airdrop()
 
     if response.ok:
+        logger.info("Успешный ответ от MEXC API")
 
         # Инициализация JSON-файла, если он не существует
         try: 
@@ -73,4 +75,5 @@ async def get_new_activities():
                 return message
 
     else:
+        logger.exception(f"Ошибка при запросе к MEXC API {response.status_code}")
         return f"Ошибка при выполнении запроса: {response.status_code}"
