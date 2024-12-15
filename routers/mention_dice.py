@@ -52,10 +52,10 @@ async def handle_mention(message: Message, bot):
 """
 
     # Генерируем объяснение через OpenAI API
-    explanation = await get_openrouter_gemini_2_0_response(
+    text = await get_openrouter_gemini_2_0_response(
         action_prompt, 
         system_prompt
     )
-    cleaned_response = gpt_to_telegram_markdown_v2(explanation.content)
-    print(cleaned_response)
-    await message.reply(cleaned_response, parse_mode="MarkdownV2")
+    cleaned_text = gpt_to_telegram_markdown_v2(text)
+
+    await message.reply(cleaned_text, parse_mode="MarkdownV2")
