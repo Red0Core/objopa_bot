@@ -1,11 +1,11 @@
 import asyncio
-from config import ZA_IDEU_CHAT_ID, OBZHORA_CHAT_ID
+from config import ZA_IDEU_CHAT_ID, OBZHORA_CHAT_ID, MAIN_ACC
 from services.mexc import get_new_activities
 from tasks.cbr_task import send_daily_cbr_rates
 
 async def scheduled_message(bot):
     await bot.send_message(
-        ZA_IDEU_CHAT_ID, 
+        MAIN_ACC, 
         text="Бот стартовал и готов к работе!"
     )
 

@@ -2,9 +2,13 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 from config import GIFS_ID
-from services.binance import get_binance_price
 from services.cbr import get_cbr_exchange_rate
+from services.coinmarketcap import *
+from services.exchanges import get_price_from_exchanges
 from logger import logger
+import asyncio
+
+import traceback
 
 router = Router()
 
@@ -24,11 +28,32 @@ async def get_price_handler(message: Message):
         return
 
     symbol = args[1].upper()
-    price = await get_binance_price(symbol)
-    if price:
-        await message.reply(f"Цена {symbol}: {price:.16g} USD")
+    result = await get_price_from_exchanges(symbol)
+
+    if "error" in result:
+        await message.reply(f"Ошибка: {result['error']}")
     else:
-        await message.reply(f"Не удалось получить цену для {symbol}. Проверьте символ.")
+        await message.reply(f"Цена {result['symbol']}: {result['price']} USDT")
+
+@router.message(Command("cmc"))
+async def get_cmc_handler(message: Message):
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.reply("Укажите тикер койна. Пример /cmc BTC")
+        return
+
+    symbol = args[1].upper()
+    try:
+        output = format_crypto_price(
+                    filter_tickers(
+                        (await get_coinmarketcap_data(symbol))['data'][symbol]
+                    )
+                )
+    except Exception as e:
+        logger.error(f"Ошибка coinmarketcap: {traceback.format_exc()}")
+        output = "Ошибка, напишите позднее"
+
+    await message.reply(output)
 
 @router.message(Command("cbr"))
 async def get_cbr_rates_handler(message: Message):
