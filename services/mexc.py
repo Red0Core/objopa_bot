@@ -3,6 +3,19 @@ from datetime import datetime
 import json
 from config import JSON_FILE
 from logger import logger
+import os
+
+LAST_ACTIVITY_FILE = "last_activity_id.txt"
+
+def save_last_activity_id(activity_id):
+    with open(LAST_ACTIVITY_FILE, "w") as file:
+        file.write(str(activity_id))
+
+def get_last_activity_id():
+    if os.path.exists(LAST_ACTIVITY_FILE):
+        with open(LAST_ACTIVITY_FILE, "r") as file:
+            return int(file.read().strip())
+    return 0
 
 # Запрос через curl_cffi на мекс
 async def get_mexc_token_airdrop():
@@ -37,22 +50,12 @@ async def get_new_activities():
     if response.ok:
         logger.info("Успешный ответ от MEXC API")
 
-        # Инициализация JSON-файла, если он не существует
-        try: 
-            with open(JSON_FILE, 'r') as file: 
-                activities_data = json.load(file) 
-        except FileNotFoundError:
-            activities_data = {'activities': []} 
-            with open(JSON_FILE, 'w') as file: 
-                json.dump(activities_data, file)
-
-        last_activity = max(activities_data['activities'], key=lambda x: x['activity_id'], default={'activity_id':0})
+        last_activity = get_last_activity_id()
         data = response.json()['data']
-        new_activities = []
         for activity in data:
             activity_id = activity.get('id')
 
-            if activity_id > last_activity['activity_id']:
+            if activity_id > last_activity:
                 activity_name = activity.get('activityName', 'N/A')
                 introduction = activity.get('introduction', 'Разделите..')
                 start_time = datetime.fromtimestamp(activity.get('startTime', 0) / 1000)
@@ -60,7 +63,7 @@ async def get_new_activities():
                 apply_num = activity.get('applyNum', 'N/A')
                 detail_url = f'https://www.mexc.com/ru-RU/mx-activity/deposit-gain-coins/detail/{activity_id}?utm_source=mexc&utm_medium=airdroptokenhomepage&utm_campaign=airdroptoken'
                 
-                new_activities.append({'activity_id': activity_id})
+                save_last_activity_id(activity_id)
 
                 message = (f"Новая акция: {activity_name}\n{introduction}\n"
                            f"Начало: {start_time}\n"
@@ -68,11 +71,6 @@ async def get_new_activities():
                            f"Количество участников: {apply_num}\n"
                            f"Ссылка: {detail_url}")
                 
-                # Обновляем JSON-файл новыми акциями 
-                activities_data['activities'].extend(new_activities) 
-                with open(JSON_FILE, 'w') as file:
-                    json.dump(activities_data, file)
-
                 return message
 
     else:
