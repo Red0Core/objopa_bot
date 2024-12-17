@@ -2,9 +2,11 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 from config import GIFS_ID
-from services.cbr import get_cbr_exchange_rate
+from routers.mention_dice import gpt_to_telegram_markdown_v2
+from services.cbr import generate_cbr_output
 from services.coinmarketcap import *
 from services.exchanges import get_price_from_exchanges
+from services.alphavantage import fetch_currency_data, parse_currency_data, calculate_change
 from logger import logger
 import asyncio
 
@@ -21,6 +23,9 @@ async def start_handler(message: Message):
 
 @router.message(Command("price"))
 async def get_price_handler(message: Message):
+    """
+    Выводит цену из Бинанса или Мекса
+    """
     # Парсим аргумент команды
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
@@ -37,40 +42,75 @@ async def get_price_handler(message: Message):
 
 @router.message(Command("cmc"))
 async def get_cmc_handler(message: Message):
-    args = message.text.split(maxsplit=1)
+    """
+    Выводит данные токена из coinmarketcap
+    """
+    args = message.text.split(maxsplit=2)
     if len(args) < 2:
         await message.reply("Укажите тикер койна. Пример /cmc BTC")
         return
 
     symbol = args[1].upper()
     try:
+        # Заготовленные функции для вывода CoinMarketCap
+        num_of_tokens = float(args[2].replace(',', '.'))
         output = format_crypto_price(
                     filter_tickers(
-                        (await get_coinmarketcap_data(symbol))['data'][symbol]
-                    )
+                        (await get_coinmarketcap_data(symbol))['data'][symbol],
+                    ),
+                    num_of_tokens
                 )
+
     except Exception as e:
         logger.error(f"Ошибка coinmarketcap: {traceback.format_exc()}")
         output = "Ошибка, напишите позднее"
+        await message.reply(output)
+        return
 
     await message.reply(output)
+    logger.info(f"Успешно отправлен coinmarketcap {args[1]} к {message.from_user.id}")
 
 @router.message(Command("cbr"))
 async def get_cbr_rates_handler(message: Message):
-    rates = await get_cbr_exchange_rate()
-    if "error" in rates:
-        logger.error(f"Ошибка при получении курсов: {rates['error']}")
-        await message.reply(f"Ошибка при получении курсов: {rates['error']}")
-    else:
-        usd_rate = rates["USD"]["rate"]
-        eur_rate = rates["EUR"]["rate"]
-        usd_diff = rates["USD"]["diff"]
-        eur_diff = rates["EUR"]["diff"]
+    """
+    Отправляет курсы ЦБ РФ за сегодня и его изменение
+    """
+    logger.info(f"Отправляем курсы валют пользователю {message.from_user.id}")
+    await message.reply(await generate_cbr_output())
 
-        logger.info(f"Отправляем курсы валют пользователю {message.from_user.id}")
+@router.message(Command("rub"))
+async def get_forex_rub_rates_handler(message: Message):
+    """
+    Отправляет текстовое сообщение и график курса валют в Telegram.
+    """
+    output = await generate_cbr_output()
+    try:
+        # Получаем данные
+        arr = asyncio.gather(fetch_currency_data("USD", "RUB"), fetch_currency_data("EUR", "RUB"))
+        for data in (await arr):
+            symbol = data["Meta Data"]["2. From Symbol"]
+            market = data["Meta Data"]["3. To Symbol"]
 
-        await message.reply(
-            f"Курсы валют ЦБ РФ на сегодня:\n"
-            f"💵 Доллар США: {usd_rate} ₽ ({'+' if usd_diff > 0 else ''}{usd_diff})\n"
-            f"💶 Евро: {eur_rate} ₽ ({'+' if eur_diff > 0 else ''}{eur_diff})"
-        )
+            today, yesterday, price_7d, price_30d = parse_currency_data(data)
+
+            change_1d = calculate_change(today, yesterday)
+            change_7d = calculate_change(today, price_7d)
+            change_30d = calculate_change(today, price_30d)
+
+            # Формируем сообщение
+            output += (
+                    f"\n💹 <b>Курс {symbol}/{market}:</b>\n"
+                    f"Текущая цена: <code>{today:.2f} {market}</code>\n"
+                    f"🔸 За 1 день: <code>{change_1d[0]:+.2f} ({change_1d[1]:+.2f}%)</code>\n"
+                )
+            if price_7d:
+                output += f"🔹 За 7 дней: <code>{change_7d[0]:+.2f} ({change_7d[1]:+.2f}%)</code>\n"
+            if price_30d:
+                output += f"🔸 За 30 дней: <code>{change_30d[0]:+.2f} ({change_30d[1]:+.2f}%)</code>\n"
+
+    except Exception as e:
+        logger.error(f"Ошибка: {traceback.format_exc()}")
+        await message.reply(f"Ошибка: {e}")
+
+    await message.reply(output, parse_mode="html")
+    logger.info(f"Успешно отправил рубль для {message.from_user.id}")

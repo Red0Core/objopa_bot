@@ -31,3 +31,22 @@ async def get_cbr_exchange_rate():
     except Exception as e:
         logger.exception("Ошибка при запросе курсов валют")
         return {"error": str(e)}
+
+async def generate_cbr_output():
+    rates = await get_cbr_exchange_rate()
+    if "error" in rates:
+        output = f"Ошибка при получении курсов ЦБ РФ: {rates['error']}"
+        logger.error(output)
+        return output
+    else:
+        usd_rate = rates["USD"]["rate"]
+        eur_rate = rates["EUR"]["rate"]
+        usd_diff = rates["USD"]["diff"]
+        eur_diff = rates["EUR"]["diff"]
+
+        return (
+            f"Курсы валют ЦБ РФ на сегодня:\n"
+            f"💵 Доллар США: <code>{usd_rate} ₽ ({'+' if usd_diff > 0 else ''}{usd_diff})</code>\n"
+            f"💶 Евро: <code>{eur_rate} ₽ ({'+' if eur_diff > 0 else ''}{eur_diff})</code>\n"
+        )
+    

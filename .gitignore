@@ -1,5 +1,5 @@
 venv/
 **/__pycache__/
 logs/
-activities.json
 .env
+last_activity_id.txt

@@ -3,13 +3,14 @@ from config import COINMARKETCAP_API_KEY
 from logger import logger
 import json
 
-def format_crypto_price(data: list[dict]):
+def format_crypto_price(data: list[dict], num_of_tokens=0.0):
     """
     Форматирует данные о криптовалюте для красивого вывода.
     """
     output = ""
     for coin_data in data:
         quote = coin_data.get("quote", {}).get("USD", {})
+        price = float(quote.get('price', 0))
 
         if not coin_data or not quote:
             return "Ошибка: данные о криптовалюте отсутствуют."
@@ -17,8 +18,8 @@ def format_crypto_price(data: list[dict]):
         # Формируем красиво оформленное сообщение
         message = (
             f"🔹 {coin_data.get('name', 'N/A')} (<code>{coin_data.get('symbol', 'N/A')}</code>)\n"
-            f"💵 <b>Цена:</b> ${quote.get('price', 0):.5f}\n"
-            f"📈 <b>Изменения:</b>\n"
+            f"💵 <b>Цена:</b> ${price:.5f}\n"
+            f"📊 <b>Изменения:</b>\n"
             f"  - За 1 час: {quote.get('percent_change_1h', 0):+.2f}%\n"
             f"  - За 24 часа: {quote.get('percent_change_24h', 0):+.2f}%\n"
             f"  - За 7 дней: {quote.get('percent_change_7d', 0):+.2f}%\n"
@@ -26,6 +27,11 @@ def format_crypto_price(data: list[dict]):
             f"💹 <b>Капа:</b> ${quote.get('market_cap', 0):,.2f}\n"
             f"🔄 <b>Объем за 24 часа:</b> ${quote.get('volume_24h', 0):,.2f}\n"
         )
+
+        # Выводит сумму баксов по прайсу токена
+        if num_of_tokens > 0:
+            message = f"{message}{num_of_tokens:.5f} * {price:.5f} = <code>{(num_of_tokens*price):,.5f}</code>💲"
+
         output = f"{output}\n{message}"
 
     return output or "Ошибка: данные о криптовалюте отсутствуют."
