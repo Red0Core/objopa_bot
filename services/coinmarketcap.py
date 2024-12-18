@@ -2,6 +2,60 @@ from curl_cffi.requests import AsyncSession
 from config import COINMARKETCAP_API_KEY
 from logger import logger
 import json
+import os
+
+def add_to_whitelist(file_path, symbol, name):
+    """
+    Добавляет в белый список имя и его тикер
+    
+    :param file_path: Путь к JSON-файлу с белым списком.
+    """
+    if not os.path.exists(file_path):
+        data = {}
+    else:
+        # Загружаем существующий белый список
+        try:
+            with open(file_path, "r") as file:
+                data = json.load(file)
+        except (json.JSONDecodeError, FileNotFoundError):
+            logger.error(f"Ошибка при чтении файла {file_path}. Создаю новый файл.")
+            data = {}
+
+    if symbol in data:
+        if name not in data[symbol]:
+            data[symbol].append(name)
+            logger.info(f"Добавлено имя '{name}' для тикера '{symbol}'.")
+        else:
+            logger.info(f"Имя '{name}' уже существует для тикера '{symbol}'.")
+    else:
+        data[symbol] = [name]
+        logger.info(f"Добавлен новый тикер '{symbol}' с именем '{name}'.")
+
+    # Сохраняем изменения в файл
+    with open(file_path, "w") as file:
+        json.dump(data, file, indent=4)
+        logger.info(f"Белый список успешно обновлён.")
+    
+    return True
+
+
+def load_whitelist(file_path, symbol) -> list[str]:
+    """
+    Загружает белый список токенов из файла.
+    
+    :param file_path: Путь к JSON-файлу с белым списком.
+    :return: Список символов токенов из белого списка.
+    """
+    try:
+        with open(file_path, "r") as file:
+            data = json.load(file)
+            return data.get(symbol, [])
+    except FileNotFoundError:
+        print(f"Файл {file_path} не найден.")
+        return []
+    except json.JSONDecodeError:
+        print(f"Файл {file_path} содержит некорректный JSON.")
+        return []
 
 def format_crypto_price(data: list[dict], num_of_tokens=0.0):
     """
@@ -44,31 +98,32 @@ def filter_tickers(data):
     :return: Список тикеров, прошедших фильтр.
     """
     filtered_tickers = []
-
-    for ticker in data:
-        market_cap = ticker["quote"]["USD"]["market_cap"]
+    for coin_data in data:
+        whitelist = load_whitelist("whitelist.json", coin_data['symbol'])
+        market_cap = coin_data["quote"]["USD"]["market_cap"]
         try:
-            # Пример условий
-            if market_cap is None or market_cap < 1:
-                continue  # Пропустить, если капитализация меньше заданной
-            if ticker["is_active"] != 1:
-                continue  # Пропустить, если токен неактивен
+            if coin_data['name'] not in whitelist: # Не скипаем белый лист
+                if market_cap is None or market_cap < 1:
+                    continue  # Пропустить, если капитализация меньше заданной
+                if coin_data["is_active"] != 1:
+                    continue  # Пропустить, если токен неактивен
             
             # Если тикер прошел все условия, добавляем его в результат
-            filtered_tickers.append(ticker)
+            filtered_tickers.append(coin_data)
         except TypeError:
-            logger.info(f"Данные тикера: {json.dumps(ticker, indent=5)}")
+            logger.info(f"Данные тикера: {json.dumps(coin_data, indent=5)}")
 
     return filtered_tickers
 
-async def get_coinmarketcap_data(ticker: str):
+async def get_coinmarketcap_data(ticker: str, **params):
     ticker = ticker.upper()
     headers = {
         'Accepts': 'application/json',
         'X-CMC_PRO_API_KEY': COINMARKETCAP_API_KEY,
     }
     parameters = {
-        'symbol': ticker
+        'symbol': ticker,
+        **params
     }
     async with AsyncSession() as session:
         session.headers.update(headers)

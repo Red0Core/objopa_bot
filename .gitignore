@@ -3,3 +3,4 @@ venv/
 logs/
 .env
 last_activity_id.txt
+whitelist.json
