@@ -1,65 +1,90 @@
-from xml.etree.ElementTree import QName
-from openai import AsyncOpenAI, OpenAIError
-from config import OPENROUTER_API_KEY
+from abc import ABC, abstractmethod
+import openai
 from logger import logger
 
-client = AsyncOpenAI(
-  base_url="https://openrouter.ai/api/v1",
-  api_key=OPENROUTER_API_KEY,
-)
+class AIModelError(Exception):
+    """Базовый класс для ошибок модели."""
+    pass
 
-async def get_openrouter_gemini_2_0_response(prompt: str, system_prompt: str = ""):
+class APIKeyError(AIModelError):
+    """Ошибка неверного или отсутствующего API-ключа."""
+    pass
+
+class QuotaExceededError(AIModelError):
+    """Ошибка превышения квоты API."""
+    pass
+
+class RateLimitError(AIModelError):
+    """Ошибка превышения лимита запросов."""
+    pass
+
+class UnexpectedResponseError(AIModelError):
+    """Ошибка при неожиданном ответе от API."""
+    pass
+
+class AIModelInterface(ABC):
+    @abstractmethod
+    async def get_response(self, prompt: str, system_prompt: str = "") -> str:
+        """Отправить запрос к модели и получить ответ."""
+        pass
+
+class BaseOpenAIModel(AIModelInterface):
     """
-    Отправляет запрос в OPENROUTER API gemini-2.0-flash и возвращает сгенерированный текст.
+    Класс для модели на основе OpenAI библиотеки
     """
-    messages = [{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    }
-                ]
-            }]
+    def __init__(self, api_key: str, model: str, base_url: str):
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url
+        self.client = openai.AsyncOpenAI(base_url=self.base_url, api_key=self.api_key)
 
-    if system_prompt:
-        messages.append({
-                "role": "system",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": system_prompt
-                    }
-                ]
-            })
-    try:
-        completion = await client.chat.completions.create(
-            model="google/gemini-2.0-flash-exp:free",
-            messages=messages
-        )
-    except OpenAIError as e:
-        logger.error(f"Ошибка OpenAI API: {e}")
-    
-    if completion.choices is not None:
-        finish_reason = completion.choices[0].finish_reason.lower()
-        if finish_reason == "length":
-            logger.info("Ответ был обрезан. Возможно, стоит запросить меньше данных или увеличить токены.")
-        elif finish_reason == "stop":
-            logger.info("Ответ завершён корректно.")
+    def prepare_messages(self, prompt: str, system_prompt: str = "") -> list:
+        """
+        Формирует сообщения для модели.
+        Может быть переопределено в подклассах, если формат сообщений отличается.
+        """
+        messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": [{"type": "text", "text": system_prompt}]})
+        return messages
 
-        logger.info(f"Ответ гпт: {completion.choices[0].message.content}")
+    async def get_response(self, prompt: str, system_prompt: str = "") -> str:
+        messages = self.prepare_messages(prompt, system_prompt)
+        try:
+            completion = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages
+            )
 
-        return completion.choices[0].message.content
-    else:
-        errors_open_router = {
-            400: "Bad Request (invalid or missing params, CORS)",
-            401: "Invalid credentials (OAuth session expired, disabled/invalid API key)",
-            402: "Your account or API key has insufficient credits. Add more credits and retry the request.",
-            403: "Your chosen model requires moderation and your input was flagged",
-            408: "Your request timed out",
-            429: "You are being rate limited",
-            502: "Your chosen model is down or we received an invalid response from it",
-            503: "There is no available model provider that meets your routing requirements"
-        }
-        logger.error(f"Ошибка OpenRouter: {errors_open_router[completion.error['code']]}")
-        return errors_open_router[completion.error['code']]
+            if completion.choices:
+                finish_reason = completion.choices[0].finish_reason.lower()
+                if finish_reason == "length":
+                    logger.info("Ответ был обрезан. Возможно, стоит запросить меньше данных или увеличить токены.")
+                elif finish_reason == "stop":
+                    logger.info("Ответ завершён корректно.")
+
+                logger.info(f"Ответ от {self.base_url}: {completion.choices[0].message.content}")
+                return completion.choices[0].message.content
+
+        except openai.AuthenticationError:
+            raise APIKeyError(f"Неверный или отсутствующий API-ключ для {self.base_url}.")
+        except openai.RateLimitError:
+            raise RateLimitError(f"Превышен лимит запросов к {self.base_url}.")
+        except openai.APIConnectionError as e:
+            raise AIModelError(f"Проблемы с подключением к {self.base_url}: {str(e)}")
+        except openai.OpenAIError as e:
+            raise UnexpectedResponseError(f"Неожиданная ошибка {self.base_url}: {str(e)}")
+
+class OpenAIModel(BaseOpenAIModel):
+    def __init__(self, api_key: str, model: str = "gpt-4"):
+        super().__init__(api_key, model, base_url="https://api.openai.com/v1")
+
+    def prepare_messages(self, prompt: str, system_prompt: str = "") -> list:
+        messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+        if system_prompt:
+            messages.append({"role": "developer", "content": [{"type": "text", "text": system_prompt}]})
+        return messages
+
+class OpenRouterModel(BaseOpenAIModel):
+    def __init__(self, api_key: str, model: str = "google/gemini-2.0-flash-exp:free"):
+        super().__init__(api_key, model, base_url="https://openrouter.ai/api/v1")

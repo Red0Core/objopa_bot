@@ -1,10 +1,12 @@
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
-from services.gpt import get_openrouter_gemini_2_0_response
+from services.gpt import OpenRouterModel, APIKeyError, AIModelError, RateLimitError, UnexpectedResponseError, QuotaExceededError
+from config import OPENROUTER_API_KEY
 import re
 
 router = Router()
+AI_CLIENT = OpenRouterModel(api_key=OPENROUTER_API_KEY)
 
 def gpt_to_telegram_markdown_v2(text: str) -> str:
     """
@@ -45,18 +47,29 @@ async def handle_mention(message: Message, bot):
 """
 
     action_prompt = f"""
-Пользователь задумался о следующем: {{вопрос пользователя: "{message.text}"}}. Бросок кубика показал {{результат кубика: {dice_value}}}. Напиши креативный и весёлый текст:
+Пользователь задумался о следующем: {{вопрос пользователя: "{message.text.split(maxsplit=1)[0]}"}}. Бросок кубика показал {{результат кубика: {dice_value}}}. Напиши креативный и весёлый текст:
 - Если кубик показал 1-3: Напиши вдохновляющее письмо, объясняющее, почему это отличная идея.
 - Если кубик показал 4-6: Напиши креативный текст с элементами юмора, объясняющий, почему это плохая идея.
 
 Старайся делать ответы нестандартными и оригинальными. Добавляй метафоры, шутки или неожиданные повороты. Твой текст должен быть лёгким и поднимать настроение.
 """
 
-    # Генерируем объяснение через OpenAI API
-    text = await get_openrouter_gemini_2_0_response(
-        action_prompt, 
-        system_prompt
-    )
-    cleaned_text = gpt_to_telegram_markdown_v2(text)
+    try:
+        # Генерируем объяснение через OpenAI API
+        text = await AI_CLIENT.get_response(
+            action_prompt, 
+            system_prompt
+        )
+        cleaned_text = gpt_to_telegram_markdown_v2(text)
 
-    await message.reply(cleaned_text, parse_mode="MarkdownV2")
+        await message.reply(cleaned_text, parse_mode="MarkdownV2")
+    except APIKeyError as e:
+        await message.reply("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
+    except RateLimitError as e:
+        await message.reply("Ошибка: Превышен лимит запросов. Попробуйте позже.")
+    except QuotaExceededError as e:
+        await message.reply("Ошибка: Превышена квота использования API.")
+    except UnexpectedResponseError as e:
+        await message.reply("Ошибка: Непредвиденный ответ от модели. Попробуйте позже.")
+    except AIModelError as e:
+        await message.reply(f"Ошибка: {str(e)}")
