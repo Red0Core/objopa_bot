@@ -8,6 +8,28 @@ import re
 router = Router()
 AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY)
 
+def split_message_by_paragraphs(text: str, max_length: int = 4096) -> list[str]:
+    """
+    Разбивает текст на части, где каждая часть — это один или несколько абзацев,
+    чтобы длина сообщения не превышала max_length.
+    """
+    paragraphs = text.split("\n\n")  # Разделяем текст на абзацы
+    chunks = []
+    current_chunk = ""
+
+    for paragraph in paragraphs:
+        # Проверяем, влезает ли абзац в текущий чанк
+        if len(current_chunk) + len(paragraph) + 2 <= max_length:  # +2 для добавления '\n\n'
+            current_chunk += paragraph + "\n\n"
+        else:
+            chunks.append(current_chunk.strip())  # Убираем лишние пробелы и добавляем чанк
+            current_chunk = paragraph + "\n\n"
+
+    if current_chunk:  # Добавляем оставшуюся часть
+        chunks.append(current_chunk.strip())
+
+    return chunks
+
 def markdown_to_telegram_html(text: str) -> str:
     """
     Преобразует текст из Markdown в HTML для использования в Telegram, строго соответствуя поддерживаемым тегам.
@@ -98,8 +120,9 @@ async def handle_ask_gpt(message: Message, bot):
             message.text.split(maxsplit=1)[1]
         )
         cleaned_text = markdown_to_telegram_html(text)
-
-        await message.reply(cleaned_text, parse_mode="HTML")
+        messages = split_message_by_paragraphs(cleaned_text)
+        for i in messages:
+            await message.reply(i, parse_mode="HTML")
     except APIKeyError as e:
         await message.reply("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
     except RateLimitError as e:
