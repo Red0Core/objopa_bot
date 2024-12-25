@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
+from os import system
+import sys
 import openai
 from logger import logger
+from google import genai
+from google.genai import types
 
 class AIModelError(Exception):
     """Базовый класс для ошибок модели."""
@@ -88,3 +92,28 @@ class OpenAIModel(BaseOpenAIModel):
 class OpenRouterModel(BaseOpenAIModel):
     def __init__(self, api_key: str, model: str = "google/gemini-2.0-flash-exp:free"):
         super().__init__(api_key, model, base_url="https://openrouter.ai/api/v1")
+
+class GeminiModel(AIModelInterface):
+    def __init__(self, api_key: str, model: str = 'gemini-2.0-flash-thinking-exp'):
+        self.api_key = api_key
+        self.model = model
+        self.client = genai.Client(api_key=self.api_key, http_options={'api_version':'v1alpha'})
+
+    async def get_response(self, prompt: str, system_prompt: str = "") -> str:
+        print(prompt)
+        response = await self.client.aio.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=types.GenerateContentConfig(system_instruction=system_prompt)
+        )
+
+        output = ""
+        for part in response.candidates[0].content.parts:
+            if part.thought == True:
+                logger.info(f"Model Thought:\n{part.text}\n")
+            else:
+                logger.info(f"\nModel Response:\n{part.text}\n")
+                output = part.text
+        
+        return output
+    

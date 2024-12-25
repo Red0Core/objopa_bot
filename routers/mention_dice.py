@@ -1,12 +1,12 @@
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
-from services.gpt import OpenRouterModel, APIKeyError, AIModelError, RateLimitError, UnexpectedResponseError, QuotaExceededError
-from config import OPENROUTER_API_KEY
+from services.gpt import GeminiModel, OpenRouterModel, APIKeyError, AIModelError, RateLimitError, UnexpectedResponseError, QuotaExceededError
+from config import OPENROUTER_API_KEY, GEMINI_API_KEY
 import re
 
 router = Router()
-AI_CLIENT = OpenRouterModel(api_key=OPENROUTER_API_KEY)
+AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY)
 
 def gpt_to_telegram_markdown_v2(text: str) -> str:
     """
@@ -47,7 +47,7 @@ async def handle_mention(message: Message, bot):
 """
 
     action_prompt = f"""
-Пользователь задумался о следующем: {{вопрос пользователя: "{message.text.split(maxsplit=1)[0]}"}}. Бросок кубика показал {{результат кубика: {dice_value}}}. Напиши креативный и весёлый текст:
+Пользователь задумался о следующем: "{message.text.split(maxsplit=1)[1]}". Бросок кубика показал {dice_value}. Напиши креативный и весёлый текст:
 - Если кубик показал 1-3: Напиши вдохновляющее письмо, объясняющее, почему это отличная идея.
 - Если кубик показал 4-6: Напиши креативный текст с элементами юмора, объясняющий, почему это плохая идея.
 
