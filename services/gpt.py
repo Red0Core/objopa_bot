@@ -100,7 +100,6 @@ class GeminiModel(AIModelInterface):
         self.client = genai.Client(api_key=self.api_key, http_options={'api_version':'v1alpha'})
 
     async def get_response(self, prompt: str, system_prompt: str = None) -> str:
-        print(prompt)
         response = await self.client.aio.models.generate_content(
             model=self.model,
             contents=prompt,

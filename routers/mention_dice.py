@@ -8,25 +8,41 @@ import re
 router = Router()
 AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY)
 
-def gpt_to_telegram_markdown_v2(text: str) -> str:
+def markdown_to_telegram_html(text: str) -> str:
     """
-    Конвертирует текст из стандартного Markdown (GPT) в формат Telegram MarkdownV2.
+    Преобразует текст из Markdown в HTML для использования в Telegram, строго соответствуя поддерживаемым тегам.
     """
-    # 1. Экранируем специальные символы для Telegram MarkdownV2
-    special_characters = r'_*[]()~`>#+-=|{}.!'
-    escaped_text = ''.join(f'\\{char}' if char in special_characters else char for char in text)
-    
-    # 2. Заменяем **жирный** на *жирный*
-    escaped_text = re.sub(r'\\\*\\\*(.*?)\\\*\\\*', r'*\1*', escaped_text)
-    
-    # 3. Заменяем ~~зачёркнутый~~ на ~зачёркнутый~
-    escaped_text = re.sub(r'\\~\\~(.*?)\\~\\~', r'~\1~', escaped_text)
-    
-    # 4. Обрабатываем ссылки [текст](url)
-    escaped_text = re.sub(r'\\\[(.*?)\\\]\\\((.*?)\\\)', r'[\1](\2)', escaped_text)
-    
-    # 5. Возвращаем преобразованный текст
-    return escaped_text
+    # 1. Экранирование спецсимволов
+    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+    # 2. Жирный текст (**text** -> <b>text</b>)
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+
+    # 3. Курсив (*text* -> <i>text</i>)
+    text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+
+    # 4. Зачёркнутый текст (~~text~~ -> <s>text</s>)
+    text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
+
+    # 5. Подчёркнутый текст (__text__ -> <u>text</u>)
+    text = re.sub(r'__(.+?)__', r'<u>\1</u>', text)
+
+    # 6. Ссылки ([text](url) -> <a href="url">text</a>)
+    text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', text)
+
+    # 7. Блоки кода (```code``` -> <pre>code</pre>)
+    text = re.sub(r'```(.+?)```', r'<pre>\1</pre>', text, flags=re.DOTALL)
+
+    # 8. Inline-код (`code` -> <code>code</code>)
+    text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+
+    # 9. Спойлеры (||text|| -> <tg-spoiler>text</tg-spoiler>)
+    text = re.sub(r'\|\|(.+?)\|\|', r'<tg-spoiler>\1</tg-spoiler>', text)
+
+    # 10. Обработка лишних пробелов вокруг HTML-тегов
+    text = re.sub(r'>\s+<', '><', text)
+
+    return text
 
 @router.message(Command("dice"))
 async def handle_mention(message: Message, bot):
@@ -60,9 +76,9 @@ async def handle_mention(message: Message, bot):
             action_prompt, 
             system_prompt
         )
-        cleaned_text = gpt_to_telegram_markdown_v2(text)
+        cleaned_text = markdown_to_telegram_html(text)
 
-        await message.reply(cleaned_text, parse_mode="MarkdownV2")
+        await message.reply(cleaned_text, parse_mode="HTML")
     except APIKeyError as e:
         await message.reply("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
     except RateLimitError as e:
@@ -81,9 +97,9 @@ async def handle_ask_gpt(message: Message, bot):
         text = await AI_CLIENT.get_response(
             message.text.split(maxsplit=1)[1]
         )
-        cleaned_text = gpt_to_telegram_markdown_v2(text)
+        cleaned_text = markdown_to_telegram_html(text)
 
-        await message.reply(cleaned_text, parse_mode="MarkdownV2")
+        await message.reply(cleaned_text, parse_mode="HTML")
     except APIKeyError as e:
         await message.reply("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
     except RateLimitError as e:
