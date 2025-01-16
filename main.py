@@ -8,12 +8,13 @@ from routers import setup_routers
 from tasks.sheduled import on_startup
 import platform
 from logger import logger
+from services.message_queue import MessageQueue
 
 async def main():
-
     # Создание бота
     bot = Bot(token=TOKEN_BOT, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
+    MessageQueue(bot=bot)
 
     # Регистрация роутеров
     setup_routers(dp)

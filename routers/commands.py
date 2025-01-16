@@ -1,6 +1,6 @@
 from aiogram import Router
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from config import GIFS_ID
 from services.cbr import generate_cbr_output
 from services.alphavantage import fetch_currency_data, parse_currency_data, calculate_change
@@ -62,3 +62,19 @@ async def get_forex_rub_rates_handler(message: Message):
 
     await message.reply(output, parse_mode="html")
     logger.info(f"Успешно отправил рубль для {message.from_user.id}")
+
+# Генерация меню игр
+def games_menu():
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎲 Блэкджек", callback_data="start_blackjack")],
+        [InlineKeyboardButton(text="Закрыть", callback_data="close_menu")],
+    ])
+    return keyboard
+
+@router.message(Command("games"))
+async def games_command(message: Message):
+    await message.answer("Выберите игру из списка:", reply_markup=games_menu())
+
+@router.callback_query(lambda c: c.data == "close_menu")
+async def close_menu(callback: CallbackQuery):
+    await callback.message.edit_text("Меню игр закрыто.", reply_markup=None)
