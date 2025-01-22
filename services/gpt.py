@@ -1,10 +1,9 @@
 from abc import ABC, abstractmethod
-from os import system
-import sys
 import openai
 from logger import logger
 from google import genai
 from google.genai import types
+from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 
 class AIModelError(Exception):
     """Базовый класс для ошибок модели."""
@@ -94,10 +93,10 @@ class OpenRouterModel(BaseOpenAIModel):
         super().__init__(api_key, model, base_url="https://openrouter.ai/api/v1")
 
 class GeminiModel(AIModelInterface):
-    def __init__(self, api_key: str, model: str = 'gemini-2.0-flash-thinking-exp'):
+    def __init__(self, api_key: str, model: str = 'gemini-2.0-flash-exp'):
         self.api_key = api_key
         self.model = model
-        self.client = genai.Client(api_key=self.api_key, http_options={'api_version':'v1alpha'})
+        self.client = genai.Client(api_key=self.api_key)
 
     async def get_response(self, prompt: str, system_prompt: str = None) -> str:
         response = await self.client.aio.models.generate_content(
@@ -115,4 +114,42 @@ class GeminiModel(AIModelInterface):
                 output = part.text
         
         return output
+
+class AIChatInterface:
+    def new_chat(self, system_prompt: str = ""):
+        """Инициализация чата с системным промптом"""
+        pass
     
+    async def send_message(self, prompt: str):
+        """Отправить сообщение и получить ответ"""
+        pass    
+
+class GeminiChatModel(AIChatInterface):
+    def __init__(self, api_key: str, model: str = 'gemini-2.0-flash-exp'):
+        self.client = genai.Client(api_key=api_key)
+        self.model = model
+
+    def new_chat(self, system_prompt: str | None = None):
+        google_search_tool = Tool(
+            google_search = GoogleSearch()
+        )
+        if system_prompt is None:
+            self.chat = self.client.aio.chats.create(
+                model=self.model,
+                config=GenerateContentConfig(
+                    tools=[google_search_tool],
+                    response_modalities=["TEXT"],
+                )
+            )
+        else:
+            self.chat = self.client.aio.chats.create(
+                model=self.model,
+                config=GenerateContentConfig(
+                    tools=[google_search_tool],
+                    response_modalities=["TEXT"],
+                    system_instruction=system_prompt
+                )
+            )
+
+    async def send_message(self, prompt: str):
+        return (await self.chat.send_message(prompt)).text

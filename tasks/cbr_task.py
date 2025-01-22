@@ -9,7 +9,7 @@ async def send_daily_cbr_rates(bot, chat_id):
     """
     while True:
         now = datetime.now()
-        target_time = now.replace(hour=9, minute=0, second=0, microsecond=0)  # Отправка в 09:00
+        target_time = now.replace(hour=13, minute=0, second=0, microsecond=0)  # Отправка в 13:00 UTC
 
         if now > target_time:
             target_time += timedelta(days=1)

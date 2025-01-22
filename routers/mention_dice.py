@@ -112,24 +112,3 @@ async def handle_mention(message: Message, bot):
     except AIModelError as e:
         await message.reply(f"Ошибка: {str(e)}")
 
-@router.message(Command("ask"))
-async def handle_ask_gpt(message: Message, bot):
-    try:
-        # Генерируем объяснение через OpenAI API
-        text = await AI_CLIENT.get_response(
-            message.text.split(maxsplit=1)[1]
-        )
-        cleaned_text = markdown_to_telegram_html(text)
-        messages = split_message_by_paragraphs(cleaned_text)
-        for i in messages:
-            await message.reply(i, parse_mode="HTML")
-    except APIKeyError as e:
-        await message.reply("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
-    except RateLimitError as e:
-        await message.reply("Ошибка: Превышен лимит запросов. Попробуйте позже.")
-    except QuotaExceededError as e:
-        await message.reply("Ошибка: Превышена квота использования API.")
-    except UnexpectedResponseError as e:
-        await message.reply("Ошибка: Непредвиденный ответ от модели. Попробуйте позже.")
-    except AIModelError as e:
-        await message.reply(f"Ошибка: {str(e)}")
