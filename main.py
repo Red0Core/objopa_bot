@@ -2,6 +2,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.strategy import FSMStrategy
 
 from config import TOKEN_BOT
 from routers import setup_routers
@@ -13,7 +14,7 @@ from services.message_queue import MessageQueue
 async def main():
     # Создание бота
     bot = Bot(token=TOKEN_BOT, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher()
+    dp = Dispatcher(fsm_strategy=FSMStrategy.CHAT)
     MessageQueue(bot=bot)
 
     # Регистрация роутеров

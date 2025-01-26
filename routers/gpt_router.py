@@ -77,7 +77,7 @@ async def continue_session(message: Message, state: FSMContext):
 
     chat_session = chat_manager.get_chat(chat_id)
     if chat_session:
-        logger.info(f"Отвечаю на сообщение в {chat_id}")
+        logger.info(f"Отвечаю на сообщение в {chat_id} {message.from_user.username}-{message.from_user.first_name}+{message.from_user.last_name}")
         text = await chat_session.send_message(message.text)
         await state.set_state(ChatStates.waiting_for_message)
 
