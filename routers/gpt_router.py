@@ -8,8 +8,24 @@ from .mention_dice import markdown_to_telegram_html, split_message_by_paragraphs
 from services.gpt import APIKeyError, RateLimitError, QuotaExceededError, UnexpectedResponseError, AIModelError, GeminiChatModel
 from services.gptchat_manager import ChatSessionManager
 from logger import logger
+from collections import defaultdict
 
 router = Router()
+
+import json
+
+def load_whitelist(file_path="whitelist_gpt.json"):
+    try:
+        with open(file_path, "r") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return {}
+
+def save_whitelist(data, file_path="whitelist_gpt.json"):
+    with open(file_path, "w") as file:
+        json.dump(data, file, indent=4)
+
+whitelist = load_whitelist()
 
 class ChatStates(StatesGroup):
     waiting_for_message = State()
@@ -77,8 +93,11 @@ async def continue_session(message: Message, state: FSMContext):
 
     chat_session = chat_manager.get_chat(chat_id)
     if chat_session:
+        ids = whitelist.get(message.chat.id, {})
+        user_name = ids.get(message.from_user.id, f"{message.from_user.first_name} {message.from_user.last_name or ''}")
+
         logger.info(f"Отвечаю на сообщение в {chat_id} {message.from_user.username}-{message.from_user.first_name}+{message.from_user.last_name}")
-        text = await chat_session.send_message(message.text)
+        text = await chat_session.send_message(f"{user_name}: {message.text}")
         await state.set_state(ChatStates.waiting_for_message)
 
         cleaned_text = markdown_to_telegram_html(text)
@@ -87,3 +106,18 @@ async def continue_session(message: Message, state: FSMContext):
             await message.answer(i, parse_mode="HTML")
     else:
         await message.answer("Используйте команду /chat для начала общения.")
+
+from aiogram.filters import Command
+
+@router.message(Command("add_me_as"))
+async def add_user_to_whitelist(message: Message):
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.reply("Использование: /add_me_as  имя")
+        return
+    custom_name = args[1]
+    if message.chat.id not in whitelist:
+        whitelist[message.chat.id] = {}
+    whitelist[message.chat.id][message.from_user.id] = custom_name
+    save_whitelist(whitelist)
+    await message.reply(f"Пользователь {custom_name} (ID: {message.from_user.id}) добавлен в белый список.")
