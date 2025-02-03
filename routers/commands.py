@@ -4,6 +4,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from config import GIFS_ID
 from services.cbr import generate_cbr_output
 from services.alphavantage import fetch_currency_data, parse_currency_data, calculate_change
+from services.horoscope_mail_ru import get_horoscope_mail_ru
 from logger import logger
 import asyncio
 
@@ -62,6 +63,39 @@ async def get_forex_rub_rates_handler(message: Message):
 
     await message.reply(output, parse_mode="html")
     logger.info(f"Успешно отправил рубль для {message.from_user.id}")
+
+@router.message(Command("horoscope"))
+async def horoscope_command(message: Message):
+    zodiac_map = {
+        "taurus": "телец",
+        "cancer": "рак",
+        "libra": "весы",
+        "scorpio": "скорпион",
+        "sagittarius": "стрелец",
+        "capricorn": "козерог",
+        "aquarius": "водолей",
+        "pisces": "рыбы",
+        "aries": "овен",
+        "gemini": "близнецы",
+        "leo": "лев",
+        "virgo": "дева"
+    }
+    try:
+        # Получает знак зодиака из сообщения
+        zodiac_sign = message.text.split()[1].lower()
+        # Проверяет если знак зодиака на русском или на английском
+        reversed_zodiac_map = {v: k for k, v in zodiac_map.items()}
+        if zodiac_sign in reversed_zodiac_map:
+            zodiac_eng = reversed_zodiac_map[zodiac_sign]
+            text = await get_horoscope_mail_ru(zodiac_eng, zodiac_sign)
+        else:
+            text = await get_horoscope_mail_ru(zodiac_sign, zodiac_map.get(zodiac_sign))
+        await message.answer(text=text)
+        logger.info(f"Отправляем гороскоп в чат {message.chat.id} для {zodiac_sign}")
+        return
+    except (IndexError, KeyError):
+        await message.answer("Пожалуйста, укажите знак зодиака на английском или русском. Например: /horoscope libra или /horoscope весы")
+        return
 
 # Генерация меню игр
 def games_menu():

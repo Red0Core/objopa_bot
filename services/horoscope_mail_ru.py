@@ -1,18 +1,18 @@
-from curl_cffi import requests
+from curl_cffi.requests import AsyncSession
 from lxml import html
 
-def fetch_html(url):
-    response = requests.get(url)
-    return response.text
+async def fetch_html(url):
+    async with AsyncSession() as session:
+        return (await session.get(url)).text
 
-def get_daily_horoscope_with_rating(zodiac_english):
+async def get_daily_horoscope_with_rating(zodiac_english):
     """
     Извлекает рейтинг (например, "4 из 5") из страницы предсказания по заданному знаку.
     Рейтинг расположен в блоке, где есть дочерний <div> с <a> содержащим "Финансы"
     и внутри которого находится <ul> с aria-label.
     """
     url = f"https://horo.mail.ru/prediction/{zodiac_english}/today/"
-    page = fetch_html(url)
+    page = await fetch_html(url)
     doc = html.fromstring(page)
     elements = doc.xpath('//*[@data-qa="ArticleLayout"]')
     # Собираем текст из всех найденных элементов
@@ -38,13 +38,13 @@ def get_daily_horoscope_with_rating(zodiac_english):
                 rating.append(f'{label} {ul_tag[0].attrib.get("aria-label").strip()}')
     return f'{daily_horoscope}\n{" ".join(rating)}' or 'нет данных'
 
-def get_financial_horoscope(zodiac_russian):
+async def get_financial_horoscope(zodiac_russian):
     """
     Извлекает текст финансового гороскопа из таблицы на странице финансового гороскопа.
     Находит строку таблицы, где первый <td> соответствует знаку, а второй содержит описание.
     """
     finance_url = "https://horo.mail.ru/article/finance-daily-horoscope/"
-    page = fetch_html(finance_url)
+    page = await fetch_html(finance_url)
     doc = html.fromstring(page)
     table_elements = doc.xpath('//*[@data-logger="ArticleContent_table"]')
     if table_elements:
@@ -57,8 +57,22 @@ def get_financial_horoscope(zodiac_russian):
                     return tds[1].text_content().strip()
     return "нет данных"
 
-def get_horoscope_mail_ru(zodiac_eng, zodiac_ru):
-    daily = get_daily_horoscope_with_rating(zodiac_eng)
-    finance_text = get_financial_horoscope(zodiac_ru).strip()
+async def get_horoscope_mail_ru(zodiac_eng, zodiac_ru):
+    zodiac_emoji = {
+        "taurus" : "♉",
+        "cancer" : "♋",
+        "libra" : "♎",
+        "scorpio" : "♏",
+        "sagittarius" : "♐",
+        "capricorn" : "♑",
+        "aquarius" : "♒",
+        "pisces" : "♓",
+        "aries" : "♈",
+        "gemini" : "♊",
+        "leo" : "♌",
+        "virgo" : "♍"
+    }
+    daily = await get_daily_horoscope_with_rating(zodiac_eng)
+    finance_text = (await get_financial_horoscope(zodiac_ru)).strip()
     # Формируем единый вывод для каждого знака
-    return f"{zodiac_ru.capitalize()}: {daily}\nФинансовый гороскоп: {finance_text}\n"
+    return f"{zodiac_ru.capitalize()}{zodiac_emoji[zodiac_eng]}:\n{daily}\nФинансовый гороскоп: {finance_text}\n"
