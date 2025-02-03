@@ -35,6 +35,8 @@ class ChatSessionManager:
             self.sessions[chat_id]["last_active"] = datetime.now()
             logger.info(f"Использую активную сессию в {chat_id}")
             return self.sessions[chat_id]["chat_model"]
+        else:
+            logger.info("Сессии нет!!!")
         return None
 
 def get_chat_manager() -> ChatSessionManager:
