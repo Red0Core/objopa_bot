@@ -1,7 +1,8 @@
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from config import GIFS_ID
+import wolframalpha
+from config import GIFS_ID, WOLFRAMALPHA_TOKEN
 from services.cbr import generate_cbr_output
 from services.alphavantage import fetch_currency_data, parse_currency_data, calculate_change
 from services.horoscope_mail_ru import get_horoscope_mail_ru
@@ -96,6 +97,16 @@ async def horoscope_command(message: Message):
     except (IndexError, KeyError):
         await message.answer("Пожалуйста, укажите знак зодиака на английском или русском. Например: /horoscope libra или /horoscope весы")
         return
+
+@router.message(Command("calc"))
+async def calculator_wolframaplha_math(message: Message):
+    arr = message.text.split(maxsplit=1)
+    if len(arr) == 2:
+        client = wolframalpha.Client(WOLFRAMALPHA_TOKEN)
+        res = await client.aquery(arr[1])
+        await message.answer(next(res.results).text)
+    else:
+        await message.answer("Использовать /calc и тут ваша матеша")
 
 # Генерация меню игр
 def games_menu():
