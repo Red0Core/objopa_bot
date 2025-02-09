@@ -61,9 +61,9 @@ async def send_daily_horoscope_for_brothers(bot):
     }
     # Для каждого знака получаем ежедневный гороскоп и рейтинг финансов из страницы prediction
     for zodiac_eng, zodiac_ru in zodiac_map.items():
-        message = get_horoscope_mail_ru(zodiac_eng, zodiac_ru)
+        message = await get_horoscope_mail_ru(zodiac_eng, zodiac_ru)
         await bot.send_message(OBZHORA_CHAT_ID, message)
-        logger.info(f"Отправляем курсы валют в чат {OBZHORA_CHAT_ID} для {zodiac_ru}")
+        logger.info(f"Отправляем еждедневные гороскопы в чат {OBZHORA_CHAT_ID} для {zodiac_ru}")
         await asyncio.sleep(2)
 
 async def on_startup(bot):
