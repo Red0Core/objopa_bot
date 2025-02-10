@@ -1,13 +1,15 @@
 from aiogram import Router
-from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.filters import Command, CommandObject
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, FSInputFile
 import wolframalpha
 from config import GIFS_ID, WOLFRAMALPHA_TOKEN
 from services.cbr import generate_cbr_output
 from services.alphavantage import fetch_currency_data, parse_currency_data, calculate_change
 from services.horoscope_mail_ru import get_horoscope_mail_ru
+from services.instagram_loader import download_instagram_media, INSTAGRAM_REGEX
 from logger import logger
 import asyncio
+import os
 
 import traceback
 
@@ -107,6 +109,30 @@ async def calculator_wolframaplha_math(message: Message):
         await message.answer(next(res.results).text)
     else:
         await message.answer("Использовать /calc и тут ваша матеша")
+
+@router.message(Command("insta"))
+async def instagram_handler(message: Message, command: CommandObject):
+    if not command.args:
+        await message.answer("❌ Ты не указал ссылку! Используй: `/insta <ссылка>`")
+        return
+
+    url = command.args.strip()
+
+    if not INSTAGRAM_REGEX.match(url):
+        await message.answer("❌ Это не похоже на ссылку Instagram. Попробуй еще раз.")
+        return
+
+    await message.answer("⏳ Загружаю медиа из Instagram...")
+
+    # Загружаем файл
+    file_path = await asyncio.to_thread(download_instagram_media, url)
+
+    if file_path:
+        file_to_send = FSInputFile(file_path)
+        await message.answer_document(file_to_send)
+        os.remove(file_path)  # Удаляем файл после отправки
+    else:
+        await message.answer("❌ Не удалось загрузить медиа.")
 
 # Генерация меню игр
 def games_menu():
