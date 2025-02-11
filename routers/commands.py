@@ -122,17 +122,43 @@ async def instagram_handler(message: Message, command: CommandObject):
         await message.answer("❌ Это не похоже на ссылку Instagram. Попробуй еще раз.")
         return
 
-    await message.answer("⏳ Загружаю медиа из Instagram...")
+    status_message = await message.answer("⏳ Загружаю медиа из Instagram...")
 
     # Загружаем файл
-    file_path = await asyncio.to_thread(download_instagram_media, url)
+    shortcode, error = await download_instagram_media(url)
 
-    if file_path:
-        file_to_send = FSInputFile(file_path)
-        await message.answer_document(file_to_send)
-        os.remove(file_path)  # Удаляем файл после отправки
+    if shortcode:
+        download_path = "downloads"
+        files = [f for f in os.listdir(download_path) if f.startswith(shortcode)]
+
+        images, videos, caption = [], [], None
+
+        for file in files:
+            file_path = os.path.join(download_path, file)
+            if file.endswith((".jpg", ".jpeg", ".png")):
+                if 'reel' in url:
+                    continue
+                images.append(file_path)
+            elif file.endswith((".mp4", ".mov")):
+                 videos.append(file_path)
+            elif file.endswith(".txt"):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    caption = f.read()
+
+        # 🔹 Отправляем медиа
+        if videos:
+            for video in videos:
+               await message.reply_video(FSInputFile(video), caption=caption)
+
+        if len(images) > 1:
+            media_group = [InputMediaPhoto(FSInputFile(img)) for img in images]
+            await message.reply_media_group(media_group, caption=caption)
+        elif len(images) == 1:
+            await message.reply_photo(FSInputFile(images[0]), caption=caption)
+
+        await status_message.delete()
     else:
-        await message.answer("❌ Не удалось загрузить медиа.")
+        await status_message.edit_text(error if error else "❌ Не удалось загрузить медиа.")
 
 # Генерация меню игр
 def games_menu():
