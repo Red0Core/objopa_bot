@@ -1,6 +1,6 @@
 from aiogram import Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, FSInputFile
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, FSInputFile, InputMediaPhoto
 import wolframalpha
 from config import GIFS_ID, WOLFRAMALPHA_TOKEN
 from services.cbr import generate_cbr_output
@@ -115,6 +115,24 @@ async def calculator_wolframaplha_math(message: Message):
     else:
         await message.answer("Использовать /calc и тут ваша матеша")
 
+async def send_images_in_chunks(message, images, caption=None):
+    """ Разбивает список изображений на чанки по 10 и отправляет их в Telegram """
+    
+    def chunk_list(lst, size=10):
+        """Функция разбивает список на части по size элементов"""
+        return [lst[i:i + size] for i in range(0, len(lst), size)]
+
+    image_chunks = chunk_list(images, 10)
+
+    for i, chunk in enumerate(image_chunks):
+        media_group = [InputMediaPhoto(media=FSInputFile(img)) for img in chunk]
+        
+        # Отправляем первый альбом с подписью, остальные без
+        if i == 0 and caption:
+            await message.reply_media_group(media_group, caption=caption)
+        else:
+            await message.reply_media_group(media_group)
+
 @router.message(Command("insta"))
 async def instagram_handler(message: Message, command: CommandObject):
     if not command.args:
@@ -156,8 +174,7 @@ async def instagram_handler(message: Message, command: CommandObject):
                await message.reply_video(FSInputFile(video), caption=caption)
 
         if len(images) > 1:
-            media_group = [InputMediaPhoto(FSInputFile(img)) for img in images]
-            await message.reply_media_group(media_group, caption=caption)
+            await send_images_in_chunk(message, images, caption)
         elif len(images) == 1:
             await message.reply_photo(FSInputFile(images[0]), caption=caption)
 
