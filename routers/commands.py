@@ -104,9 +104,14 @@ async def horoscope_command(message: Message):
 async def calculator_wolframaplha_math(message: Message):
     arr = message.text.split(maxsplit=1)
     if len(arr) == 2:
-        client = wolframalpha.Client(WOLFRAMALPHA_TOKEN)
-        res = await client.aquery(arr[1])
-        await message.answer(next(res.results).text)
+        try:
+            # 🔹 Безопасное выполнение eval (только числа и операторы)
+            result = eval(expression, {"__builtins__": {}})
+            await message.answer(result)
+        except Exception:
+            client = wolframalpha.Client(WOLFRAMALPHA_TOKEN)
+            res = await client.aquery(arr[1])
+            await message.answer(next(res.results).text)
     else:
         await message.answer("Использовать /calc и тут ваша матеша")
 
