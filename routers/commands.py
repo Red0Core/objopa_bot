@@ -107,7 +107,7 @@ async def calculator_wolframaplha_math(message: Message):
         try:
             # 🔹 Безопасное выполнение eval (только числа и операторы)
             result = eval(arr[1], {"__builtins__": {}})
-            await message.answer(result)
+            await message.answer(str(result))
         except Exception:
             client = wolframalpha.Client(WOLFRAMALPHA_TOKEN)
             res = await client.aquery(arr[1])
