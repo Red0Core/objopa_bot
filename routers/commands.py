@@ -174,7 +174,7 @@ async def instagram_handler(message: Message, command: CommandObject):
                await message.reply_video(FSInputFile(video), caption=caption)
 
         if len(images) > 1:
-            await send_images_in_chunk(message, images, caption)
+            await send_images_in_chunks(message, images, caption)
         elif len(images) == 1:
             await message.reply_photo(FSInputFile(images[0]), caption=caption)
 
