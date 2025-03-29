@@ -132,6 +132,7 @@ async def send_images_in_chunks(message, images, caption=None):
             await message.reply_media_group(media_group, caption=caption)
         else:
             await message.reply_media_group(media_group)
+        await asyncio.sleep(5)
 
 @router.message(Command("insta"))
 async def instagram_handler(message: Message, command: CommandObject):
@@ -156,7 +157,7 @@ async def instagram_handler(message: Message, command: CommandObject):
 
         images, videos, caption = [], [], None
 
-        for file in files:
+        for file in sorted(files):
             file_path = os.path.join(download_path, file)
             if file.endswith((".jpg", ".jpeg", ".png")):
                 if 'reel' in url:

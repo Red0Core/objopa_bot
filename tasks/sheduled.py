@@ -28,7 +28,7 @@ def daily_schedule(hour=13, minute=0):
         return wrapper
     return decorator
 
-@daily_schedule(hour=13, minute=0)
+@daily_schedule(hour=16, minute=0)
 async def send_daily_cbr_rates(bot, chat_id):
     """
     Ежедневно отправляет курсы валют в указанный чат.
@@ -56,7 +56,7 @@ async def send_daily_cbr_rates(bot, chat_id):
 async def send_daily_horoscope_for_brothers(bot):
     zodiac_map = {
         "taurus": "телец",
-        "cancer": "рак",
+        "pisces": "рыбы",
         "libra": "весы"
     }
     # Для каждого знака получаем ежедневный гороскоп и рейтинг финансов из страницы prediction

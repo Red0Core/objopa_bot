@@ -32,7 +32,8 @@ INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME")
 
 def init_instaloader():
     """ Инициализация Instaloader с авторизацией """
-    bot_loader = instaloader.Instaloader(filename_pattern='{shortcode}')
+    user_agent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36"
+    bot_loader = instaloader.Instaloader(filename_pattern='{shortcode}', iphone_support=False, user_agent=user_agent)
     
     try:
         bot_loader.load_session_from_file(INSTAGRAM_USERNAME)
