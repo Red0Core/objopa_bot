@@ -85,16 +85,29 @@ async def current_p2p_bybit_orders(message: Message):
     """
     Выводит текущие сообщения из p2p
     """
-    args = message.text.split(maxsplit=1)
+    args = message.text.split()
     if len(args) < 2:
-        await message.reply("Укажите покупку или продажу тейкером. Пример: /p2p buy | /p2p sell")
+        await message.reply("Примерк команд. Пример: /p2p buy | /p2p sell | /p2p buy 1000 USDT | /p2p buy 1000 RUB")
         return
 
     symbol = args[1].upper()
     if symbol not in ["BUY", "SELL"]:
-        await message.reply("Укажите покупку или продажу тейкером. Пример: /p2p buy | /p2p sell")
+        await message.reply("Укажите покупку или продажу тейкером. Пример: /p2p buy | /p2p sell | /p2p buy 1000 USDT | /p2p buy 1000 RUB")
         return
     
+    if len(args) > 2 and len(args) != 4:
+        await message.reply("Укажите сумму и валюту. Пример: /p2p buy 1000 USDT | /p2p buy 1000 RUB")
+        return
+    
+    amount = None
+    try:
+        if len(args) == 4:
+            amount = float(args[2])
+            is_fiat = args[3].upper() == "RUB"
+    except (ValueError, IndexError):
+        await message.reply("Укажите сумму и валюту. Пример: /p2p buy 1000 USDT | /p2p buy 1000 RUB")
+        return
+
     # Получаем данные из p2p
     try:
         data = await p2p.get_p2p_orders(symbol == "BUY")
@@ -102,8 +115,15 @@ async def current_p2p_bybit_orders(message: Message):
         logger.error(f"Ошибка p2p: {traceback.format_exc()}")
         await message.reply("Ошибка, напишите позднее")
         return
-    categorized_data = p2p.categorize_all_offers(data)
-    for label in categorized_data:
-        categorized_data[label] = p2p.get_offers_by_valid_makers(categorized_data[label])
-    
-    await message.reply(p2p.generate_combined_html(categorized_data), parse_mode="html")
+
+    # Это получение просто всех ордеров или с суммой?
+    if amount:
+        offers = p2p.get_offers_by_amount(data, amount, is_fiat)
+        await message.reply(p2p.generate_amount_html_output(p2p.get_offers_by_valid_makers(offers), amount, is_fiat))
+
+    else:
+        categorized_data = p2p.categorize_all_offers(data)
+        for label in categorized_data:
+            categorized_data[label] = p2p.get_offers_by_valid_makers(categorized_data[label])
+        
+        await message.reply(p2p.generate_categories_html_output(categorized_data), parse_mode="html")

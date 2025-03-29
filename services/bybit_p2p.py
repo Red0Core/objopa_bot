@@ -1,5 +1,6 @@
 from curl_cffi import AsyncSession
 from dataclasses import dataclass
+import traceback
 
 @dataclass
 class Offer:
@@ -12,7 +13,7 @@ class Offer:
     max_amount: float = 0
     available_amount: float = 0
 
-def generate_combined_html(ranges: dict[str, list[Offer]]):
+def generate_categories_html_output(ranges: dict[str, list[Offer]]):
     html = "<b>📦 Лучшие предложения по покупке/продаже USDT:</b>\n"
 
     for label in ranges:
@@ -24,8 +25,50 @@ def generate_combined_html(ranges: dict[str, list[Offer]]):
             continue
 
         for offer in items:
-            badge = "♦" if offer.is_ba else "🛡" if offer.is_va else "👤"
-            html += f"{badge} <i>{offer.nickname}</i> — <b>{offer.price:.2f} ₽</b> - <i>{offer.min_amount:.2f}-{offer.max_amount:.2f} ₽</i> - <b>{offer.available_amount:.2f} USDT доступно</b> ({offer.finish_num} заверш.)\n"
+            # Improved badges with clearer distinction between merchant types
+            if offer.is_ba:
+                badge = "🔷"  # Business Account - самый лучший
+            elif offer.is_va:
+                badge = "🛡️"  # Verified Account - подтвержден Bybit
+            else:
+                badge = "👤"  # Обычный пользователь
+                
+            html += f"{badge} <i>{offer.nickname}</i>\n" \
+                f"- <b>{offer.price:.2f} ₽</b>\n" \
+                f"- <i>{offer.min_amount:,.0f}-{offer.max_amount:,.0f} ₽</i>\n" \
+                f"- <b>{offer.available_amount:.2f} USDT доступно</b>\n" \
+                f"- {offer.finish_num} сделок\n"
+
+    return html
+
+def generate_amount_html_output(offers: list[Offer], amount: float, is_fiat: bool = False) -> str:
+    html = f"<b>📦 Лучшие предложения на {amount} {"₽" if is_fiat else "USDT"}:</b>\n"
+
+    if not offers:
+        html += "— Нет подходящих офферов\n"
+        return html
+
+    for offer in offers:
+        # Improved badges with clearer distinction between merchant types
+        if offer.is_ba:
+            badge = "🔷"  # Business Account - самый лучший
+        elif offer.is_va:
+            badge = "🛡️"  # Verified Account - подтвержден Bybit
+        else:
+            badge = "👤"  # Обычный пользователь
+        
+        html += f"{badge} <i>{offer.nickname}</i>\n" \
+                f"- <b>{offer.price:.2f} ₽</b>\n" \
+                f"- <i>{offer.min_amount:,.0f}-{offer.max_amount:,.0f} ₽</i>\n" \
+                f"- <b>{offer.available_amount:.2f} USDT доступно</b>\n" \
+                f"- {offer.finish_num} сделок\n"
+        
+        if is_fiat:
+            amount_output = amount / offer.price
+            html += f"- <b>💵 {amount_output:.2f} USDT</b>\n"
+        else:
+            amount_output = amount * offer.price
+            html += f"- <b>💵 {amount_output:.2f} ₽</b>\n"
 
     return html
 
@@ -60,9 +103,43 @@ def categorize_all_offers(data):
                 categories["больше 100K"].append(entry)
 
         except Exception as e:
-            print(f"Ошибка при обработке ордера: {e}")
+            print(f"Ошибка при обработке ордера: {traceback.format_exc()}")
 
     return categories
+
+def get_offers_by_amount(data, amount: float, is_fiat: bool = False) -> list[Offer]:
+    """
+    Функция для категоризации офферов по исполняемому объему
+    """
+    offers: list[Offer] = []
+    for item in data["result"]["items"]:
+        try:
+            min_amount = float(item["minAmount"])
+            max_amount = float(item["maxAmount"])
+            price = float(item["price"])
+            finish_num = item.get("finishNum", 0)
+            nickname = item.get("nickName", "Unknown")
+            is_va = "VA" in item.get("authTag", [])
+            is_ba = "BA" in item.get("authTag", [])
+            available_amount = float(item["lastQuantity"])
+
+            # В рублях, мы проверяем доступный объем в рублях
+            if is_fiat:
+                if min_amount <= amount <= max_amount and available_amount*price >= amount:
+                    entry = Offer(price, nickname, finish_num, is_va, is_ba, min_amount, max_amount, available_amount)
+                    offers.append(entry)
+            # В USDT, мы проверяем доступный объем в USDT
+            else:
+                usdt_min_amount = min_amount / price
+                usdt_max_amount = max_amount / price
+                if usdt_min_amount <= amount <= usdt_max_amount and available_amount >= amount:
+                    entry = Offer(price, nickname, finish_num, is_va, is_ba, min_amount, max_amount, available_amount)
+                    offers.append(entry)
+
+        except Exception as e:
+            print(f"Ошибка при обработке ордера с объемом: {traceback.format_exc()}")
+
+    return offers
 
 def get_offers_by_valid_makers(offers: list[Offer]) -> list[Offer]:
     """
@@ -125,7 +202,7 @@ async def get_p2p_orders(is_buy: bool = True):
             '582',
         ],
         'side': '1' if is_buy else '0',
-        'size': '50',
+        'size': '200',
         'page': '1',
         'amount': '',
         'bulkMaker': False,
@@ -145,9 +222,17 @@ async def get_p2p_orders(is_buy: bool = True):
 
 if __name__ == "__main__":
     import asyncio
-    data = asyncio.run(get_p2p_orders(is_buy=False))
+    data = asyncio.run(get_p2p_orders(is_buy=True))
     categorized_data = categorize_all_offers(data)
     for label in categorized_data:
         categorized_data[label] = get_offers_by_valid_makers(categorized_data[label])
-    html_output = generate_combined_html(categorized_data)
+    html_output = generate_categories_html_output(categorized_data)
+    print(html_output)
+
+    offers = get_offers_by_amount(data, 40000, True)
+    html_output = generate_amount_html_output(get_offers_by_valid_makers(offers), 40000, True)
+    print(html_output)
+
+    offers = get_offers_by_amount(data, 500, False)
+    html_output = generate_amount_html_output(get_offers_by_valid_makers(offers), 500, False)
     print(html_output)
