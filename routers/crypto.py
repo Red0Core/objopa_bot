@@ -1,6 +1,7 @@
 import pprint
 from services.coinmarketcap import *
 from services.exchanges import get_price_from_exchanges
+import services.bybit_p2p as p2p
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -78,3 +79,31 @@ async def add_to_whitelist_coinmarketcap_handler(message: Message):
 
     await message.reply(f"Вы не правильно указали имя или тикер")
     return
+
+@router.message(Command("p2p"))
+async def current_p2p_bybit_orders(message: Message):
+    """
+    Выводит текущие сообщения из p2p
+    """
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.reply("Укажите покупку или продажу тейкером. Пример: /p2p buy | /p2p sell")
+        return
+
+    symbol = args[1].upper()
+    if symbol not in ["BUY", "SELL"]:
+        await message.reply("Укажите покупку или продажу тейкером. Пример: /p2p buy | /p2p sell")
+        return
+    
+    # Получаем данные из p2p
+    try:
+        data = await p2p.get_p2p_orders(symbol == "BUY")
+    except Exception as e:
+        logger.error(f"Ошибка p2p: {traceback.format_exc()}")
+        await message.reply("Ошибка, напишите позднее")
+        return
+    categorized_data = p2p.categorize_all_offers(data)
+    for label in categorized_data:
+        categorized_data[label] = p2p.get_offers_by_valid_makers(categorized_data[label])
+    
+    await message.reply(p2p.generate_combined_html(categorized_data), parse_mode="html")
