@@ -9,9 +9,23 @@ class Offer:
     finish_num: int
     is_va: bool
     is_ba: bool
+    payment_types: set[str]
     min_amount: float = 0
     max_amount: float = 0
     available_amount: float = 0
+
+PAYMENT_TYPE = {
+    75: "Тинек",
+    377: "Сбер",
+    64: "Райф",
+    63: "Райф",
+    581: "Тинек",
+    379: "Альфа",
+    584: "Ред-Грин карта",
+    585: "С-Грин карта",
+    582: "Сбер",
+    382: "СБП",
+}
 
 def generate_categories_html_output(ranges: dict[str, list[Offer]]):
     html = "<b>📦 Лучшие предложения по покупке/продаже USDT:</b>\n"
@@ -32,12 +46,15 @@ def generate_categories_html_output(ranges: dict[str, list[Offer]]):
                 badge = "🛡️"  # Verified Account - подтвержден Bybit
             else:
                 badge = "👤"  # Обычный пользователь
-                
+
+            payment_types = ', '.join(offer.payment_types)
+
             html += f"{badge} <i>{offer.nickname}</i>\n" \
                 f"- <b>{offer.price:.2f} ₽</b>\n" \
                 f"- <i>{offer.min_amount:,.0f}-{offer.max_amount:,.0f} ₽</i>\n" \
                 f"- <b>{offer.available_amount:.2f} USDT доступно</b>\n" \
-                f"- {offer.finish_num} сделок\n"
+                f"- {offer.finish_num} сделок\n" \
+                f"- <i>{payment_types}</i>\n"
 
     return html
 
@@ -56,19 +73,21 @@ def generate_amount_html_output(offers: list[Offer], amount: float, is_fiat: boo
             badge = "🛡️"  # Verified Account - подтвержден Bybit
         else:
             badge = "👤"  # Обычный пользователь
-        
+        payment_types = ', '.join(offer.payment_types)
+
         html += f"{badge} <i>{offer.nickname}</i>\n" \
                 f"- <b>{offer.price:.2f} ₽</b>\n" \
                 f"- <i>{offer.min_amount:,.0f}-{offer.max_amount:,.0f} ₽</i>\n" \
                 f"- <b>{offer.available_amount:.2f} USDT доступно</b>\n" \
-                f"- {offer.finish_num} сделок\n"
+                f"- {offer.finish_num} сделок\n" \
+                f"- <i>{payment_types}</i>\n"
         
         if is_fiat:
             amount_output = amount / offer.price
-            html += f"- <b>💵 {amount_output:.2f} USDT</b>\n"
+            html += f"💵 <code>{amount_output:.2f}</code> <b>USDT</b>\n"
         else:
             amount_output = amount * offer.price
-            html += f"- <b>💵 {amount_output:.2f} ₽</b>\n"
+            html += f"💵 <code>{amount_output:.2f}</code> <b>₽</b>\n"
 
     return html
 
@@ -90,8 +109,13 @@ def categorize_all_offers(data):
             is_va = "VA" in item.get("authTag", [])
             is_ba = "BA" in item.get("authTag", [])
             available_amount = float(item["lastQuantity"])
-
-            entry = Offer(price, nickname, finish_num, is_va, is_ba, min_amount, max_amount, available_amount)
+            payment_types = set()
+            for i in item.get("payments", []):  # Получаем типы платежей
+                t = PAYMENT_TYPE.get(int(i), None)
+                if t:
+                    payment_types.add(t)
+            
+            entry = Offer(price, nickname, finish_num, is_va, is_ba, payment_types, min_amount, max_amount, available_amount)
 
             if min_amount <= 20000:
                 categories["до 20K"].append(entry)
@@ -122,18 +146,23 @@ def get_offers_by_amount(data, amount: float, is_fiat: bool = False) -> list[Off
             is_va = "VA" in item.get("authTag", [])
             is_ba = "BA" in item.get("authTag", [])
             available_amount = float(item["lastQuantity"])
-
+            payment_types = set()
+            for i in item.get("payments", []):  # Получаем типы платежей
+                t = PAYMENT_TYPE.get(int(i), None)
+                if t:
+                    payment_types.add(t)
+        
             # В рублях, мы проверяем доступный объем в рублях
             if is_fiat:
                 if min_amount <= amount <= max_amount and available_amount*price >= amount:
-                    entry = Offer(price, nickname, finish_num, is_va, is_ba, min_amount, max_amount, available_amount)
+                    entry = Offer(price, nickname, finish_num, is_va, is_ba, payment_types,min_amount, max_amount, available_amount)
                     offers.append(entry)
             # В USDT, мы проверяем доступный объем в USDT
             else:
                 usdt_min_amount = min_amount / price
                 usdt_max_amount = max_amount / price
                 if usdt_min_amount <= amount <= usdt_max_amount and available_amount >= amount:
-                    entry = Offer(price, nickname, finish_num, is_va, is_ba, min_amount, max_amount, available_amount)
+                    entry = Offer(price, nickname, finish_num, is_va, is_ba, payment_types, min_amount, max_amount, available_amount)
                     offers.append(entry)
 
         except Exception as e:
@@ -222,7 +251,7 @@ async def get_p2p_orders(is_buy: bool = True):
 
 if __name__ == "__main__":
     import asyncio
-    data = asyncio.run(get_p2p_orders(is_buy=True))
+    data = asyncio.run(get_p2p_orders(is_buy=False))
     categorized_data = categorize_all_offers(data)
     for label in categorized_data:
         categorized_data[label] = get_offers_by_valid_makers(categorized_data[label])
