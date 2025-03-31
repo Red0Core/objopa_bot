@@ -100,9 +100,28 @@ async def handle_tracking(message: Message):
         if name not in trackers:
             await message.reply(f"Нет активного трекера <b>{name}</b>.", parse_mode="HTML")
             return
-        del trackers[name]
-        save_trackers(data)
-        await message.reply(f"🛑 Трекер <b>{name}</b> удалён.", parse_mode="HTML")
+        tracker = trackers[name]
+        days = int((datetime.now().timestamp() - tracker["start"]) // 86400)
+        prompt = (
+            f"Пользователь {user_name} завершил отслеживание цели «{name}».\n"
+            f"Описание цели: {tracker['description'] or 'Без описания'}.\n"
+            f"Он продержался {days} дней. Старт был с timestamp = {int(tracker['start'])}.\n"
+            f"Напиши язвительное и немного унизительное мотивационное сообщение (1 абзац), чтобы его задело, но в то же время замотивировало не облажаться в следующий раз.\n"
+            f"Можешь использовать иронию, сарказм, подколы, тёмный юмор. Не жалей — цель одна: взбодрить и пнуть вперёд.\n"
+            f"Не используй HTML, можешь добавить немного эмодзи. Без воды, просто жёсткий, но запоминающийся текст."
+        )
+        try:
+            gpt_response = await AI_CLIENT.get_response(prompt)
+            cleaned = markdown_to_telegram_html(gpt_response)
+            mention = f'<a href="tg://user?id={user_id}">{html.escape(user_name)}</a>'
+            cleaned = f"{mention}, {cleaned}"
+            for i in split_message_by_paragraphs(cleaned):
+                await message.reply(i, parse_mode="HTML")
+            del trackers[name]
+            save_trackers(data)
+        except Exception as e:
+            logger.error(f"[TRACK] GPT error for user {user_id} on tracker '{name}': {e}")
+            await message.reply("Ошибка при генерации сообщения. Попробуй позже.")
         logger.info(f"[TRACK] User {user_id} ({user_name}) stopped tracking '{name}' in chat {chat_id}")
 
 # Отпрвка ежедневного сообщения
