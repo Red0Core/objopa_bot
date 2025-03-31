@@ -4,6 +4,7 @@ from services.cbr import get_cbr_exchange_rate
 from services.horoscope_mail_ru import get_horoscope_mail_ru
 from datetime import datetime, timedelta
 from logger import logger
+import routers.day_tracker as day_tracker
 
 async def scheduled_message(bot):
     await bot.send_message(
@@ -66,9 +67,14 @@ async def send_daily_horoscope_for_brothers(bot):
         logger.info(f"Отправляем еждедневные гороскопы в чат {OBZHORA_CHAT_ID} для {zodiac_ru}")
         await asyncio.sleep(2)
 
+@daily_schedule(hour=8, minute=0)
+async def send_daily_tracker_messages(bot):
+    await day_tracker.send_daily_message(bot)
+
 async def on_startup(bot):
     asyncio.gather(
                     scheduled_message(bot),
                     send_daily_cbr_rates(bot, OBZHORA_CHAT_ID),
-                    send_daily_horoscope_for_brothers(bot)
+                    send_daily_horoscope_for_brothers(bot),
+                    send_daily_tracker_messages(bot),
                 )
