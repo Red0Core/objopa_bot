@@ -6,7 +6,6 @@ import json
 import os
 import html
 
-from logger import logger
 from .mention_dice import markdown_to_telegram_html, split_message_by_paragraphs, AI_CLIENT
 
 track_router = Router()
@@ -25,25 +24,25 @@ def save_trackers(data):
     with open(TRACK_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+
 @track_router.message(Command("track"))
 async def handle_tracking(message: Message):
     args = message.text.strip().split(maxsplit=2)
-    if len(args) < 2 or args[1] not in ["start", "stop", "status", "desc"]:
+    if len(args) < 2 or args[1] not in ["start", "stop", "status", "desc", "stats"]:
         await message.reply("Использование:\n"
-                            "/track start название(слитно)\n"
-                            "/track stop название(слитно)\n"
+                            "/track start название\n"
+                            "/track stop название\n"
                             "/track status\n"
-                            "/track desc название(слитно) описание")
+                            "/track desc название описание")
         return
 
     action = args[1]
     user_id = str(message.from_user.id)
-    user_name = message.from_user.full_name
+    user_name = message.from_user.full_name or message.from_user.first_name or "Безымянный герой"
     chat_id = message.chat.id
 
     data = load_trackers()
     if user_id not in data:
-        user_name = user_name or message.from_user.first_name or "Безымянный герой 🚀"
         data[user_id] = {"name": user_name, "trackers": {}, "chat_id": chat_id}
 
     trackers = data[user_id]["trackers"]
@@ -52,21 +51,37 @@ async def handle_tracking(message: Message):
         if not trackers:
             await message.reply("У тебя пока нет активных трекеров.")
             return
+
+        now = datetime.now().timestamp()
         reply = ["🧮 <b>Твои трекеры:</b>"]
         for track_name, info in trackers.items():
-            days = (datetime.now().timestamp() - info["start"]) // 86400
             desc = info.get("description", "")
-            reply.append(f"• <b>{track_name}</b>: <code>{int(days)} дней</code>{' — ' + desc if desc else ''}")
+            history = info.get("history", [])
+
+            if "start" in info:
+                duration = int(now - info["start"])
+                days, rem = divmod(duration, 86400)
+                hours = rem // 3600
+                reply.append(f"• <b>{track_name}</b>: <code>{days}д {hours}ч</code>{' — ' + desc if desc else ''}")
+            else:
+                reply.append(f"• <b>{track_name}</b>: <i>неактивен</i>{' — ' + desc if desc else ''}")
+
+            if history:
+                reply.append(f"  ⏱ История: {len(history)} попыток: " + ", ".join(
+                    f"{int((h['end'] - h['start']) // 86400)}д {(int((h['end'] - h['start']) % 86400)) // 3600}ч"
+                    for h in history
+                ))
+
         await message.reply("\n".join(reply), parse_mode="HTML")
         return
 
     if action == "desc":
         if len(args) < 3:
-            await message.reply("Укажи описание: /track desc название(слиитно) описание")
+            await message.reply("Укажи описание: /track desc название описание")
             return
         parts = args[2].split(maxsplit=1)
         if len(parts) < 2:
-            await message.reply("Укажи описание: /track desc название(слиитно) описание")
+            await message.reply("Укажи описание: /track desc название описание")
             return
         name, description = parts
         if name not in trackers:
@@ -75,40 +90,46 @@ async def handle_tracking(message: Message):
         trackers[name]["description"] = description
         save_trackers(data)
         await message.reply(f"📝 Описание для <b>{name}</b> обновлено!", parse_mode="HTML")
-        logger.info(f"[TRACK] User {user_id} ({user_name}) stopped tracking '{name}' in chat {chat_id}")
         return
 
     if len(args) < 3:
-        await message.reply("Укажи название: /track start название(слиитно)")
+        await message.reply("Укажи название: /track start название")
         return
 
     name = args[2].strip()
 
     if action == "start":
-        if name in trackers:
+        if name in trackers and "start" in trackers[name]:
             await message.reply(f"Трекер <b>{name}</b> уже запущен.", parse_mode="HTML")
             return
-        trackers[name] = {
-            "start": datetime.now().timestamp(),
-            "description": ""
-        }
+        if name not in trackers:
+            trackers[name] = {"description": "", "history": []}
+        trackers[name]["start"] = datetime.now().timestamp()
         save_trackers(data)
         await message.reply(f"🟢 Отслеживание <b>{name}</b> начато!", parse_mode="HTML")
-        logger.info(f"[TRACK] User {user_id} ({user_name}) started tracking '{name}' in chat {chat_id}")
 
     elif action == "stop":
-        if name not in trackers:
+        if name not in trackers or "start" not in trackers[name]:
             await message.reply(f"Нет активного трекера <b>{name}</b>.", parse_mode="HTML")
             return
-        tracker = trackers[name]
-        days = int((datetime.now().timestamp() - tracker["start"]) // 86400)
+        track = trackers[name]
+        end = datetime.now().timestamp()
+        history = track.get("history", [])
+        history.append({"start": track["start"], "end": end})
+        track["history"] = history
+        del track["start"]
+        save_trackers(data)
+
+        # GPT сообщение после остановки
+        duration = end - history[-1]["start"]
+        days, rem = divmod(int(duration), 86400)
+        hours = rem // 3600
         prompt = (
-            f"Пользователь {user_name} завершил отслеживание цели «{name}».\n"
-            f"Описание цели: {tracker['description'] or 'Без описания'}.\n"
-            f"Он продержался {days} дней. Старт был с timestamp = {int(tracker['start'])}.\n"
-            f"Напиши язвительное и немного унизительное мотивационное сообщение (1 абзац), чтобы его задело, но в то же время замотивировало не облажаться в следующий раз.\n"
-            f"Можешь использовать иронию, сарказм, подколы, тёмный юмор. Не жалей — цель одна: взбодрить и пнуть вперёд.\n"
-            f"Не используй HTML, можешь добавить немного эмодзи. Без воды, просто жёсткий, но запоминающийся текст."
+            f"Пользователь {user_name} остановил трекер «{name}».\n"
+            f"Он продержался {days} дней и {hours} часов.\n"
+            f"Это была попытка номер {len(history)}. "
+            f"Напиши уничижительно-мотивирующее сообщение: не хвали, а подстёбывай и вдохнови в следующий раз держаться дольше. "
+            f"Можно использовать немного эмодзи, но без HTML. Говори жёстко, с юмором."
         )
         try:
             gpt_response = await AI_CLIENT.get_response(prompt)
@@ -116,33 +137,69 @@ async def handle_tracking(message: Message):
             mention = f'<a href="tg://user?id={user_id}">{html.escape(user_name)}</a>'
             cleaned = f"{mention}, {cleaned}"
             for i in split_message_by_paragraphs(cleaned):
-                await message.reply(i, parse_mode="HTML")
-            del trackers[name]
-            save_trackers(data)
+                await message.answer(i, parse_mode="HTML")
         except Exception as e:
-            logger.error(f"[TRACK] GPT error for user {user_id} on tracker '{name}': {e}")
-            await message.reply("Ошибка при генерации сообщения. Попробуй позже.")
-        logger.info(f"[TRACK] User {user_id} ({user_name}) stopped tracking '{name}' in chat {chat_id}")
+            print(f"[GPT STOP] Ошибка: {e}")
+        await message.reply(f"🛑 Трекер <b>{name}</b> остановлен и записан в историю.", parse_mode="HTML")
 
-# Отпрвка ежедневного сообщения
+    if action == "stats":
+        if not trackers:
+            await message.reply("У тебя пока нет активных трекеров.")
+            return
+
+        reply = ["📊 <b>Статистика по трекерам:</b>"]
+        for name, track in trackers.items():
+            history = track.get("history", [])
+            if not history:
+                reply.append(f"\n<b>{name}</b> — нет завершённых попыток.")
+                continue
+
+            reply.append(f"\n<b>{name}</b> — {len(history)} попыток")
+            for i, attempt in enumerate(history, 1):
+                start = datetime.fromtimestamp(attempt["start"])
+                end = datetime.fromtimestamp(attempt["end"])
+                duration = end - start
+                days = duration.days
+                hours = duration.seconds // 3600
+                reply.append(f"  {i}) {days} д. {hours} ч. (с {start:%d.%m %H:%M} по {end:%d.%m %H:%M})")
+
+            # Если активен сейчас — добавить это
+            if "start" in track:
+                current = datetime.now() - datetime.fromtimestamp(track["start"])
+                d, h = current.days, current.seconds // 3600
+                reply.append(f"  ➕ Сейчас идёт {d} д. {h} ч.")
+
+        await message.reply("\n".join(reply), parse_mode="HTML")
+        return
+
 async def send_daily_message(bot):
     data = load_trackers()
+    now = datetime.now().timestamp()
+
     for user_id, user_info in data.items():
         for track_name, track_data in user_info["trackers"].items():
-            days = int((datetime.now().timestamp() - track_data["start"]) // 86400)
-            description = track_data.get("description", "")
+            if "start" not in track_data:
+                continue
+
+            duration = int(now - track_data["start"])
+            days, rem = divmod(duration, 86400)
+            hours = rem // 3600
+            history = track_data.get("history", [])
+
             user_name = user_info["name"]
             chat_id = user_info["chat_id"] or user_id
+            desc = track_data.get("description", "")
 
             prompt = (
-                f"Ты мотивирующий ассистент с иронией и чёрным юмором. "
-                f"Пользователь по имени {user_name} отслеживает цель «{track_name}» ({description}).\n"
-                f"Прошло уже {days} дней! Старт был с timestamp = {int(track_data['start'])}.\n"
-                f"Сгенерируй короткое сообщение (1–2 абзаца) в стиле: мотивационно, с лёгким запоминающимся посылом и долей черного юмора. "
-                f"Без HTML, но можно немного эмодзи (без перегруза).\n"
-                f"Говори с пользователем как с другом — с подколами, шутками, но в рамках бодрящей поддержки. "
-                f"Главное — чтобы захотелось продолжать дальше.\n"
-                f"Нецензурные слова допустимы, если они уместны и работают на стиль."
+                f"Ты мотивирующий ассистент с чёрным юмором.\n"
+                f"Пользователь {user_name} отслеживает цель «{track_name}» ({desc}).\n"
+                f"Текущая попытка длится уже {days} дней и {hours} часов.\n"
+                f"Всего попыток: {len(history) + 1}.\n"
+                f"Прошлые: " + ", ".join(
+                    f"{int((h['end'] - h['start']) // 86400)}д {(int((h['end'] - h['start']) % 86400)) // 3600}ч"
+                    for h in history
+                ) + ".\n"
+                f"Напиши бодрящее сообщение (1–2 абзаца) с иронией и лёгким уничижением. Можно немного эмодзи, но без HTML."
             )
 
             try:
@@ -152,6 +209,5 @@ async def send_daily_message(bot):
                 cleaned = f"{mention}, {cleaned}"
                 for i in split_message_by_paragraphs(cleaned):
                     await bot.send_message(chat_id, i, parse_mode="HTML")
-                    logger.info(f"[DAILY] Sent motivation to user {user_id} for tracker '{track_name}' ({days} days)")
             except Exception as e:
-                logger.error(f"[DAILY] GPT error for user {user_id} on tracker '{track_name}': {e}")
+                print(f"[DAILY GPT] Ошибка: {e}")
