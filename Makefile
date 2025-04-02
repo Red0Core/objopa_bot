@@ -49,3 +49,11 @@ clean:
 	rm -rf $(VENV_DIR)
 
 reset: clean all
+
+logs-bot:
+	@echo "📜 Attaching to Telegram Bot logs..."
+	tmux attach -t objopa-bot
+
+logs-api:
+	@echo "📜 Attaching to FastAPI logs..."
+	tmux attach -t objopa-api
