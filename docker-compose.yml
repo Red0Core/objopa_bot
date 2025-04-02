@@ -16,7 +16,7 @@ services:
       - "127.0.0.1:8000:8000"
 
   tg-bot:
-    build: ./tg-bot
+    build: ./tg_bot
     restart: unless-stopped
     env_file:
     - .env
