@@ -16,7 +16,10 @@ services:
       - "127.0.0.1:8000:8000"
 
   tg-bot:
-    build: ./tg_bot
+    build: 
+      context: ./tg_bot
+      args:
+        INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME}
     restart: unless-stopped
     env_file:
     - .env

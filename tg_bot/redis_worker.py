@@ -3,7 +3,7 @@ import asyncio
 import ujson
 import redis.asyncio as redis
 from logger import logger
-from tg_bot.config import MAIN_ACC
+from config import MAIN_ACC
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))

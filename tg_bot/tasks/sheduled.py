@@ -5,7 +5,7 @@ from services.horoscope_mail_ru import get_horoscope_mail_ru
 from datetime import datetime, timedelta
 from logger import logger
 import routers.day_tracker as day_tracker
-from tg_bot import redis_worker
+import redis_worker
 
 async def scheduled_message(bot):
     await bot.send_message(
