@@ -2,7 +2,7 @@ from aiogram import Router
 from aiogram.types import Message
 from aiogram.filters import Command
 from datetime import datetime
-import json
+import ujson
 import os
 import html
 
@@ -17,12 +17,12 @@ def load_trackers():
     if not os.path.exists(TRACK_FILE):
         return {}
     with open(TRACK_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return ujson.load(f)
 
 
 def save_trackers(data):
     with open(TRACK_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        ujson.dump(data, f, ensure_ascii=False, indent=2)
 
 
 @track_router.message(Command("track"))

@@ -1,7 +1,5 @@
 from curl_cffi.requests import AsyncSession
 from datetime import datetime
-import json
-from config import JSON_FILE
 from logger import logger
 import os
 

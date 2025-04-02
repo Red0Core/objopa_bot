@@ -1,5 +1,12 @@
 from dotenv import load_dotenv
 import os
+from pathlib import Path
+
+# Загружаем .env только если переменные ещё не определены (для докера)
+if not os.getenv("TG_TOKEN"):
+    env_path = Path(__file__).resolve().parent / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
 
 load_dotenv()
 

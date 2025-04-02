@@ -6,3 +6,4 @@ last_activity_id.txt
 whitelist.json
 whitelist_gpt.json
 downloads/
+.vscode/

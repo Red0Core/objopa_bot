@@ -1,7 +1,7 @@
 from curl_cffi.requests import AsyncSession
 from config import COINMARKETCAP_API_KEY
 from logger import logger
-import json
+import ujson
 import os
 
 def add_to_whitelist(file_path, symbol, name):
@@ -16,8 +16,8 @@ def add_to_whitelist(file_path, symbol, name):
         # Загружаем существующий белый список
         try:
             with open(file_path, "r") as file:
-                data = json.load(file)
-        except (json.JSONDecodeError, FileNotFoundError):
+                data = ujson.load(file)
+        except (ujson.JSONDecodeError, FileNotFoundError):
             logger.error(f"Ошибка при чтении файла {file_path}. Создаю новый файл.")
             data = {}
 
@@ -33,7 +33,7 @@ def add_to_whitelist(file_path, symbol, name):
 
     # Сохраняем изменения в файл
     with open(file_path, "w") as file:
-        json.dump(data, file, indent=4)
+        ujson.dump(data, file, indent=4)
         logger.info(f"Белый список успешно обновлён.")
     
     return True
@@ -48,12 +48,12 @@ def load_whitelist(file_path, symbol) -> list[str]:
     """
     try:
         with open(file_path, "r") as file:
-            data = json.load(file)
+            data = ujson.load(file)
             return data.get(symbol, [])
     except FileNotFoundError:
         print(f"Файл {file_path} не найден.")
         return []
-    except json.JSONDecodeError:
+    except ujson.JSONDecodeError:
         print(f"Файл {file_path} содержит некорректный JSON.")
         return []
 
@@ -111,7 +111,7 @@ def filter_tickers(data):
             # Если тикер прошел все условия, добавляем его в результат
             filtered_tickers.append(coin_data)
         except TypeError:
-            logger.info(f"Данные тикера: {json.dumps(coin_data, indent=5)}")
+            logger.info(f"Данные тикера: {ujson.dumps(coin_data, indent=5)}")
 
     return filtered_tickers
 
@@ -130,6 +130,6 @@ async def get_coinmarketcap_data(ticker: str, **params):
         response = await session.get("https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest", params=parameters)
         
         if response.json().get('data', None) is None:
-            logger.error(f"Данные от CMC не поступили: {json.dumps(response.json(), indent=5)}")
+            logger.error(f"Данные от CMC не поступили: {ujson.dumps(response.json(), indent=5)}")
 
         return response.json()

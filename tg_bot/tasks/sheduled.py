@@ -5,6 +5,7 @@ from services.horoscope_mail_ru import get_horoscope_mail_ru
 from datetime import datetime, timedelta
 from logger import logger
 import routers.day_tracker as day_tracker
+from tg_bot import redis_worker
 
 async def scheduled_message(bot):
     await bot.send_message(
@@ -72,9 +73,11 @@ async def send_daily_tracker_messages(bot):
     await day_tracker.send_daily_message(bot)
 
 async def on_startup(bot):
-    asyncio.gather(
+    for coro in (
                     scheduled_message(bot),
                     send_daily_cbr_rates(bot, OBZHORA_CHAT_ID),
                     send_daily_horoscope_for_brothers(bot),
                     send_daily_tracker_messages(bot),
-                )
+                    redis_worker.poll_redis(bot),
+    ):
+        asyncio.create_task(coro)

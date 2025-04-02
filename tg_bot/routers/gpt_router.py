@@ -12,18 +12,18 @@ from collections import defaultdict
 
 router = Router()
 
-import json
+import ujson
 
 def load_whitelist(file_path="whitelist_gpt.json"):
     try:
         with open(file_path, "r") as file:
-            return json.load(file)
+            return ujson.load(file)
     except FileNotFoundError:
         return {}
 
 def save_whitelist(data, file_path="whitelist_gpt.json"):
     with open(file_path, "w") as file:
-        json.dump(data, file, indent=4)
+        ujson.dump(data, file, indent=4)
 
 whitelist = load_whitelist()
 
