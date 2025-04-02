@@ -1,3 +1,4 @@
+from pathlib import Path
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -13,15 +14,16 @@ from collections import defaultdict
 router = Router()
 
 import ujson
+WHITELIST_PATH = Path('storage') / "whitelist_gpt.json"
 
-def load_whitelist(file_path="whitelist_gpt.json"):
+def load_whitelist(file_path=WHITELIST_PATH):
     try:
         with open(file_path, "r") as file:
             return ujson.load(file)
     except FileNotFoundError:
         return {}
 
-def save_whitelist(data, file_path="whitelist_gpt.json"):
+def save_whitelist(data, file_path=WHITELIST_PATH):
     with open(file_path, "w") as file:
         ujson.dump(data, file, indent=4)
 

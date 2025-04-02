@@ -2,8 +2,6 @@ venv/
 **/__pycache__/
 logs/
 .env
-last_activity_id.txt
-whitelist.json
-whitelist_gpt.json
+storage/
 downloads/
 .vscode/

@@ -14,7 +14,7 @@ TOKEN_BOT = os.getenv("TOKEN_BOT")
 OBZHORA_CHAT_ID = os.getenv("OBZHORA_CHAT_ID") # Используется в личных целях
 ZA_IDEU_CHAT_ID = os.getenv("ZA_IDEU_CHAT_ID") # Используется в личных целях
 MAIN_ACC = os.getenv("MAIN_ACC") # Используется для проверки запуска бота
-JSON_FILE = 'activities.json'
+MEXC_JSON_FILE = Path('storage') / 'mexc_activities.json'
 
 GIFS_ID = {'Салам дай брад': 'CgACAgIAAxkBAAMLZ14AAaOekJCeA-Nct3-QfFBf2YTsAAKjPgACMqoRShjIMCPEyv2zNgQ',
            'Бойкот работе': 'CgACAgIAAxkBAAMJZ14AAZPMu0dPrqoC2yWaZIb1NiAUAAKyRgACHU9oS5MtGXV2LB3RNgQ',

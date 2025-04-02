@@ -1,3 +1,4 @@
+from pathlib import Path
 from aiogram import Router
 from aiogram.types import Message
 from aiogram.filters import Command
@@ -9,7 +10,7 @@ import html
 from .mention_dice import markdown_to_telegram_html, split_message_by_paragraphs, AI_CLIENT
 
 track_router = Router()
-TRACK_FILE = "trackers.json"
+TRACK_FILE = Path('storage') / "trackers.json"
 
 
 # ===== Хранилище =====

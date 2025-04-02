@@ -1,10 +1,13 @@
+from pathlib import Path
 from curl_cffi.requests import AsyncSession
 from config import COINMARKETCAP_API_KEY
 from logger import logger
 import ujson
 import os
 
-def add_to_whitelist(file_path, symbol, name):
+COINMARKETCAP_WHITELIST = Path('storage') / "whitelist_coinmarketcap.json"
+
+def add_to_whitelist(symbol, name, file_path=COINMARKETCAP_WHITELIST):
     """
     Добавляет в белый список имя и его тикер
     
@@ -39,7 +42,7 @@ def add_to_whitelist(file_path, symbol, name):
     return True
 
 
-def load_whitelist(file_path, symbol) -> list[str]:
+def load_whitelist(symbol, file_path=COINMARKETCAP_WHITELIST) -> list[str]:
     """
     Загружает белый список токенов из файла.
     
@@ -90,7 +93,7 @@ def format_crypto_price(data: list[dict], num_of_tokens=0.0):
 
     return output or "Ошибка: данные о криптовалюте отсутствуют."
 
-def filter_tickers(data):
+def filter_tickers(data, file_path=COINMARKETCAP_WHITELIST):
     """
     Фильтрует список тикеров на основе заданных условий.
     
@@ -99,7 +102,7 @@ def filter_tickers(data):
     """
     filtered_tickers = []
     for coin_data in data:
-        whitelist = load_whitelist("whitelist.json", coin_data['symbol'])
+        whitelist = load_whitelist(file_path, coin_data['symbol'])
         market_cap = coin_data["quote"]["USD"]["market_cap"]
         try:
             if coin_data['name'] not in whitelist: # Не скипаем белый лист

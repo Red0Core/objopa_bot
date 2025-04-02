@@ -22,3 +22,5 @@ services:
     - .env
     depends_on:
       - redis
+    volumes:
+      - ./tg_bot/storage:/app/storage

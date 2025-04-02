@@ -1,3 +1,4 @@
+from pathlib import Path
 import pprint
 from services.coinmarketcap import *
 from services.exchanges import get_price_from_exchanges
@@ -73,7 +74,7 @@ async def add_to_whitelist_coinmarketcap_handler(message: Message):
 
     for i in (await get_coinmarketcap_data(symbol))['data'][symbol]:
         if name == i['name']:
-            add_to_whitelist("whitelist.json", symbol, name)
+            add_to_whitelist(symbol, name)
             await message.reply(f"Успешно добавлен {name} под тикером {symbol}")
             return
 
