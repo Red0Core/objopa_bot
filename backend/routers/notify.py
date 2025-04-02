@@ -1,6 +1,9 @@
 from fastapi import APIRouter, Request
 import redis.asyncio as redis
 import os, ujson
+from dotenv import load_dotenv
+
+load_dotenv()
 
 r = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, decode_responses=True)
 router = APIRouter()
