@@ -9,7 +9,7 @@ import redis_worker
 
 async def scheduled_message(bot):
     await bot.send_message(
-        MAIN_ACC, 
+        MAIN_ACC,
         text="Бот стартовал и готов к работе!"
     )
 
@@ -25,7 +25,7 @@ def daily_schedule(hour=13, minute=0):
 
                 wait_time = (target_time - now).total_seconds()
                 await asyncio.sleep(wait_time)
-                
+
                 await func(bot, *args, **kwargs)
         return wrapper
     return decorator
@@ -51,7 +51,7 @@ async def send_daily_cbr_rates(bot, chat_id):
         )
 
         logger.info(f"Отправляем курсы валют в чат {chat_id}")
-        
+
     await bot.send_message(chat_id=chat_id, text=message)
 
 @daily_schedule(hour=6, minute=0)
