@@ -29,6 +29,7 @@ async def get_instagram_shortcode(url):
 
 # Имя пользователя для сессии
 INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME")
+INSTAGRAM_PASSWORD = os.getenv("INSTAGRAM_PASSWORD")
 
 def init_instaloader():
     """ Инициализация Instaloader с авторизацией """
@@ -36,8 +37,11 @@ def init_instaloader():
     bot_loader = instaloader.Instaloader(filename_pattern='{shortcode}', iphone_support=False, user_agent=user_agent)
     
     try:
-        bot_loader.load_session_from_file(INSTAGRAM_USERNAME)
-        print("✅ Успешная авторизация в Instagram.")
+        if INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD:
+            bot_loader.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
+            print("✅ Успешная авторизация в Instagram.")
+        else:
+            raise ValueError("Не указаны имя пользователя и пароль Instagram.")
     except FileNotFoundError:
         print("⚠️ Файл сессии не найден. Будут загружены только открытые посты.")
     

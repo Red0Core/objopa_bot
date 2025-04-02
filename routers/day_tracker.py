@@ -32,6 +32,7 @@ async def handle_tracking(message: Message):
         await message.reply("Использование:\n"
                             "/track start название\n"
                             "/track stop название\n"
+                            "/track stats название\n"
                             "/track status\n"
                             "/track desc название описание")
         return
@@ -66,12 +67,6 @@ async def handle_tracking(message: Message):
             else:
                 reply.append(f"• <b>{track_name}</b>: <i>неактивен</i>{' — ' + desc if desc else ''}")
 
-            if history:
-                reply.append(f"  ⏱ История: {len(history)} попыток: " + ", ".join(
-                    f"{int((h['end'] - h['start']) // 86400)}д {(int((h['end'] - h['start']) % 86400)) // 3600}ч"
-                    for h in history
-                ))
-
         await message.reply("\n".join(reply), parse_mode="HTML")
         return
 
@@ -93,7 +88,7 @@ async def handle_tracking(message: Message):
         return
 
     if len(args) < 3:
-        await message.reply("Укажи название: /track start название")
+        await message.reply("Укажи название: /track start|stop|stats название")
         return
 
     name = args[2].strip()
@@ -142,18 +137,24 @@ async def handle_tracking(message: Message):
             print(f"[GPT STOP] Ошибка: {e}")
         await message.reply(f"🛑 Трекер <b>{name}</b> остановлен и записан в историю.", parse_mode="HTML")
 
-    if action == "stats":
-        if not trackers:
-            await message.reply("У тебя пока нет активных трекеров.")
+    elif action == "stats":
+        if name not in trackers or "start" not in trackers[name]:
+            await message.reply(f"Нет активного трекера <b>{name}</b>.", parse_mode="HTML")
             return
 
-        reply = ["📊 <b>Статистика по трекерам:</b>"]
-        for name, track in trackers.items():
-            history = track.get("history", [])
-            if not history:
-                reply.append(f"\n<b>{name}</b> — нет завершённых попыток.")
-                continue
+        reply = [f"📊 <b>Статистика по трекеру {name}:</b>"]
+        track = trackers[name]
+        history = track.get("history", [])
 
+        # Если активен сейчас — добавить это
+        if "start" in track:
+            current = datetime.now() - datetime.fromtimestamp(track["start"])
+            d, h = current.days, current.seconds // 3600
+            reply.append(f"  ➕ Сейчас идёт {d} д. {h} ч.")
+        # Если есть завершённые попытки — добавить их
+        if not history:
+            reply.append(f"\n<b>{name}</b> — нет завершённых попыток.")
+        else:
             reply.append(f"\n<b>{name}</b> — {len(history)} попыток")
             for i, attempt in enumerate(history, 1):
                 start = datetime.fromtimestamp(attempt["start"])
@@ -162,12 +163,6 @@ async def handle_tracking(message: Message):
                 days = duration.days
                 hours = duration.seconds // 3600
                 reply.append(f"  {i}) {days} д. {hours} ч. (с {start:%d.%m %H:%M} по {end:%d.%m %H:%M})")
-
-            # Если активен сейчас — добавить это
-            if "start" in track:
-                current = datetime.now() - datetime.fromtimestamp(track["start"])
-                d, h = current.days, current.seconds // 3600
-                reply.append(f"  ➕ Сейчас идёт {d} д. {h} ч.")
 
         await message.reply("\n".join(reply), parse_mode="HTML")
         return
