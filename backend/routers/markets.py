@@ -1,0 +1,95 @@
+from fastapi import APIRouter, HTTPException
+from backend.services.markets import bybit_p2p, alphavantage, coinmarketcap, exchanges, cbr
+from backend.models.markets import (
+    ForexChange, ForexChanges, P2PResponse, ForexResponse, CoinmarketcapResponse, 
+    PriceResponse, CBRResponse, CoinmarketcapWhitelistRequest
+)
+
+router = APIRouter(prefix="/markets", tags=["markets"])
+
+# P2P Endpoints
+@router.get("/p2p")
+async def get_p2p_offers(is_buy: bool, amount: float, is_fiat: bool):
+    """Get P2P offers filtered by amount and currency type."""
+    try:
+        data = await bybit_p2p.get_p2p_orders(is_buy=is_buy)
+        if not data:
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "No P2P data available"}
+            )
+
+        offers = bybit_p2p.get_offers_by_amount(data, amount, is_fiat)
+        filtered_offers = bybit_p2p.get_only_best_offers_by_valid_makers(offers)
+        
+        return P2PResponse(
+            offers=filtered_offers,
+            html_output=bybit_p2p.generate_amount_html_output(filtered_offers, amount, is_fiat),
+        )
+    except Exception as e:
+        raise HTTPException(
+                status_code=500,
+                detail={"error": f"Service error: {e}"}
+            )
+
+# Forex Endpoints
+@router.get("/forex/{base}/{quote}", response_model=ForexResponse)
+async def get_forex_rates(base: str, quote: str = "RUB"):
+    """Get currency exchange rates from Alpha Vantage."""
+    data = await alphavantage.fetch_currency_data(base.upper(), quote.upper())
+    today, yesterday, price_7d, price_30d = alphavantage.parse_currency_data(data)
+    
+    if today and yesterday:
+        change_1d = alphavantage.calculate_change(today, yesterday)
+        change_7d = alphavantage.calculate_change(today, price_7d) if price_7d else None
+        change_30d = alphavantage.calculate_change(today, price_30d) if price_30d else None
+        
+        return ForexResponse(
+            base=base.upper(),
+            quote=quote.upper(),
+            rate=today,
+            changes=ForexChanges(
+                day1=ForexChange(absolute=change_1d[0], percent=change_1d[1]),
+                day7=ForexChange(absolute=change_7d[0], percent=change_7d[1]) if change_7d else None,
+                day30=ForexChange(absolute=change_30d[0], percent=change_30d[1]) if change_30d else None,
+            )
+        )
+    raise HTTPException(
+        status_code=500,
+        detail={"error": "Failed to fetch forex data"}
+    )
+
+# Crypto Endpoints
+@router.get("/crypto/{symbol}")
+async def get_crypto_price(symbol: str, amount: float | None = None) -> CoinmarketcapResponse:
+    """Get cryptocurrency data from CoinMarketCap."""
+    data = await coinmarketcap.get_coinmarketcap_data(symbol.upper())
+    filtered_data = coinmarketcap.filter_tickers(data)
+    
+    return CoinmarketcapResponse(
+        data=filtered_data,
+        html_output=coinmarketcap.format_crypto_price(filtered_data, amount or 0.0)
+    )
+
+@router.post("/crypto/whitelist", status_code=201)
+async def add_to_whitelist(request: CoinmarketcapWhitelistRequest):
+    """Add a cryptocurrency to the whitelist."""
+    success = coinmarketcap.add_to_whitelist(request.symbol.upper(), request.name)
+    return {"success": success}
+
+# Exchange Price Endpoint
+@router.get("/price/{symbol}", response_model=PriceResponse)
+async def get_exchange_price(symbol: str):
+    """Get cryptocurrency price from exchanges."""
+    result = await exchanges.get_price_from_exchanges(symbol.upper())
+    return result
+
+# CBR Endpoints
+@router.get("/cbr/rates", response_model=CBRResponse)
+async def get_cbr_rates():
+    """Get Central Bank of Russia exchange rates."""
+    rates = await cbr.get_cbr_exchange_rate()
+    return CBRResponse(
+        rates=rates,
+        html_output=await cbr.generate_html_output(rates)
+    )

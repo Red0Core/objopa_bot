@@ -1,8 +1,6 @@
-from typing import Any
 from curl_cffi import AsyncSession
-from dataclasses import dataclass
 import traceback
-
+from backend.models.markets import Offer
 from typing import TypedDict, List, Any
 
 class BybitP2PItem(TypedDict):
@@ -20,18 +18,6 @@ class BybitP2PResult(TypedDict):
 
 class BybitP2PResponse(TypedDict):
     result: BybitP2PResult
-
-@dataclass
-class Offer:
-    price: float
-    nickname: str
-    finish_num: int
-    is_va: bool
-    is_ba: bool
-    payment_types: set[str]
-    min_amount: float = 0
-    max_amount: float = 0
-    available_amount: float = 0
 
 PAYMENT_TYPE = {
     75: "Тинек",
@@ -134,7 +120,8 @@ def categorize_all_offers(data: BybitP2PResponse) -> dict[str, list[Offer]]:
                 if t:
                     payment_types.add(t)
             
-            entry = Offer(price, nickname, finish_num, is_va, is_ba, payment_types, min_amount, max_amount, available_amount)
+            entry = Offer(price=price, nickname=nickname, finish_num=finish_num, is_va=is_va, is_ba=is_ba, \
+                          payment_types=tuple(payment_types), min_amount=min_amount, max_amount=max_amount, available_amount=available_amount)
 
             if min_amount <= 20000:
                 categories["до 20K"].append(entry)
@@ -174,14 +161,16 @@ def get_offers_by_amount(data: BybitP2PResponse, amount: float, is_fiat: bool = 
             # В рублях, мы проверяем доступный объем в рублях
             if is_fiat:
                 if min_amount <= amount <= max_amount and available_amount*price >= amount:
-                    entry = Offer(price, nickname, finish_num, is_va, is_ba, payment_types,min_amount, max_amount, available_amount)
+                    entry = Offer(price=price, nickname=nickname, finish_num=finish_num, is_va=is_va, is_ba=is_ba, \
+                          payment_types=tuple(payment_types), min_amount=min_amount, max_amount=max_amount, available_amount=available_amount)
                     offers.append(entry)
             # В USDT, мы проверяем доступный объем в USDT
             else:
                 usdt_min_amount = min_amount / price
                 usdt_max_amount = max_amount / price
                 if usdt_min_amount <= amount <= usdt_max_amount and available_amount >= amount:
-                    entry = Offer(price, nickname, finish_num, is_va, is_ba, payment_types, min_amount, max_amount, available_amount)
+                    entry = entry = Offer(price=price, nickname=nickname, finish_num=finish_num, is_va=is_va, is_ba=is_ba, \
+                          payment_types=tuple(payment_types), min_amount=min_amount, max_amount=max_amount, available_amount=available_amount)
                     offers.append(entry)
 
         except Exception:
@@ -189,7 +178,7 @@ def get_offers_by_amount(data: BybitP2PResponse, amount: float, is_fiat: bool = 
 
     return offers
 
-def get_offers_by_valid_makers(offers: list[Offer]) -> list[Offer]:
+def get_only_best_offers_by_valid_makers(offers: list[Offer]) -> list[Offer]:
     """
     Функция для фильтрации офферов по валидным мейкерам. Предполагает сортированный по цене вариант
     """
@@ -263,10 +252,8 @@ async def get_p2p_orders(is_buy: bool = True) -> BybitP2PResponse | None:
 
     async with AsyncSession() as s:
         s.headers.update(headers)
-        req = await s.post("https://api2.bybit.com/fiat/otc/item/online", json=json_data)
+        req = await s.post("https://api2.bybit.com/fiat/otc/item/online", json=json_data) # type: ignore
         return req.json() # type: ignore
-
-    return None
 
 if __name__ == "__main__":
     import asyncio
@@ -276,14 +263,14 @@ if __name__ == "__main__":
         exit(1)
     categorized_data = categorize_all_offers(data)
     for label in categorized_data:
-        categorized_data[label] = get_offers_by_valid_makers(categorized_data[label])
+        categorized_data[label] = get_only_best_offers_by_valid_makers(categorized_data[label])
     html_output = generate_categories_html_output(categorized_data)
     print(html_output)
 
     offers = get_offers_by_amount(data, 40000, True)
-    html_output = generate_amount_html_output(get_offers_by_valid_makers(offers), 40000, True)
+    html_output = generate_amount_html_output(get_only_best_offers_by_valid_makers(offers), 40000, True)
     print(html_output)
 
     offers = get_offers_by_amount(data, 500, False)
-    html_output = generate_amount_html_output(get_offers_by_valid_makers(offers), 500, False)
+    html_output = generate_amount_html_output(get_only_best_offers_by_valid_makers(offers), 500, False)
     print(html_output)

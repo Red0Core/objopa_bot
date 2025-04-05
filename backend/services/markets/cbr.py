@@ -1,14 +1,11 @@
 from typing import Any, TypedDict, cast
 from httpx import AsyncClient, Response
-from logger import logger
+from backend.logger import logger
+from backend.models.markets import RateItem
 
 class ValuteItem(TypedDict):
     Value: float
     Previous: float
-
-class RateItem(TypedDict):
-    rate: float
-    diff: float
 
 async def get_cbr_exchange_rate() -> dict[str, RateItem | str]:
     url = "https://www.cbr-xml-daily.ru/daily_json.js"
@@ -41,8 +38,8 @@ async def get_cbr_exchange_rate() -> dict[str, RateItem | str]:
                 logger.info("Успешно получили курсы валют: USD={USD}, EUR={EUR}", USD=usd_rate, EUR=eur_rate)
 
                 return {
-                    "USD": {"rate": round(usd_rate, 2), "diff": usd_diff},
-                    "EUR": {"rate": round(eur_rate, 2), "diff": eur_diff},
+                    "USD": RateItem(rate=round(usd_rate, 2), diff=usd_diff),
+                    "EUR": RateItem(rate=round(eur_rate, 2), diff=eur_diff),
                 }
 
             logger.error(f"Ошибка HTTP {response.status_code} при запросе курсов валют")
@@ -53,27 +50,17 @@ async def get_cbr_exchange_rate() -> dict[str, RateItem | str]:
         return {"error": str(e)}
 
 
-async def generate_cbr_output() :
-    rates = await get_cbr_exchange_rate()
-    if "error" in rates:
-        output = f"Ошибка при получении курсов ЦБ РФ: {rates['error']}"
-        logger.error(output)
-        return output
-
+async def generate_html_output(rates: dict[str, RateItem | str]) -> str:
+    """Генерирует HTML-вывод для курсов валют."""
     usd_data = rates.get("USD")
     eur_data = rates.get("EUR")
-
-    if not isinstance(usd_data, dict) or not isinstance(eur_data, dict):
-        return "Ошибка: данные по валютам недоступны"
-
-    usd_rate = usd_data["rate"]
-    eur_rate = eur_data["rate"]
-    usd_diff = usd_data["diff"]
-    eur_diff = eur_data["diff"]
+    if usd_data is None or isinstance(usd_data, str) \
+        or eur_data is None or isinstance(eur_data, str):
+        return "Ошибка получения данных о курсах валют."
 
     return (
         f"Курсы валют ЦБ РФ на сегодня:\n"
-        f"💵 Доллар США: <code>{usd_rate} ₽ ({'+' if usd_diff > 0 else ''}{usd_diff})</code>\n"
-        f"💶 Евро: <code>{eur_rate} ₽ ({'+' if eur_diff > 0 else ''}{eur_diff})</code>\n"
+        f"💵 Доллар США: <code>{usd_data.rate} ₽ ({'+' if usd_data.diff > 0 else ''}{usd_data.diff})</code>\n"
+        f"💶 Евро: <code>{eur_data.rate} ₽ ({'+' if eur_data.diff > 0 else ''}{eur_data.diff})</code>\n"
     )
     

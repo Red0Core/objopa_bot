@@ -3,7 +3,7 @@ from lxml import html, etree
 from typing import cast
 
 ZODIAC_RU_MAP = {
-    "taurus": "Телец",
+    "tourus": "Телец",
     "cancer": "Рак",
     "libra": "Весы",
     "scorpio": "Скорпион",
@@ -18,7 +18,7 @@ ZODIAC_RU_MAP = {
 }
 
 ZODIAC_EMOJI = {
-    "taurus" : "♉",
+    "tourus" : "♉",
     "cancer" : "♋",
     "libra" : "♎",
     "scorpio" : "♏",

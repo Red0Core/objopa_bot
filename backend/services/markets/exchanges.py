@@ -1,7 +1,9 @@
 from httpx import AsyncClient
 import asyncio
 
-async def fetch_price(session: AsyncClient, url: str) -> dict[str, float | str]:
+from backend.models.markets import PriceResponse
+
+async def fetch_price(session: AsyncClient, url: str) -> PriceResponse:
     """
     Выполняет запрос к API биржи и возвращает результат.
     """
@@ -11,11 +13,11 @@ async def fetch_price(session: AsyncClient, url: str) -> dict[str, float | str]:
         data = response.json()
         if "msg" in data:  # Проверка на ошибку API
             raise ValueError(data["msg"])
-        return {"symbol": data["symbol"], "price": float(data["price"])}
+        return PriceResponse(symbol=data["symbol"], price=float(data["price"]))
     except Exception as e:
-        return {"error": str(e)}
+        return PriceResponse(error=str(e))  # Возвращаем ошибку в формате PriceResponse
 
-async def get_price_from_exchanges(symbol: str) -> dict[str, float | str]:
+async def get_price_from_exchanges(symbol: str) -> PriceResponse:
     """
     Запрашивает цену у двух бирж (Binance и MEXC) с приоритетом Binance.
     """
@@ -34,9 +36,7 @@ async def get_price_from_exchanges(symbol: str) -> dict[str, float | str]:
 
     # Приоритетный результат от Binance, затем MEXC
     for result in results:
-        if "error" not in result:
+        if result.error is not None:
             return result
 
-    # Если оба запроса завершились ошибкой
-    errors = ", ".join(str(result["error"]) for result in results if "error" in result)
-    return {"error": errors}
+    return results[0]  # Возвращаем ошибку от первой биржи (Binance)

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from services.misc.horoscope_mail_ru import get_daily_horoscope_with_rating, get_financial_horoscope, ZODIAC_RU_MAP, ZODIAC_EMOJI
-from models.horoscope import HoroscopeResponse
+from backend.services.misc.horoscope_mail_ru import get_daily_horoscope_with_rating, get_financial_horoscope, ZODIAC_RU_MAP, ZODIAC_EMOJI
+from backend.models.horoscope import HoroscopeResponse
 
 router = APIRouter(prefix="/horoscope", tags=["horoscope"])
 

@@ -1,26 +1,10 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 from httpx import AsyncClient
-from config import COINMARKETCAP_API_KEY
-from logger import logger
+from backend.config import COINMARKETCAP_API_KEY
+from backend.logger import logger
 import ujson
-
-from typing import TypedDict
-
-class QuoteData(TypedDict):
-    price: float
-    percent_change_1h: float
-    percent_change_24h: float
-    percent_change_7d: float
-    percent_change_30d: float
-    market_cap: float | None
-    volume_24h: float
-
-class CoinData(TypedDict):
-    name: str
-    symbol: str
-    is_active: int
-    quote: dict[str, QuoteData]
+from backend.models.markets import CoinData, QuoteData
 
 COINMARKETCAP_WHITELIST = Path('storage') / "whitelist_coinmarketcap.json"
 COINMARKETCAP_WHITELIST.parent.mkdir(parents=True, exist_ok=True)
@@ -80,29 +64,28 @@ def load_whitelist(symbol: str, file_path: Path = COINMARKETCAP_WHITELIST) -> li
         logger.error(f"Файл {file_path} содержит некорректный JSON.")
         return []
 
-def format_crypto_price(data: list[CoinData], amount_of_tokens: float = 0.0):
+def format_crypto_price(data: Sequence[CoinData], amount_of_tokens: float = 0.0):
     """
     Форматирует данные о криптовалюте для красивого вывода.
     """
     output = ""
     for coin_data in data:
-        quote = coin_data.get("quote", {}).get("USD", {})
-        price = float(quote.get('price', 0))
-
-        if not coin_data or not quote:
+        quote = coin_data.quote.get('USD')
+        if not coin_data or not quote or not quote.price:
             return "Ошибка: данные о криптовалюте отсутствуют."
+        price = quote.price
 
         # Формируем красиво оформленное сообщение
         message = (
-            f"🔹 {coin_data.get('name', 'N/A')} (<code>{coin_data.get('symbol', 'N/A')}</code>)\n"
+            f"🔹 {coin_data.name} (<code>{coin_data.symbol}</code>)\n"
             f"💵 <b>Цена:</b> ${price:.5f}\n"
             f"📊 <b>Изменения:</b>\n"
-            f"  - За 1 час: {quote.get('percent_change_1h', 0):+.2f}%\n"
-            f"  - За 24 часа: {quote.get('percent_change_24h', 0):+.2f}%\n"
-            f"  - За 7 дней: {quote.get('percent_change_7d', 0):+.2f}%\n"
-            f"  - За 30 дней: {quote.get('percent_change_30d', 0):+.2f}%\n"
-            f"💹 <b>Капа:</b> ${quote.get('market_cap', 0):,.2f}\n"
-            f"🔄 <b>Объем за 24 часа:</b> ${quote.get('volume_24h', 0):,.2f}\n"
+            f"  - За 1 час: {quote.percent_change_1h:+.2f}%\n"
+            f"  - За 24 часа: {quote.percent_change_24h:+.2f}%\n"
+            f"  - За 7 дней: {quote.percent_change_7d:+.2f}%\n"
+            f"  - За 30 дней: {quote.percent_change_30d:+.2f}%\n"
+            f"💹 <b>Капа:</b> ${quote.market_cap:,.2f}\n"
+            f"🔄 <b>Объем за 24 часа:</b> ${quote.volume_24h:,.2f}\n"
         )
 
         # Выводит сумму баксов по прайсу токена
@@ -113,7 +96,7 @@ def format_crypto_price(data: list[CoinData], amount_of_tokens: float = 0.0):
 
     return output or "Ошибка: данные о криптовалюте отсутствуют."
 
-def filter_tickers(data: list[CoinData], file_path: Path = COINMARKETCAP_WHITELIST) -> list[CoinData]:
+def filter_tickers(data: list[CoinData], file_path: Path = COINMARKETCAP_WHITELIST) -> Sequence[CoinData]:
     """
     Фильтрует список тикеров на основе заданных условий.
     
@@ -122,13 +105,16 @@ def filter_tickers(data: list[CoinData], file_path: Path = COINMARKETCAP_WHITELI
     """
     filtered_tickers: list[CoinData] = []
     for coin_data in data:
-        whitelist = load_whitelist(coin_data['symbol'], file_path)
-        market_cap = coin_data["quote"]["USD"]["market_cap"]
+        whitelist = load_whitelist(coin_data.symbol, file_path)
+        usd_info = coin_data.quote.get("USD")
+        if not usd_info:
+            continue
+        market_cap = usd_info.market_cap
         try:
-            if coin_data['name'] not in whitelist: # Не скипаем белый лист
+            if coin_data.name not in whitelist: # Не скипаем белый лист
                 if market_cap is None or market_cap < 1:
                     continue  # Пропустить, если капитализация меньше заданной
-                if coin_data["is_active"] != 1:
+                if coin_data.is_active != 1:
                     continue  # Пропустить, если токен неактивен
             
             # Если тикер прошел все условия, добавляем его в результат
@@ -138,7 +124,14 @@ def filter_tickers(data: list[CoinData], file_path: Path = COINMARKETCAP_WHITELI
 
     return filtered_tickers
 
-async def get_coinmarketcap_data(ticker: str, **params: dict[str, Any]) -> CoinData:
+async def get_coinmarketcap_data(ticker: str, **params: dict[str, Any]) -> list[CoinData]:
+    """
+    Получает данные о криптовалютах по тикеру из CoinMarketCap.
+    
+    :param ticker: Символ криптовалюты (например, 'BTC').
+    :param params: Дополнительные параметры запроса.
+    :return: Данные о всех криптовалютах по тикеру.
+    """
     ticker = ticker.upper()
     headers = {
         'Accepts': 'application/json',
@@ -156,4 +149,4 @@ async def get_coinmarketcap_data(ticker: str, **params: dict[str, Any]) -> CoinD
         json_data = response.json()
         if json_data.get("data") is None:
             logger.error(f"Данные от CMC не поступили: {ujson.dumps(json_data, indent=5)}")
-        return json_data
+        return [CoinData.model_validate(x) for x in json_data['data'][ticker]]

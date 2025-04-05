@@ -1,6 +1,6 @@
 from typing import Any, cast
 from curl_cffi.requests import AsyncSession, Response
-from config import ALPHAVANTAGE_API_KEY
+from backend.config import ALPHAVANTAGE_API_KEY
 from datetime import datetime
 
 async def fetch_currency_data(symbol: str, market: str = "RUB") -> dict[str, Any]:
