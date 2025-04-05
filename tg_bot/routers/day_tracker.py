@@ -28,7 +28,7 @@ def save_trackers(data):
 
 @track_router.message(Command("track"))
 async def handle_tracking(message: Message):
-    args = message.text.strip().split(maxsplit=2)
+    args = message.text.strip().split(maxsplit=2) if message.text else []
     if len(args) < 2 or args[1] not in ["start", "stop", "status", "desc", "stats"]:
         await message.reply("Использование:\n"
                             "/track start название\n"
@@ -37,7 +37,9 @@ async def handle_tracking(message: Message):
                             "/track status\n"
                             "/track desc название описание")
         return
-
+    if message.from_user is None:
+        await message.reply("Пользователь не найден.")
+        return
     action = args[1]
     user_id = str(message.from_user.id)
     user_name = message.from_user.full_name or message.from_user.first_name or "Безымянный герой"

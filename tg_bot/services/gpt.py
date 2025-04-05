@@ -53,6 +53,7 @@ class BaseOpenAIModel(AIModelInterface):
 
     async def get_response(self, prompt: str, system_prompt: str = "") -> str:
         messages = self.prepare_messages(prompt, system_prompt)
+        content = None
         try:
             completion = await self.client.chat.completions.create(
                 model=self.model,
@@ -66,8 +67,8 @@ class BaseOpenAIModel(AIModelInterface):
                 elif finish_reason == "stop":
                     logger.info("Ответ завершён корректно.")
 
-                logger.info(f"Ответ от {self.base_url}: {completion.choices[0].message.content}")
-                return completion.choices[0].message.content
+                content = completion.choices[0].message.content
+                logger.info(f"Ответ от {self.base_url}: {content}")
 
         except openai.AuthenticationError:
             raise APIKeyError(f"Неверный или отсутствующий API-ключ для {self.base_url}.")
@@ -77,6 +78,8 @@ class BaseOpenAIModel(AIModelInterface):
             raise AIModelError(f"Проблемы с подключением к {self.base_url}: {str(e)}")
         except openai.OpenAIError as e:
             raise UnexpectedResponseError(f"Неожиданная ошибка {self.base_url}: {str(e)}")
+
+        return content if content is not None else ""
 
 class OpenAIModel(BaseOpenAIModel):
     def __init__(self, api_key: str, model: str = "gpt-4"):
@@ -98,31 +101,42 @@ class GeminiModel(AIModelInterface):
         self.model = model
         self.client = genai.Client(api_key=self.api_key)
 
-    async def get_response(self, prompt: str, system_prompt: str = None) -> str:
+    async def get_response(self, prompt: str, system_prompt: str | None = None) -> str:
         response = await self.client.aio.models.generate_content(
             model=self.model,
             contents=prompt,
             config=types.GenerateContentConfig(system_instruction=system_prompt)
         )
+        
+        # Early return if no valid response
+        if (not response or not response.candidates or 
+            not response.candidates[0].content or 
+            not response.candidates[0].content.parts):
+            logger.error("Пустой ответ от Gemini.")
+            return ""
 
-        output = ""
+        # Process all non-thought parts and join them
+        result_parts = []
         for part in response.candidates[0].content.parts:
-            if part.thought == True:
+            if not part.text:
+                continue
+                
+            if part.thought:
                 logger.info(f"Model Thought:\n{part.text}\n")
             else:
-                logger.info(f"\nModel Response:\n{part.text}\n")
-                output = part.text
+                logger.info(f"Model Response:\n{part.text}\n")
+                result_parts.append(part.text)
         
-        return output
+        return "".join(result_parts) if result_parts else ""
 
 class AIChatInterface:
     def new_chat(self, system_prompt: str = ""):
         """Инициализация чата с системным промптом"""
         pass
     
-    async def send_message(self, prompt: str):
+    async def send_message(self, prompt: str) -> str:
         """Отправить сообщение и получить ответ"""
-        pass    
+        return ""    
 
 class GeminiChatModel(AIChatInterface):
     def __init__(self, api_key: str, model: str = 'gemini-2.0-flash-exp'):
@@ -151,5 +165,6 @@ class GeminiChatModel(AIChatInterface):
                 )
             )
 
-    async def send_message(self, prompt: str):
-        return (await self.chat.send_message(prompt)).text
+    async def send_message(self, prompt: str) -> str:
+        response = await self.chat.send_message(prompt)
+        return response.text if response and response.text is not None else ""

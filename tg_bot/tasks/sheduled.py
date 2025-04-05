@@ -1,5 +1,5 @@
 import asyncio
-from config import ZA_IDEU_CHAT_ID, OBZHORA_CHAT_ID, MAIN_ACC
+from config import OBZHORA_CHAT_ID, MAIN_ACC
 from services.cbr import get_cbr_exchange_rate
 from services.horoscope_mail_ru import get_horoscope_mail_ru
 from datetime import datetime, timedelta
@@ -37,8 +37,8 @@ async def send_daily_cbr_rates(bot, chat_id):
     """
     rates = await get_cbr_exchange_rate()
     if "error" in rates:
-        logger.error(message)
         message = f"Ошибка при получении курсов: {rates['error']}"
+        logger.error(message)
     else:
         usd_rate = rates["USD"]["rate"]
         eur_rate = rates["EUR"]["rate"]
@@ -63,7 +63,7 @@ async def send_daily_horoscope_for_brothers(bot):
     }
     # Для каждого знака получаем ежедневный гороскоп и рейтинг финансов из страницы prediction
     for zodiac_eng, zodiac_ru in zodiac_map.items():
-        message = await get_horoscope_mail_ru(zodiac_eng, zodiac_ru)
+        message = await get_horoscope_mail_ru(zodiac_eng)
         await bot.send_message(OBZHORA_CHAT_ID, message)
         logger.info(f"Отправляем еждедневные гороскопы в чат {OBZHORA_CHAT_ID} для {zodiac_ru}")
         await asyncio.sleep(2)

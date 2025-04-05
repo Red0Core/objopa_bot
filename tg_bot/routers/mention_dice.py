@@ -1,4 +1,4 @@
-from aiogram import Router
+from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 from services.gpt import GeminiModel, OpenRouterModel, APIKeyError, AIModelError, RateLimitError, UnexpectedResponseError, QuotaExceededError
@@ -67,14 +67,15 @@ def markdown_to_telegram_html(text: str) -> str:
     return text
 
 @router.message(Command("dice"))
-async def handle_mention(message: Message, bot):
+async def handle_mention(message: Message, bot: Bot):
     # Отвечаем на упоминание
     await message.reply("Сейчас я решу это с помощью кубика! 🎲")
     
     # Бросаем кубик
     dice_message = await bot.send_dice(message.chat.id)
-    dice_value = dice_message.dice.value  # Значение кубика (1-6)
-
+    dice_value = dice_message.dice.value  # Значение кубика (1-6) # type: ignore[union-attr]
+    text = message.text.split(maxsplit=1)[1] if message.text else ""
+    
     system_prompt = """
 Ты — креативный и весёлый помощник. 
 Когда человек обращается к тебе, ты отвечаешь в стиле вдохновляющего и немного шуточного мотивационного письма или даёшь креативный список "за и против".
@@ -85,7 +86,7 @@ async def handle_mention(message: Message, bot):
 """
 
     action_prompt = f"""
-Пользователь задумался о следующем: "{message.text.split(maxsplit=1)[1]}". Бросок кубика показал {dice_value}. Напиши креативный и весёлый текст:
+Пользователь задумался о следующем: "{text}". Бросок кубика показал {dice_value}. Напиши креативный и весёлый текст:
 - Если кубик показал 1-3: Напиши вдохновляющее письмо, объясняющее, почему это отличная идея.
 - Если кубик показал 4-6: Напиши креативный текст с элементами юмора, объясняющий, почему это плохая идея.
 

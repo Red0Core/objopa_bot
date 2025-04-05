@@ -33,7 +33,7 @@ if __name__ == "__main__":
         asyncio.run(main())
     elif platform.system() == "Linux":
         try:
-            import uvloop
+            import uvloop # type: ignore[import]
             logger.info("Используется uvloop для Linux.")
             uvloop.run(main())
         except ImportError:

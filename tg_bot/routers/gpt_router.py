@@ -6,10 +6,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from config import GEMINI_API_KEY
 from .mention_dice import markdown_to_telegram_html, split_message_by_paragraphs, AI_CLIENT
-from services.gpt import APIKeyError, RateLimitError, QuotaExceededError, UnexpectedResponseError, AIModelError, GeminiChatModel
+from services.gpt import AIChatInterface, APIKeyError, RateLimitError, QuotaExceededError, UnexpectedResponseError, AIModelError, GeminiChatModel
 from services.gptchat_manager import ChatSessionManager
 from logger import logger
-from collections import defaultdict
 
 router = Router()
 
@@ -33,25 +32,43 @@ class ChatStates(StatesGroup):
     waiting_for_message = State()
 
 class ChatFSMStateSessionManager(ChatSessionManager):
-    def add_state(self, state: State):
+    def __init__(self):
+        super().__init__()
+        self.state: FSMContext | None = None
+    
+    def set_state(self, state: FSMContext):
+        """Store FSMContext for later use in chat session management"""
         self.state = state
         return self
 
-    async def remove_chat(self, chat_id):
-        super().remove_chat(chat_id)
-        await self.state.clear()
+    async def clear_state(self) -> None:
+        """Очистка FSM"""
+        if self.state is not None:
+            await self.state.clear()
+    
+    async def async_get_chat(self, chat_id) -> AIChatInterface | None:
+        chat = super().get_chat(chat_id)
+        if chat is None:
+            await self.clear_state()
+
+        return chat
 
 @router.message(Command("ask"))
 async def handle_ask_gpt(message: Message):
     try:
-        # Генерируем объяснение через OpenAI API
-        text = await AI_CLIENT.get_response(
-            message.text.split(maxsplit=1)[1]
-        )
-        cleaned_text = markdown_to_telegram_html(text)
-        messages = split_message_by_paragraphs(cleaned_text)
-        for i in messages:
-            await message.answer(i, parse_mode="HTML")
+        if message.text:
+            text_input = message.text.split(maxsplit=1)
+            if len(text_input) < 2:
+                await message.answer("Использование: /ask <ваш вопрос>")
+                return
+            # Генерируем объяснение через OpenAI API
+            text = await AI_CLIENT.get_response(
+                text_input[1],
+            )
+            cleaned_text = markdown_to_telegram_html(text)
+            messages = split_message_by_paragraphs(cleaned_text)
+            for i in messages:
+                await message.answer(i, parse_mode="HTML")
     except APIKeyError as e:
         await message.answer("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
     except RateLimitError as e:
@@ -68,17 +85,17 @@ async def start_session(message: Message, state: FSMContext):
     chat_id = message.chat.id
     chat_manager = ChatFSMStateSessionManager()
 
-    if not chat_manager.get_chat(chat_id):
+    if not await chat_manager.async_get_chat(chat_id):
         chat_model = GeminiChatModel(api_key=GEMINI_API_KEY)
-        text_arr = message.text.split(maxsplit=1)
-        if len(text_arr) > 1:
-            chat_model.new_chat(text_arr[1])
+        text_input = message.text.split(maxsplit=1) if message.text else ""
+        if len(text_input) > 1:
+            chat_model.new_chat(text_input[1])
         else:
             chat_model.new_chat()
         chat_manager.create_chat(chat_id, chat_model)
 
         await state.set_state(ChatStates.waiting_for_message)
-        chat_manager.add_state(ChatStates.waiting_for_message)
+        chat_manager.set_state(state)
 
         await message.answer(
             "Чат создан! Можете начать общение.\n" \
@@ -93,8 +110,8 @@ async def continue_session(message: Message, state: FSMContext):
     chat_id = message.chat.id
     chat_manager = ChatFSMStateSessionManager()
 
-    chat_session = chat_manager.get_chat(chat_id)
-    if chat_session:
+    chat_session = await chat_manager.async_get_chat(chat_id)
+    if chat_session and message.from_user:
         ids = whitelist.get(message.chat.id, {})
         user_name = ids.get(message.from_user.id, f"{message.from_user.first_name} {message.from_user.last_name or ''}")
 
@@ -109,15 +126,13 @@ async def continue_session(message: Message, state: FSMContext):
     else:
         await message.answer("Используйте команду /chat для начала общения.")
 
-from aiogram.filters import Command
-
 @router.message(Command("add_me_as"))
 async def add_user_to_whitelist(message: Message):
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2:
+    text_input = message.text.split(maxsplit=1) if message.text else ""
+    if len(text_input) < 2 or not message.from_user:
         await message.reply("Использование: /add_me_as  имя")
         return
-    custom_name = args[1]
+    custom_name = text_input[1]
     if message.chat.id not in whitelist:
         whitelist[message.chat.id] = {}
     whitelist[message.chat.id][message.from_user.id] = custom_name

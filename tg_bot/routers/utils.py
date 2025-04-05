@@ -9,6 +9,8 @@ async def log_chat_id(message: types.Message):
 
 @router.message(F.animation)
 async def get_gif_file_id(message: types.Message):
+    if not message.animation:
+        return
     gif_file_id = message.animation.file_id
     await message.reply(f"Вот ваш file_id для GIF: {gif_file_id}")
     

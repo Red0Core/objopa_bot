@@ -1,5 +1,3 @@
-from pathlib import Path
-import pprint
 from services.coinmarketcap import *
 from services.exchanges import get_price_from_exchanges
 import services.bybit_p2p as p2p
@@ -7,6 +5,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 import traceback
+from logger import logger
 
 router = Router()
 
@@ -16,7 +15,7 @@ async def get_price_handler(message: Message):
     Выводит цену из Бинанса или Мекса
     """
     # Парсим аргумент команды
-    args = message.text.split(maxsplit=1)
+    args = message.text.split(maxsplit=1) if message.text else []
     if len(args) < 2:
         await message.reply("Укажите символ валютной пары. Пример: /price BTCUSDT")
         return
@@ -34,7 +33,7 @@ async def get_cmc_handler(message: Message):
     """
     Выводит данные токена из coinmarketcap
     """
-    args = message.text.split(maxsplit=3)
+    args = message.text.split(maxsplit=3) if message.text else []
     if len(args) < 2:
         await message.reply("Укажите тикер койна. Пример /cmc BTC")
         return
@@ -64,7 +63,7 @@ async def add_to_whitelist_coinmarketcap_handler(message: Message):
     """
     Добавялет нужный тикер, если фильтруется он coinmarketcap
     """
-    args = message.text.split(maxsplit=2)
+    args = message.text.split(maxsplit=2) if message.text else []
     if len(args) < 3:
         await message.reply("Укажите тикер койна и его имя. Пример /cmcwl MKL Merkle Trade")
         return
@@ -86,7 +85,7 @@ async def current_p2p_bybit_orders(message: Message):
     """
     Выводит текущие сообщения из p2p
     """
-    args = message.text.split()
+    args = message.text.split() if message.text else []
     if len(args) < 2:
         await message.reply("Примерк команд. Пример: /p2p buy | /p2p sell | /p2p buy 1000 USDT | /p2p buy 1000 RUB")
         return

@@ -7,7 +7,7 @@ from functools import wraps
 class MessageQueue:
     _instance = None
 
-    def __new__(cls, bot: Bot = None, rate_limit: int = 20, time_window: int = 60):
+    def __new__(cls, bot: Bot | None = None, rate_limit: int = 20, time_window: int = 60):
         """
         Создаёт или возвращает единственный экземпляр класса.
         """

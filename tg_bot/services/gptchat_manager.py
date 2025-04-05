@@ -8,8 +8,11 @@ class ChatSessionManager:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(ChatSessionManager, cls).__new__(cls)
-            cls._instance.sessions = {}  # Хранилище чатов
+            cls._instance._init()
         return cls._instance
+    
+    def _init(self):
+        self.sessions = {}  # Хранилище чатов
 
     def create_chat(self, chat_id, chat_model: AIChatInterface):
         self.sessions[chat_id] = {
