@@ -1,10 +1,11 @@
 from pathlib import Path
 from curl_cffi.requests import AsyncSession
 from datetime import datetime
-from logger import logger
+from core.config import STORAGE_PATH
+from core.logger import logger
 import os
 
-LAST_ACTIVITY_FILE = Path('storage') / "last_activity_id.txt"
+LAST_ACTIVITY_FILE = STORAGE_PATH / "last_activity_id.txt"
 
 def save_last_activity_id(activity_id):
     with open(LAST_ACTIVITY_FILE, "w") as file:

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import openai
-from logger import logger
+from core.logger import logger
 from google import genai
 from google.genai import types
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch

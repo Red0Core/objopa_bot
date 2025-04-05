@@ -1,13 +1,12 @@
 from pathlib import Path
 from typing import Any, Sequence
 from httpx import AsyncClient
-from core.config import COINMARKETCAP_API_KEY
+from core.config import COINMARKETCAP_API_KEY, STORAGE_PATH
 from core.logger import logger
 import ujson
 from backend.models.markets import CoinData
 
-COINMARKETCAP_WHITELIST = Path('storage') / "whitelist_coinmarketcap.json"
-COINMARKETCAP_WHITELIST.parent.mkdir(parents=True, exist_ok=True)
+COINMARKETCAP_WHITELIST = STORAGE_PATH / "whitelist_coinmarketcap.json"
 
 def add_to_whitelist(symbol: str, name: str, file_path: Path = COINMARKETCAP_WHITELIST) -> bool:
     """

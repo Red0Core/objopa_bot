@@ -7,10 +7,12 @@ import ujson
 import os
 import html
 
+from core.config import STORAGE_PATH
+
 from .mention_dice import markdown_to_telegram_html, split_message_by_paragraphs, AI_CLIENT
 
 track_router = Router()
-TRACK_FILE = Path('storage') / "trackers.json"
+TRACK_FILE = STORAGE_PATH / "trackers.json"
 
 
 # ===== Хранилище =====

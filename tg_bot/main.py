@@ -4,11 +4,11 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.strategy import FSMStrategy
 
-from config import TOKEN_BOT
+from core.config import TOKEN_BOT
 from routers import setup_routers
 from tasks.sheduled import on_startup
 import platform
-from logger import logger
+from core.logger import logger
 from services.message_queue import MessageQueue
 
 async def main():

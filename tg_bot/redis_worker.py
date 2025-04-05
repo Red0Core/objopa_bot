@@ -2,11 +2,9 @@ import os
 import asyncio
 import ujson
 import redis.asyncio as redis
-from logger import logger
-from config import MAIN_ACC
+from core.logger import logger
+from core.config import MAIN_ACC, REDIS_HOST, REDIS_PORT
 
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
 async def poll_redis(bot):

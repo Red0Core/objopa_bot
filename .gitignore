@@ -5,3 +5,4 @@ objopa.code-workspace
 .pytest_cache/
 storage/
 logs/
+**/__pycache__/

@@ -1,6 +1,6 @@
 from .gpt import AIChatInterface
 from datetime import datetime, timedelta
-from logger import logger
+from core.logger import logger
 
 class ChatSessionManager:
     _instance = None

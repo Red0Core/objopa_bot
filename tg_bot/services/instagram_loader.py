@@ -4,7 +4,7 @@ import os
 import re
 import asyncio
 from curl_cffi.requests import AsyncSession
-from logger import logger
+from core.logger import logger
 
 INSTAGRAM_REGEX = re.compile(
     r"(https?:\/\/(?:www\.)?instagram\.com\/(?:share\/)?(p|reel|tv|stories)\/[\w\-]+)"

@@ -4,16 +4,16 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from config import GEMINI_API_KEY
+from core.config import GEMINI_API_KEY, STORAGE_PATH
 from .mention_dice import markdown_to_telegram_html, split_message_by_paragraphs, AI_CLIENT
 from services.gpt import AIChatInterface, APIKeyError, RateLimitError, QuotaExceededError, UnexpectedResponseError, AIModelError, GeminiChatModel
 from services.gptchat_manager import ChatSessionManager
-from logger import logger
+from core.logger import logger
 
 router = Router()
 
 import ujson
-WHITELIST_PATH = Path('storage') / "whitelist_gpt.json"
+WHITELIST_PATH = STORAGE_PATH / "whitelist_gpt.json"
 
 def load_whitelist(file_path=WHITELIST_PATH):
     try:

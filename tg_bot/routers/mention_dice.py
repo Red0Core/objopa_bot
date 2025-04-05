@@ -2,7 +2,7 @@ from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 from services.gpt import GeminiModel, OpenRouterModel, APIKeyError, AIModelError, RateLimitError, UnexpectedResponseError, QuotaExceededError
-from config import GEMINI_API_KEY
+from core.config import GEMINI_API_KEY
 import re
 
 router = Router()

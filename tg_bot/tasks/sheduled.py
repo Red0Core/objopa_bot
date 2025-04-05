@@ -1,9 +1,11 @@
 import asyncio
-from config import OBZHORA_CHAT_ID, MAIN_ACC
-from services.cbr import get_cbr_exchange_rate
+
+import httpx
+from openai import chat
+from core.config import BACKEND_ROUTE, OBZHORA_CHAT_ID, MAIN_ACC
 from services.horoscope_mail_ru import get_horoscope_mail_ru
 from datetime import datetime, timedelta
-from logger import logger
+from core.logger import logger
 import routers.day_tracker as day_tracker
 import redis_worker
 
@@ -35,25 +37,22 @@ async def send_daily_cbr_rates(bot, chat_id):
     """
     Ежедневно отправляет курсы валют в указанный чат.
     """
-    rates = await get_cbr_exchange_rate()
-    if "error" in rates:
-        message = f"Ошибка при получении курсов: {rates['error']}"
-        logger.error(message)
-    else:
-        usd_rate = rates["USD"]["rate"]
-        eur_rate = rates["EUR"]["rate"]
-        usd_diff = rates["USD"]["diff"]
-        eur_diff = rates["EUR"]["diff"]
-        message = (
-            f"Курсы валют ЦБ РФ на сегодня:\n"
-            f"💵 Доллар США: {usd_rate} ₽ ({'+' if usd_diff > 0 else ''}{usd_diff})\n"
-            f"💶 Евро: {eur_rate} ₽ ({'+' if eur_diff > 0 else ''}{eur_diff})"
-        )
-
+    try:
+        async with httpx.AsyncClient() as session:
+            response = await session.get(f"{BACKEND_ROUTE}/markets/cbr")
+            response.raise_for_status()
+            data = response.json()
+            await bot.send_message(chat_id=chat_id, text=data['html_output'], parse_mode="html")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 400:
+            await bot.send_message(chat_id=chat_id, text="Ошибка: неверный запрос")
+        else:
+            await bot.send_message(chat_id=chat_id, text="Ошибка: не удалось получить данные")
         logger.info(f"Отправляем курсы валют в чат {chat_id}")
-
-    await bot.send_message(chat_id=chat_id, text=message)
-
+    except Exception as e:
+        await bot.send_message(chat_id=chat_id, text="Ошибка: не удалось получить данные")
+        logger.error(f"Ошибка при отправке курсов валют в чат {chat_id}: {e}")
+    
 @daily_schedule(hour=6, minute=0)
 async def send_daily_horoscope_for_brothers(bot):
     zodiac_map = {

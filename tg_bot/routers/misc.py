@@ -4,10 +4,10 @@ from aiogram import Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, FSInputFile, InputMediaPhoto, MediaUnion
 import wolframalpha # type: ignore
-from config import GIFS_ID, WOLFRAMALPHA_TOKEN
+from core.config import GIFS_ID, WOLFRAMALPHA_TOKEN
 from services.horoscope_mail_ru import format_horoscope, get_horoscope_mail_ru
 from services.instagram_loader import download_instagram_media, INSTAGRAM_REGEX
-from logger import logger
+from core.logger import logger
 import asyncio
 
 router = Router()
