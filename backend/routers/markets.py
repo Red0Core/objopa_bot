@@ -74,8 +74,14 @@ async def get_crypto_price(symbol: str, amount: float | None = None) -> Coinmark
 @router.post("/crypto/whitelist", status_code=201)
 async def add_to_whitelist(request: CoinmarketcapWhitelistRequest):
     """Add a cryptocurrency to the whitelist."""
-    success = coinmarketcap.add_to_whitelist(request.symbol.upper(), request.name)
-    return {"success": success}
+    for i in (await coinmarketcap.get_coinmarketcap_data(request.symbol.upper())):
+        if request.name == i.name:
+            coinmarketcap.add_to_whitelist(request.symbol.upper(), request.name)
+            return {"success": request.model_dump()}
+    raise HTTPException(
+        status_code=400,
+        detail={"error": "Invalid symbol or name"}
+    )
 
 # Exchange Price Endpoint
 @router.get("/price/{symbol}", response_model=PriceResponse)

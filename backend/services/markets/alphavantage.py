@@ -1,6 +1,6 @@
 from typing import Any, cast
 from curl_cffi.requests import AsyncSession, Response
-from backend.config import ALPHAVANTAGE_API_KEY
+from core.config import ALPHAVANTAGE_API_KEY
 from datetime import datetime
 
 async def fetch_currency_data(symbol: str, market: str = "RUB") -> dict[str, Any]:
@@ -18,7 +18,7 @@ async def fetch_currency_data(symbol: str, market: str = "RUB") -> dict[str, Any
         "apikey": ALPHAVANTAGE_API_KEY,
     }
 
-    async with AsyncSession() as session:
+    async with AsyncSession() as session: # type: ignore
         response: Response = await session.get(url, params=params)
         response.raise_for_status()
         return response.json() # type: ignore

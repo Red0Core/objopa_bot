@@ -1,6 +1,6 @@
 from typing import Any, TypedDict, cast
 from httpx import AsyncClient, Response
-from backend.logger import logger
+from core.logger import logger
 from backend.models.markets import RateItem
 
 class ValuteItem(TypedDict):
