@@ -89,18 +89,3 @@ async def get_financial_horoscope(zodiac_russian: str) -> str:
                 if sign == zodiac_russian:
                     return cast(str, tds[1].text_content()).strip() # type: ignore
     return "нет данных"
-
-async def get_horoscope_mail_ru(zodiac_eng: str) -> dict[str, str]:
-    zodiac_eng = zodiac_eng.lower()
-    zodiac_ru = ZODIAC_RU_MAP.get(zodiac_eng, zodiac_eng.capitalize())
-    emoji = ZODIAC_EMOJI.get(zodiac_eng, "")
-
-    daily = await get_daily_horoscope_with_rating(zodiac_eng)
-    finance = await get_financial_horoscope(zodiac_ru.lower())
-
-    return {
-        "sign": zodiac_ru,
-        "emoji": emoji,
-        "daily": daily,
-        "finance": finance,
-    }

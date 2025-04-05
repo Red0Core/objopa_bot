@@ -1,17 +1,14 @@
+from pathlib import Path
+from typing import Any, Sequence, cast
 from aiogram import Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, FSInputFile, InputMediaPhoto
-import wolframalpha
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, FSInputFile, InputMediaPhoto, MediaUnion
+import wolframalpha # type: ignore
 from config import GIFS_ID, WOLFRAMALPHA_TOKEN
-from services.cbr import generate_cbr_output
-from services.alphavantage import fetch_currency_data, parse_currency_data, calculate_change
-from services.horoscope_mail_ru import get_horoscope_mail_ru
+from services.horoscope_mail_ru import format_horoscope, get_horoscope_mail_ru
 from services.instagram_loader import download_instagram_media, INSTAGRAM_REGEX
 from logger import logger
 import asyncio
-import os
-
-import traceback
 
 router = Router()
 
@@ -21,51 +18,6 @@ async def start_handler(message: Message):
         animation=GIFS_ID["Салам дай брад"],
         caption="MEXC за идею.\nА тут /cbr - курсы валют на сегодня и каждый день в 12 отправляю\n/price BTC и тд с бинанса выкачивает прайс\nПока что все"
     )
-
-@router.message(Command("cbr"))
-async def get_cbr_rates_handler(message: Message):
-    """
-    Отправляет курсы ЦБ РФ за сегодня и его изменение
-    """
-    logger.info(f"Отправляем курсы валют пользователю {message.from_user.id}")
-    await message.reply(await generate_cbr_output())
-
-@router.message(Command("rub"))
-async def get_forex_rub_rates_handler(message: Message):
-    """
-    Отправляет текстовое сообщение и график курса валют в Telegram.
-    """
-    output = await generate_cbr_output()
-    try:
-        # Получаем данные
-        arr = asyncio.gather(fetch_currency_data("USD", "RUB"), fetch_currency_data("EUR", "RUB"))
-        for data in (await arr):
-            symbol = data["Meta Data"]["2. From Symbol"]
-            market = data["Meta Data"]["3. To Symbol"]
-
-            today, yesterday, price_7d, price_30d = parse_currency_data(data)
-
-            change_1d = calculate_change(today, yesterday)
-            change_7d = calculate_change(today, price_7d)
-            change_30d = calculate_change(today, price_30d)
-
-            # Формируем сообщение
-            output += (
-                    f"\n💹 <b>Курс {symbol}/{market}:</b>\n"
-                    f"Текущая цена: <code>{today:.2f} {market}</code>\n"
-                    f"🔸 За 1 день: <code>{change_1d[0]:+.2f} ({change_1d[1]:+.2f}%)</code>\n"
-                )
-            if price_7d:
-                output += f"🔹 За 7 дней: <code>{change_7d[0]:+.2f} ({change_7d[1]:+.2f}%)</code>\n"
-            if price_30d:
-                output += f"🔸 За 30 дней: <code>{change_30d[0]:+.2f} ({change_30d[1]:+.2f}%)</code>\n"
-
-    except Exception as e:
-        logger.error(f"Ошибка: {traceback.format_exc()}")
-        await message.reply(f"Ошибка: {e}")
-
-    await message.reply(output, parse_mode="html")
-    logger.info(f"Успешно отправил рубль для {message.from_user.id}")
 
 @router.message(Command("horoscope"))
 async def horoscope_command(message: Message):
@@ -85,14 +37,14 @@ async def horoscope_command(message: Message):
     }
     try:
         # Получает знак зодиака из сообщения
-        zodiac_sign = message.text.split()[1].lower()
+        zodiac_sign = cast(str, message.text).split()[1].lower()
         # Проверяет если знак зодиака на русском или на английском
         reversed_zodiac_map = {v: k for k, v in zodiac_map.items()}
         if zodiac_sign in reversed_zodiac_map:
             zodiac_eng = reversed_zodiac_map[zodiac_sign]
-            text = await get_horoscope_mail_ru(zodiac_eng, zodiac_sign)
+            text = format_horoscope(await get_horoscope_mail_ru(zodiac_eng))
         else:
-            text = await get_horoscope_mail_ru(zodiac_sign, zodiac_map.get(zodiac_sign))
+            text = format_horoscope(await get_horoscope_mail_ru(zodiac_sign))
         await message.answer(text=text)
         logger.info(f"Отправляем гороскоп в чат {message.chat.id} для {zodiac_sign}")
         return
@@ -102,7 +54,7 @@ async def horoscope_command(message: Message):
 
 @router.message(Command("calc"))
 async def calculator_wolframaplha_math(message: Message):
-    arr = message.text.split(maxsplit=1)
+    arr = cast(str, message.text).split(maxsplit=1)
     if len(arr) == 2:
         try:
             # 🔹 Безопасное выполнение eval (только числа и операторы)
@@ -110,28 +62,28 @@ async def calculator_wolframaplha_math(message: Message):
             await message.answer(str(result))
         except Exception:
             client = wolframalpha.Client(WOLFRAMALPHA_TOKEN)
-            res = await client.aquery(arr[1])
+            res = await client.aquery(arr[1]) # type: ignore
             await message.answer(next(res.results).text)
     else:
         await message.answer("Использовать /calc и тут ваша матеша")
 
-async def send_images_in_chunks(message, images, caption=None):
+async def send_images_in_chunks(message: Message, images: list[Path], caption: str | None = None):
     """ Разбивает список изображений на чанки по 10 и отправляет их в Telegram """
     
-    def chunk_list(lst, size=10):
+    def chunk_list(lst: Sequence[Any], size: int = 10) -> Sequence[Any]:
         """Функция разбивает список на части по size элементов"""
         return [lst[i:i + size] for i in range(0, len(lst), size)]
 
     image_chunks = chunk_list(images, 10)
 
     for i, chunk in enumerate(image_chunks):
-        media_group = [InputMediaPhoto(media=FSInputFile(img)) for img in chunk]
+        media_group: list[MediaUnion] = [InputMediaPhoto(media=FSInputFile(img)) for img in chunk]
         
         # Отправляем первый альбом с подписью, остальные без
         if i == 0 and caption:
-            await message.reply_media_group(media_group, caption=caption)
+            await message.reply_media_group(media=media_group, caption=caption)
         else:
-            await message.reply_media_group(media_group)
+            await message.reply_media_group(media=media_group)
         await asyncio.sleep(5)
 
 @router.message(Command("insta"))
@@ -152,22 +104,23 @@ async def instagram_handler(message: Message, command: CommandObject):
     shortcode, error = await download_instagram_media(url)
 
     if shortcode:
-        download_path = "downloads"
-        files = [f for f in os.listdir(download_path) if f.startswith(shortcode)]
+        download_path = Path("downloads")
+        files = sorted([f for f in download_path.iterdir() if f.name.startswith(shortcode)])
 
-        images, videos, caption = [], [], None
+        images: list[Path] = []
+        videos: list[Path] = []
+        caption: str | None = None
 
-        for file in sorted(files):
-            file_path = os.path.join(download_path, file)
-            if file.endswith((".jpg", ".jpeg", ".png")):
+        for file_path in files:
+            suffix = file_path.suffix.lower()
+            if suffix in (".jpg", ".jpeg", ".png"):
                 if 'reel' in url:
                     continue
                 images.append(file_path)
-            elif file.endswith((".mp4", ".mov")):
-                 videos.append(file_path)
-            elif file.endswith(".txt"):
-                with open(file_path, "r", encoding="utf-8") as f:
-                    caption = f.read()
+            elif suffix in (".mp4", ".mov"):
+                videos.append(file_path)
+            elif suffix == ".txt":
+                caption = file_path.read_text(encoding="utf-8")
 
         # 🔹 Отправляем медиа
         if videos:
@@ -195,6 +148,8 @@ def games_menu():
 async def games_command(message: Message):
     await message.answer("Выберите игру из списка:", reply_markup=games_menu())
 
-@router.callback_query(lambda c: c.data == "close_menu")
+@router.callback_query(lambda c: c.data == "close_menu") # type: ignore
 async def close_menu(callback: CallbackQuery):
-    await callback.message.edit_text("Меню игр закрыто.", reply_markup=None)
+    if callback.message is not None:
+        await callback.message.edit_text("Меню игр закрыто.", reply_markup=None) # type: ignore
+    await callback.answer()

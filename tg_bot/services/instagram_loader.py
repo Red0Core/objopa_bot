@@ -1,3 +1,4 @@
+from pathlib import Path
 import instaloader
 import os
 import re
@@ -9,13 +10,13 @@ INSTAGRAM_REGEX = re.compile(
     r"(https?:\/\/(?:www\.)?instagram\.com\/(?:share\/)?(p|reel|tv|stories)\/[\w\-]+)"
 )
 
-async def get_instagram_shortcode(url):
+async def get_instagram_shortcode(url: str) -> str | None:
     """
     Определяет shortcode поста Instagram (редиректим сразу).
     """
     async with AsyncSession() as session:
         try:
-            response = await session.get(url, allow_redirects=True, impersonate='chrome')
+            response = await session.get(url, allow_redirects=True, impersonate='chrome') # type: ignore
             final_url = response.url  # Итоговый URL
             match = re.search(r"/(p|reel|tv)/([\w-]+)", final_url)
             if match:
@@ -38,19 +39,20 @@ def init_instaloader():
     try:
         if INSTAGRAM_USERNAME:
             bot_loader.load_session_from_file(INSTAGRAM_USERNAME)
-            print("✅ Успешная авторизация в Instagram.")
+            logger.success("✅ Успешная авторизация в Instagram.")
         else:
             raise ValueError("Не указаны имя пользователя и пароль Instagram.")
     except FileNotFoundError:
-        print("⚠️ Файл сессии не найден. Будут загружены только открытые посты.")
+        logger.error("⚠️ Файл сессии не найден. Будут загружены только открытые посты.")
     
     return bot_loader
 
 # Создаём Instaloader сессию при старте
 INSTALOADER_SESSION = init_instaloader()
 
-async def download_instagram_media(url):
-    """ Асинхронно загружает посты Instagram (фото, видео, текст) """
+async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
+    """ Асинхронно загружает посты Instagram (фото, видео, текст) 
+        и возвращает shortcode и ошибку, если есть. """
     bot_loader = INSTALOADER_SESSION
     try:
         shortcode = await get_instagram_shortcode(url)
@@ -77,27 +79,27 @@ async def download_instagram_media(url):
     except Exception as e:
         return None, f"❌ Ошибка: {e}"
 
-async def select_instagram_media(shortcode, download_path="downloads"):
+Path("downloads").mkdir(exist_ok=True)
+async def select_instagram_media(shortcode: str, download_path: Path = Path("downloads")) -> dict[str, list[Path] | str]:
     """
     Определяет, какие файлы скачал Instaloader, и выбирает нужный формат для отправки.
     """
-    files = [f for f in os.listdir(download_path) if f.startswith(shortcode)]
+    files = [f for f in download_path.iterdir() if f.name.startswith(shortcode)]
     
-    images = []
-    videos = []
-    caption = None
+    images: list[Path] = []
+    videos: list[Path] = []
+    caption: str = ""
 
-    for file in files:
-        file_path = os.path.join(download_path, file)
+    for file_path in files:
+        suffix = file_path.suffix.lower()
         
         # Определяем тип файла
-        if file.endswith((".jpg", ".jpeg", ".png")):
+        if suffix in (".jpg", ".jpeg", ".png"):
             images.append(file_path)
-        elif file.endswith((".mp4", ".mov")):
+        elif suffix in (".mp4", ".mov"):
             videos.append(file_path)
-        elif file.endswith(".txt"):
-            with open(file_path, "r", encoding="utf-8") as f:
-                caption = f.read()  # Читаем описание поста
+        elif suffix == ".txt":
+            caption = file_path.read_text(encoding="utf-8")  # Читаем описание поста
 
     return {
         "images": images,
