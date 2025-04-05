@@ -1,7 +1,7 @@
-from curl_cffi.requests import AsyncSession
+from httpx import AsyncClient
 import asyncio
 
-async def fetch_price(session, url):
+async def fetch_price(session: AsyncClient, url: str) -> dict[str, float | str]:
     """
     Выполняет запрос к API биржи и возвращает результат.
     """
@@ -15,7 +15,7 @@ async def fetch_price(session, url):
     except Exception as e:
         return {"error": str(e)}
 
-async def get_price_from_exchanges(symbol: str):
+async def get_price_from_exchanges(symbol: str) -> dict[str, float | str]:
     """
     Запрашивает цену у двух бирж (Binance и MEXC) с приоритетом Binance.
     """
@@ -27,10 +27,10 @@ async def get_price_from_exchanges(symbol: str):
         "mexc": f"https://api.mexc.com/api/v3/ticker/price?symbol={symbol.upper()}"
     }
 
-    async with AsyncSession() as session:
-        # Параллельные запросы к биржам
-        tasks = {name: asyncio.create_task(fetch_price(session, url)) for name, url in urls.items()}
-        results = await asyncio.gather(*tasks.values())
+    async with AsyncClient() as session:
+        # Параллельные запросы к биржам с timeout
+        tasks = [fetch_price(session, url) for url in urls.values()]
+        results = await asyncio.gather(*tasks)
 
     # Приоритетный результат от Binance, затем MEXC
     for result in results:
@@ -38,5 +38,5 @@ async def get_price_from_exchanges(symbol: str):
             return result
 
     # Если оба запроса завершились ошибкой
-    errors = ", ".join(result["error"] for result in results if "error" in result)
+    errors = ", ".join(str(result["error"]) for result in results if "error" in result)
     return {"error": errors}

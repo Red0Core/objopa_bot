@@ -1,6 +1,25 @@
+from typing import Any
 from curl_cffi import AsyncSession
 from dataclasses import dataclass
 import traceback
+
+from typing import TypedDict, List, Any
+
+class BybitP2PItem(TypedDict):
+    minAmount: str  # Original is string that you convert to float
+    maxAmount: str
+    price: str
+    finishNum: int
+    nickName: str
+    authTag: List[str]
+    lastQuantity: str
+    payments: List[int]  # Looks like these are numeric IDs as strings
+
+class BybitP2PResult(TypedDict):
+    items: List[BybitP2PItem]
+
+class BybitP2PResponse(TypedDict):
+    result: BybitP2PResult
 
 @dataclass
 class Offer:
@@ -91,8 +110,8 @@ def generate_amount_html_output(offers: list[Offer], amount: float, is_fiat: boo
 
     return html
 
-def categorize_all_offers(data):
-    categories = {
+def categorize_all_offers(data: BybitP2PResponse) -> dict[str, list[Offer]]:
+    categories: dict[str, list[Offer]] = {
         "до 20K": [],
         "до 50K": [],
         "до 100K": [],
@@ -109,7 +128,7 @@ def categorize_all_offers(data):
             is_va = "VA" in item.get("authTag", [])
             is_ba = "BA" in item.get("authTag", [])
             available_amount = float(item["lastQuantity"])
-            payment_types = set()
+            payment_types: set[str] = set()
             for i in item.get("payments", []):  # Получаем типы платежей
                 t = PAYMENT_TYPE.get(int(i), None)
                 if t:
@@ -126,12 +145,12 @@ def categorize_all_offers(data):
             else:
                 categories["больше 100K"].append(entry)
 
-        except Exception as e:
+        except Exception:
             print(f"Ошибка при обработке ордера: {traceback.format_exc()}")
 
     return categories
 
-def get_offers_by_amount(data, amount: float, is_fiat: bool = False) -> list[Offer]:
+def get_offers_by_amount(data: BybitP2PResponse, amount: float, is_fiat: bool = False) -> list[Offer]:
     """
     Функция для категоризации офферов по исполняемому объему
     """
@@ -146,7 +165,7 @@ def get_offers_by_amount(data, amount: float, is_fiat: bool = False) -> list[Off
             is_va = "VA" in item.get("authTag", [])
             is_ba = "BA" in item.get("authTag", [])
             available_amount = float(item["lastQuantity"])
-            payment_types = set()
+            payment_types: set[str] = set()
             for i in item.get("payments", []):  # Получаем типы платежей
                 t = PAYMENT_TYPE.get(int(i), None)
                 if t:
@@ -165,7 +184,7 @@ def get_offers_by_amount(data, amount: float, is_fiat: bool = False) -> list[Off
                     entry = Offer(price, nickname, finish_num, is_va, is_ba, payment_types, min_amount, max_amount, available_amount)
                     offers.append(entry)
 
-        except Exception as e:
+        except Exception:
             print(f"Ошибка при обработке ордера с объемом: {traceback.format_exc()}")
 
     return offers
@@ -174,7 +193,7 @@ def get_offers_by_valid_makers(offers: list[Offer]) -> list[Offer]:
     """
     Функция для фильтрации офферов по валидным мейкерам. Предполагает сортированный по цене вариант
     """
-    offers_output = []
+    offers_output: list[Offer] = []
     ba_offer_added = False
     va_offer_added = False
     ga_offer_added = False
@@ -194,7 +213,7 @@ def get_offers_by_valid_makers(offers: list[Offer]) -> list[Offer]:
 
     return offers_output
 
-async def get_p2p_orders(is_buy: bool = True):
+async def get_p2p_orders(is_buy: bool = True) -> BybitP2PResponse | None:
     headers = {
         'accept': 'application/json',
         'accept-language': 'en',
@@ -216,7 +235,7 @@ async def get_p2p_orders(is_buy: bool = True):
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
     }
 
-    json_data = {
+    json_data: dict[str, Any] = {
         'tokenId': 'USDT',
         'currencyId': 'RUB',
         'payment': [
@@ -245,13 +264,16 @@ async def get_p2p_orders(is_buy: bool = True):
     async with AsyncSession() as s:
         s.headers.update(headers)
         req = await s.post("https://api2.bybit.com/fiat/otc/item/online", json=json_data)
-        return req.json()
+        return req.json() # type: ignore
 
     return None
 
 if __name__ == "__main__":
     import asyncio
     data = asyncio.run(get_p2p_orders(is_buy=False))
+    if data is None:
+        print("Не удалось получить данные с Bybit P2P.")
+        exit(1)
     categorized_data = categorize_all_offers(data)
     for label in categorized_data:
         categorized_data[label] = get_offers_by_valid_makers(categorized_data[label])
