@@ -2,8 +2,8 @@ import asyncio
 from datetime import datetime, timedelta
 
 import httpx
-import redis_worker
-import routers.day_tracker as day_tracker
+import tg_bot.redis_worker as redis_worker
+import tg_bot.routers.day_tracker as day_tracker
 
 from core.config import BACKEND_ROUTE, MAIN_ACC, OBZHORA_CHAT_ID
 from core.logger import logger
