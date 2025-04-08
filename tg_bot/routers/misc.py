@@ -1,23 +1,35 @@
+import asyncio
 from pathlib import Path
 from typing import Any, Sequence, cast
+
+import wolframalpha  # type: ignore
 from aiogram import Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, FSInputFile, InputMediaPhoto, MediaUnion
-import wolframalpha # type: ignore
+from aiogram.types import (
+    CallbackQuery,
+    FSInputFile,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputMediaPhoto,
+    MediaUnion,
+    Message,
+)
+
 from core.config import GIFS_ID, WOLFRAMALPHA_TOKEN
-from services.horoscope_mail_ru import format_horoscope, get_horoscope_mail_ru
-from services.instagram_loader import download_instagram_media, INSTAGRAM_REGEX
 from core.logger import logger
-import asyncio
+from tg_bot.services.horoscope_mail_ru import format_horoscope, get_horoscope_mail_ru
+from tg_bot.services.instagram_loader import INSTAGRAM_REGEX, download_instagram_media
 
 router = Router()
+
 
 @router.message(Command("start"))
 async def start_handler(message: Message):
     await message.answer_animation(
         animation=GIFS_ID["Салам дай брад"],
-        caption="MEXC за идею.\nА тут /cbr - курсы валют на сегодня и каждый день в 12 отправляю\n/price BTC и тд с бинанса выкачивает прайс\nПока что все"
+        caption="MEXC за идею.\nА тут /cbr - курсы валют на сегодня и каждый день в 12 отправляю\n/price BTC и тд с бинанса выкачивает прайс\nПока что все",
     )
+
 
 @router.message(Command("horoscope"))
 async def horoscope_command(message: Message):
@@ -33,7 +45,7 @@ async def horoscope_command(message: Message):
         "aries": "овен",
         "gemini": "близнецы",
         "leo": "лев",
-        "virgo": "дева"
+        "virgo": "дева",
     }
     try:
         # Получает знак зодиака из сообщения
@@ -49,8 +61,11 @@ async def horoscope_command(message: Message):
         logger.info(f"Отправляем гороскоп в чат {message.chat.id} для {zodiac_sign}")
         return
     except (IndexError, KeyError):
-        await message.answer("Пожалуйста, укажите знак зодиака на английском или русском. Например: /horoscope libra или /horoscope весы")
+        await message.answer(
+            "Пожалуйста, укажите знак зодиака на английском или русском. Например: /horoscope libra или /horoscope весы"
+        )
         return
+
 
 @router.message(Command("calc"))
 async def calculator_wolframaplha_math(message: Message):
@@ -62,29 +77,31 @@ async def calculator_wolframaplha_math(message: Message):
             await message.answer(str(result))
         except Exception:
             client = wolframalpha.Client(WOLFRAMALPHA_TOKEN)
-            res = await client.aquery(arr[1]) # type: ignore
+            res = await client.aquery(arr[1])  # type: ignore
             await message.answer(next(res.results).text)
     else:
         await message.answer("Использовать /calc и тут ваша матеша")
 
+
 async def send_images_in_chunks(message: Message, images: list[Path], caption: str | None = None):
-    """ Разбивает список изображений на чанки по 10 и отправляет их в Telegram """
-    
+    """Разбивает список изображений на чанки по 10 и отправляет их в Telegram"""
+
     def chunk_list(lst: Sequence[Any], size: int = 10) -> Sequence[Any]:
         """Функция разбивает список на части по size элементов"""
-        return [lst[i:i + size] for i in range(0, len(lst), size)]
+        return [lst[i : i + size] for i in range(0, len(lst), size)]
 
     image_chunks = chunk_list(images, 10)
 
     for i, chunk in enumerate(image_chunks):
         media_group: list[MediaUnion] = [InputMediaPhoto(media=FSInputFile(img)) for img in chunk]
-        
+
         # Отправляем первый альбом с подписью, остальные без
         if i == 0 and caption:
             await message.reply_media_group(media=media_group, caption=caption)
         else:
             await message.reply_media_group(media=media_group)
         await asyncio.sleep(5)
+
 
 @router.message(Command("insta"))
 async def instagram_handler(message: Message, command: CommandObject):
@@ -114,7 +131,7 @@ async def instagram_handler(message: Message, command: CommandObject):
         for file_path in files:
             suffix = file_path.suffix.lower()
             if suffix in (".jpg", ".jpeg", ".png"):
-                if 'reel' in url:
+                if "reel" in url:
                     continue
                 images.append(file_path)
             elif suffix in (".mp4", ".mov"):
@@ -125,7 +142,7 @@ async def instagram_handler(message: Message, command: CommandObject):
         # 🔹 Отправляем медиа
         if videos:
             for video in videos:
-               await message.reply_video(FSInputFile(video), caption=caption)
+                await message.reply_video(FSInputFile(video), caption=caption)
 
         if len(images) > 1:
             await send_images_in_chunks(message, images, caption)
@@ -136,20 +153,25 @@ async def instagram_handler(message: Message, command: CommandObject):
     else:
         await status_message.edit_text(error if error else "❌ Не удалось загрузить медиа.")
 
+
 # Генерация меню игр
 def games_menu():
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎲 Блэкджек", callback_data="start_blackjack")],
-        [InlineKeyboardButton(text="Закрыть", callback_data="close_menu")],
-    ])
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🎲 Блэкджек", callback_data="start_blackjack")],
+            [InlineKeyboardButton(text="Закрыть", callback_data="close_menu")],
+        ]
+    )
     return keyboard
+
 
 @router.message(Command("games"))
 async def games_command(message: Message):
     await message.answer("Выберите игру из списка:", reply_markup=games_menu())
 
-@router.callback_query(lambda c: c.data == "close_menu") # type: ignore
+
+@router.callback_query(lambda c: c.data == "close_menu")  # type: ignore
 async def close_menu(callback: CallbackQuery):
     if callback.message is not None:
-        await callback.message.edit_text("Меню игр закрыто.", reply_markup=None) # type: ignore
+        await callback.message.edit_text("Меню игр закрыто.", reply_markup=None)  # type: ignore
     await callback.answer()

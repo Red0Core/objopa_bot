@@ -1,11 +1,15 @@
 from typing import Any, TypedDict, cast
+
 from httpx import AsyncClient, Response
-from core.logger import logger
+
 from backend.models.markets import RateItem
+from core.logger import logger
+
 
 class ValuteItem(TypedDict):
     Value: float
     Previous: float
+
 
 async def get_cbr_exchange_rate() -> dict[str, RateItem | str]:
     url = "https://www.cbr-xml-daily.ru/daily_json.js"
@@ -20,10 +24,10 @@ async def get_cbr_exchange_rate() -> dict[str, RateItem | str]:
                 if not isinstance(valute, dict):
                     raise ValueError("Некорректный формат ответа ЦБ")
                 valute = cast(dict[str, Any], valute)
-                
+
                 if not valute.get("USD") or not valute.get("EUR"):
                     raise ValueError("Недоступны курсы USD или EUR")
-                
+
                 usd_info = cast(ValuteItem, valute.get("USD"))
                 eur_info = cast(ValuteItem, valute.get("EUR"))
 
@@ -35,7 +39,9 @@ async def get_cbr_exchange_rate() -> dict[str, RateItem | str]:
                 usd_diff = round(usd_rate - usd_previous, 2)
                 eur_diff = round(eur_rate - eur_previous, 2)
 
-                logger.info("Успешно получили курсы валют: USD={USD}, EUR={EUR}", USD=usd_rate, EUR=eur_rate)
+                logger.info(
+                    "Успешно получили курсы валют: USD={USD}, EUR={EUR}", USD=usd_rate, EUR=eur_rate
+                )
 
                 return {
                     "USD": RateItem(rate=round(usd_rate, 2), diff=usd_diff),
@@ -54,8 +60,12 @@ async def generate_html_output(rates: dict[str, RateItem | str]) -> str:
     """Генерирует HTML-вывод для курсов валют."""
     usd_data = rates.get("USD")
     eur_data = rates.get("EUR")
-    if usd_data is None or isinstance(usd_data, str) \
-        or eur_data is None or isinstance(eur_data, str):
+    if (
+        usd_data is None
+        or isinstance(usd_data, str)
+        or eur_data is None
+        or isinstance(eur_data, str)
+    ):
         return "Ошибка получения данных о курсах валют."
 
     return (
@@ -63,4 +73,3 @@ async def generate_html_output(rates: dict[str, RateItem | str]) -> str:
         f"💵 Доллар США: <code>{usd_data.rate} ₽ ({'+' if usd_data.diff > 0 else ''}{usd_data.diff})</code>\n"
         f"💶 Евро: <code>{eur_data.rate} ₽ ({'+' if eur_data.diff > 0 else ''}{eur_data.diff})</code>\n"
     )
-    

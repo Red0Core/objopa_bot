@@ -1,19 +1,18 @@
 import asyncio
+from datetime import datetime, timedelta
 
 import httpx
-from openai import chat
-from core.config import BACKEND_ROUTE, OBZHORA_CHAT_ID, MAIN_ACC
-from services.horoscope_mail_ru import get_horoscope_mail_ru
-from datetime import datetime, timedelta
-from core.logger import logger
-import routers.day_tracker as day_tracker
 import redis_worker
+import routers.day_tracker as day_tracker
+
+from core.config import BACKEND_ROUTE, MAIN_ACC, OBZHORA_CHAT_ID
+from core.logger import logger
+from tg_bot.services.horoscope_mail_ru import get_horoscope_mail_ru
+
 
 async def scheduled_message(bot):
-    await bot.send_message(
-        MAIN_ACC,
-        text="Бот стартовал и готов к работе!"
-    )
+    await bot.send_message(MAIN_ACC, text="Бот стартовал и готов к работе!")
+
 
 def daily_schedule(hour=13, minute=0):
     def decorator(func):
@@ -29,8 +28,11 @@ def daily_schedule(hour=13, minute=0):
                 await asyncio.sleep(wait_time)
 
                 await func(bot, *args, **kwargs)
+
         return wrapper
+
     return decorator
+
 
 @daily_schedule(hour=16, minute=0)
 async def send_daily_cbr_rates(bot, chat_id):
@@ -42,7 +44,7 @@ async def send_daily_cbr_rates(bot, chat_id):
             response = await session.get(f"{BACKEND_ROUTE}/markets/cbr")
             response.raise_for_status()
             data = response.json()
-            await bot.send_message(chat_id=chat_id, text=data['html_output'], parse_mode="html")
+            await bot.send_message(chat_id=chat_id, text=data["html_output"], parse_mode="html")
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 400:
             await bot.send_message(chat_id=chat_id, text="Ошибка: неверный запрос")
@@ -52,14 +54,11 @@ async def send_daily_cbr_rates(bot, chat_id):
     except Exception as e:
         await bot.send_message(chat_id=chat_id, text="Ошибка: не удалось получить данные")
         logger.error(f"Ошибка при отправке курсов валют в чат {chat_id}: {e}")
-    
+
+
 @daily_schedule(hour=6, minute=0)
 async def send_daily_horoscope_for_brothers(bot):
-    zodiac_map = {
-        "taurus": "телец",
-        "pisces": "рыбы",
-        "libra": "весы"
-    }
+    zodiac_map = {"taurus": "телец", "pisces": "рыбы", "libra": "весы"}
     # Для каждого знака получаем ежедневный гороскоп и рейтинг финансов из страницы prediction
     for zodiac_eng, zodiac_ru in zodiac_map.items():
         message = await get_horoscope_mail_ru(zodiac_eng)
@@ -67,16 +66,18 @@ async def send_daily_horoscope_for_brothers(bot):
         logger.info(f"Отправляем еждедневные гороскопы в чат {OBZHORA_CHAT_ID} для {zodiac_ru}")
         await asyncio.sleep(2)
 
+
 @daily_schedule(hour=8, minute=0)
 async def send_daily_tracker_messages(bot):
     await day_tracker.send_daily_message(bot)
 
+
 async def on_startup(bot):
     for coro in (
-                    scheduled_message(bot),
-                    send_daily_cbr_rates(bot, OBZHORA_CHAT_ID),
-                    send_daily_horoscope_for_brothers(bot),
-                    send_daily_tracker_messages(bot),
-                    redis_worker.poll_redis(bot),
+        scheduled_message(bot),
+        send_daily_cbr_rates(bot, OBZHORA_CHAT_ID),
+        send_daily_horoscope_for_brothers(bot),
+        send_daily_tracker_messages(bot),
+        redis_worker.poll_redis(bot),
     ):
         asyncio.create_task(coro)

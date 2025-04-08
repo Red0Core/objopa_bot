@@ -1,19 +1,29 @@
-from pathlib import Path
+import ujson
 from aiogram import Router
 from aiogram.filters import Command
-from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import Message
+
 from core.config import GEMINI_API_KEY, STORAGE_PATH
-from .mention_dice import markdown_to_telegram_html, split_message_by_paragraphs, AI_CLIENT
-from services.gpt import AIChatInterface, APIKeyError, RateLimitError, QuotaExceededError, UnexpectedResponseError, AIModelError, GeminiChatModel
-from services.gptchat_manager import ChatSessionManager
 from core.logger import logger
+from tg_bot.services.gpt import (
+    AIChatInterface,
+    AIModelError,
+    APIKeyError,
+    GeminiChatModel,
+    QuotaExceededError,
+    RateLimitError,
+    UnexpectedResponseError,
+)
+from tg_bot.services.gptchat_manager import ChatSessionManager
+
+from .mention_dice import AI_CLIENT, markdown_to_telegram_html, split_message_by_paragraphs
 
 router = Router()
 
-import ujson
 WHITELIST_PATH = STORAGE_PATH / "whitelist_gpt.json"
+
 
 def load_whitelist(file_path=WHITELIST_PATH):
     try:
@@ -22,20 +32,24 @@ def load_whitelist(file_path=WHITELIST_PATH):
     except FileNotFoundError:
         return {}
 
+
 def save_whitelist(data, file_path=WHITELIST_PATH):
     with open(file_path, "w") as file:
         ujson.dump(data, file, indent=4)
 
+
 whitelist = load_whitelist()
+
 
 class ChatStates(StatesGroup):
     waiting_for_message = State()
+
 
 class ChatFSMStateSessionManager(ChatSessionManager):
     def __init__(self):
         super().__init__()
         self.state: FSMContext | None = None
-    
+
     def set_state(self, state: FSMContext):
         """Store FSMContext for later use in chat session management"""
         self.state = state
@@ -45,13 +59,14 @@ class ChatFSMStateSessionManager(ChatSessionManager):
         """Очистка FSM"""
         if self.state is not None:
             await self.state.clear()
-    
+
     async def async_get_chat(self, chat_id) -> AIChatInterface | None:
         chat = super().get_chat(chat_id)
         if chat is None:
             await self.clear_state()
 
         return chat
+
 
 @router.message(Command("ask"))
 async def handle_ask_gpt(message: Message):
@@ -69,16 +84,17 @@ async def handle_ask_gpt(message: Message):
             messages = split_message_by_paragraphs(cleaned_text)
             for i in messages:
                 await message.answer(i, parse_mode="HTML")
-    except APIKeyError as e:
+    except APIKeyError:
         await message.answer("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
-    except RateLimitError as e:
+    except RateLimitError:
         await message.answer("Ошибка: Превышен лимит запросов. Попробуйте позже.")
-    except QuotaExceededError as e:
+    except QuotaExceededError:
         await message.answer("Ошибка: Превышена квота использования API.")
-    except UnexpectedResponseError as e:
+    except UnexpectedResponseError:
         await message.answer("Ошибка: Непредвиденный ответ от модели. Попробуйте позже.")
     except AIModelError as e:
         await message.answer(f"Ошибка: {str(e)}")
+
 
 @router.message(Command("chat"))
 async def start_session(message: Message, state: FSMContext):
@@ -98,12 +114,13 @@ async def start_session(message: Message, state: FSMContext):
         chat_manager.set_state(state)
 
         await message.answer(
-            "Чат создан! Можете начать общение.\n" \
-            "Сессия автоматически удаляется через час после безыиспользования\n" \
+            "Чат создан! Можете начать общение.\n"
+            "Сессия автоматически удаляется через час после безыиспользования\n"
             "Вы можете добавить системный промпт после '/chat'"
         )
     else:
         await message.answer("Вы уже в чате. Продолжайте диалог.")
+
 
 @router.message(ChatStates.waiting_for_message)
 async def continue_session(message: Message, state: FSMContext):
@@ -113,9 +130,14 @@ async def continue_session(message: Message, state: FSMContext):
     chat_session = await chat_manager.async_get_chat(chat_id)
     if chat_session and message.from_user:
         ids = whitelist.get(message.chat.id, {})
-        user_name = ids.get(message.from_user.id, f"{message.from_user.first_name} {message.from_user.last_name or ''}")
+        user_name = ids.get(
+            message.from_user.id,
+            f"{message.from_user.first_name} {message.from_user.last_name or ''}",
+        )
 
-        logger.info(f"Отвечаю на сообщение в {chat_id} {message.from_user.username}-{message.from_user.first_name}+{message.from_user.last_name}")
+        logger.info(
+            f"Отвечаю на сообщение в {chat_id} {message.from_user.username}-{message.from_user.first_name}+{message.from_user.last_name}"
+        )
         text = await chat_session.send_message(f"{user_name}: {message.text}")
         await state.set_state(ChatStates.waiting_for_message)
 
@@ -125,6 +147,7 @@ async def continue_session(message: Message, state: FSMContext):
             await message.answer(i, parse_mode="HTML")
     else:
         await message.answer("Используйте команду /chat для начала общения.")
+
 
 @router.message(Command("add_me_as"))
 async def add_user_to_whitelist(message: Message):
@@ -137,4 +160,6 @@ async def add_user_to_whitelist(message: Message):
         whitelist[message.chat.id] = {}
     whitelist[message.chat.id][message.from_user.id] = custom_name
     save_whitelist(whitelist)
-    await message.reply(f"Пользователь {custom_name} (ID: {message.from_user.id}) добавлен в белый список.")
+    await message.reply(
+        f"Пользователь {custom_name} (ID: {message.from_user.id}) добавлен в белый список."
+    )

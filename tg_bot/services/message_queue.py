@@ -1,7 +1,8 @@
 import asyncio
 from collections import defaultdict, deque
-from aiogram import Bot
 from functools import wraps
+
+from aiogram import Bot
 
 
 class MessageQueue:
@@ -66,6 +67,7 @@ class MessageQueue:
         """
         Статический декоратор для управления частотой отправки сообщений.
         """
+
         def decorator(handler):
             @wraps(handler)
             async def wrapper(callback, *args, **kwargs):
@@ -86,4 +88,5 @@ class MessageQueue:
                 return result
 
             return wrapper
+
         return decorator

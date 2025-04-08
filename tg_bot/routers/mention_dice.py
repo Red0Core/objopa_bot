@@ -1,12 +1,22 @@
+import re
+
 from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
-from services.gpt import GeminiModel, OpenRouterModel, APIKeyError, AIModelError, RateLimitError, UnexpectedResponseError, QuotaExceededError
+
 from core.config import GEMINI_API_KEY
-import re
+from tg_bot.services.gpt import (
+    AIModelError,
+    APIKeyError,
+    GeminiModel,
+    QuotaExceededError,
+    RateLimitError,
+    UnexpectedResponseError,
+)
 
 router = Router()
 AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY)
+
 
 def split_message_by_paragraphs(text: str, max_length: int = 4096) -> list[str]:
     """
@@ -30,52 +40,54 @@ def split_message_by_paragraphs(text: str, max_length: int = 4096) -> list[str]:
 
     return chunks
 
+
 def markdown_to_telegram_html(text: str) -> str:
     """
     Преобразует текст из Markdown в HTML для использования в Telegram, строго соответствуя поддерживаемым тегам.
     """
     # 1. Экранирование спецсимволов
-    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     # 2. Жирный текст (**text** -> <b>text</b>)
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
 
     # 3. Курсив (*text* -> <i>text</i>)
-    text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+    text = re.sub(r"\*(.+?)\*", r"<i>\1</i>", text)
 
     # 4. Зачёркнутый текст (~~text~~ -> <s>text</s>)
-    text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
+    text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
 
     # 5. Подчёркнутый текст (__text__ -> <u>text</u>)
-    text = re.sub(r'__(.+?)__', r'<u>\1</u>', text)
+    text = re.sub(r"__(.+?)__", r"<u>\1</u>", text)
 
     # 6. Ссылки ([text](url) -> <a href="url">text</a>)
-    text = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', text)
+    text = re.sub(r"\[(.+?)\]\((.+?)\)", r'<a href="\2">\1</a>', text)
 
     # 7. Блоки кода (```code``` -> <pre>code</pre>)
-    text = re.sub(r'```(.+?)```', r'<pre>\1</pre>', text, flags=re.DOTALL)
+    text = re.sub(r"```(.+?)```", r"<pre>\1</pre>", text, flags=re.DOTALL)
 
     # 8. Inline-код (`code` -> <code>code</code>)
-    text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+    text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
 
     # 9. Спойлеры (||text|| -> <tg-spoiler>text</tg-spoiler>)
-    text = re.sub(r'\|\|(.+?)\|\|', r'<tg-spoiler>\1</tg-spoiler>', text)
+    text = re.sub(r"\|\|(.+?)\|\|", r"<tg-spoiler>\1</tg-spoiler>", text)
 
     # 10. Обработка лишних пробелов вокруг HTML-тегов
-    text = re.sub(r'>\s+<', '><', text)
+    text = re.sub(r">\s+<", "><", text)
 
     return text
+
 
 @router.message(Command("dice"))
 async def handle_mention(message: Message, bot: Bot):
     # Отвечаем на упоминание
     await message.reply("Сейчас я решу это с помощью кубика! 🎲")
-    
+
     # Бросаем кубик
     dice_message = await bot.send_dice(message.chat.id)
     dice_value = dice_message.dice.value  # Значение кубика (1-6) # type: ignore[union-attr]
     text = message.text.split(maxsplit=1)[1] if message.text else ""
-    
+
     system_prompt = """
 Ты — креативный и весёлый помощник. 
 Когда человек обращается к тебе, ты отвечаешь в стиле вдохновляющего и немного шуточного мотивационного письма или даёшь креативный список "за и против".
@@ -95,21 +107,17 @@ async def handle_mention(message: Message, bot: Bot):
 
     try:
         # Генерируем объяснение через OpenAI API
-        text = await AI_CLIENT.get_response(
-            action_prompt, 
-            system_prompt
-        )
+        text = await AI_CLIENT.get_response(action_prompt, system_prompt)
         cleaned_text = markdown_to_telegram_html(text)
 
         await message.reply(cleaned_text, parse_mode="HTML")
-    except APIKeyError as e:
+    except APIKeyError:
         await message.reply("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
-    except RateLimitError as e:
+    except RateLimitError:
         await message.reply("Ошибка: Превышен лимит запросов. Попробуйте позже.")
-    except QuotaExceededError as e:
+    except QuotaExceededError:
         await message.reply("Ошибка: Превышена квота использования API.")
-    except UnexpectedResponseError as e:
+    except UnexpectedResponseError:
         await message.reply("Ошибка: Непредвиденный ответ от модели. Попробуйте позже.")
     except AIModelError as e:
         await message.reply(f"Ошибка: {str(e)}")
-

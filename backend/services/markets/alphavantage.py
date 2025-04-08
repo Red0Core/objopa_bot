@@ -1,7 +1,10 @@
-from typing import Any, cast
-from curl_cffi.requests import AsyncSession, Response
-from core.config import ALPHAVANTAGE_API_KEY
 from datetime import datetime
+from typing import Any, cast
+
+from curl_cffi.requests import AsyncSession, Response
+
+from core.config import ALPHAVANTAGE_API_KEY
+
 
 async def fetch_currency_data(symbol: str, market: str = "RUB") -> dict[str, Any]:
     """
@@ -18,13 +21,15 @@ async def fetch_currency_data(symbol: str, market: str = "RUB") -> dict[str, Any
         "apikey": ALPHAVANTAGE_API_KEY,
     }
 
-    async with AsyncSession() as session: # type: ignore
-        response: Response = await session.get(url, params=params)
+    async with AsyncSession() as session:  # type: ignore
+        response: Response = await session.get(url, params=params) # type: ignore
         response.raise_for_status()
-        return response.json() # type: ignore
+        return response.json()  # type: ignore
 
 
-def parse_currency_data(data: dict[str, Any]) -> tuple[float | None, float | None, float | None, float | None]:
+def parse_currency_data(
+    data: dict[str, Any],
+) -> tuple[float | None, float | None, float | None, float | None]:
     """
     Извлекает сегодняшнюю, вчерашнюю, недельную и месячную цену.
     """

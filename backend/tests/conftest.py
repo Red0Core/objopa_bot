@@ -1,8 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
-import sys
-from pathlib import Path
+
 from backend.main import app
+
 
 @pytest.fixture(scope="session")
 def client():

@@ -1,4 +1,7 @@
-from httpx import AsyncClient
+from http import HTTPStatus
+
+from httpx import AsyncClient, HTTPStatusError
+
 
 async def get_horoscope_mail_ru(zodiac_eng: str) -> dict[str, str]:
     """
@@ -6,8 +9,16 @@ async def get_horoscope_mail_ru(zodiac_eng: str) -> dict[str, str]:
     """
     url = f"http://localhost:8000/horoscope/{zodiac_eng}"
     async with AsyncClient() as client:
-        response = await client.get(url)
-        return response.json()
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.json()
+        except HTTPStatusError as e:
+            if e.response.status_code == HTTPStatus.NOT_FOUND:
+                raise ValueError("Знак зодиака не найден.") from e
+            else:
+                raise RuntimeError(f"Ошибка при получении гороскопа: {e}") from e
+
 
 def format_horoscope(horoscope: dict[str, str]) -> str:
     """

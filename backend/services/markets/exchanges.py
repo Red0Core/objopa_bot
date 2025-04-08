@@ -1,7 +1,9 @@
-from httpx import AsyncClient
 import asyncio
 
+from httpx import AsyncClient
+
 from backend.models.markets import PriceResponse
+
 
 async def fetch_price(session: AsyncClient, url: str) -> PriceResponse:
     """
@@ -17,6 +19,7 @@ async def fetch_price(session: AsyncClient, url: str) -> PriceResponse:
     except Exception as e:
         return PriceResponse(error=str(e))  # Возвращаем ошибку в формате PriceResponse
 
+
 async def get_price_from_exchanges(symbol: str) -> PriceResponse:
     """
     Запрашивает цену у двух бирж (Binance и MEXC) с приоритетом Binance.
@@ -24,9 +27,9 @@ async def get_price_from_exchanges(symbol: str) -> PriceResponse:
     if "USDT" not in symbol:
         symbol = f"{symbol}USDT"
 
-    urls = { # В порядке приоритета
+    urls = {  # В порядке приоритета
         "binance": f"https://api.binance.com/api/v3/ticker/price?symbol={symbol.upper()}",
-        "mexc": f"https://api.mexc.com/api/v3/ticker/price?symbol={symbol.upper()}"
+        "mexc": f"https://api.mexc.com/api/v3/ticker/price?symbol={symbol.upper()}",
     }
 
     async with AsyncClient() as session:
