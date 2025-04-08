@@ -16,8 +16,9 @@ async def poll_redis(bot):
             try:
                 payload = ujson.loads(data)  # type: ignore[no-untyped-call]
                 text = payload.get("text")
+                send_to = payload.get("send_to")
                 if text:
-                    await bot.send_message(chat_id=MAIN_ACC, text=text)
+                    await bot.send_message(chat_id=MAIN_ACC if not send_to else send_to, text=text)
             except Exception as e:
                 logger.exception(f"[redis_worker] Failed to process message: {e}")
         await asyncio.sleep(1)
