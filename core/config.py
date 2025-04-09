@@ -22,8 +22,9 @@ def get_required_env(name: str) -> str:
 
 BACKEND_ROUTE = get_required_env("BACKEND_ROUTE")
 
-BASE_DIR: Path = Path(__file__).resolve().parent
-STORAGE_PATH: Path = BASE_DIR / "storage"
+BASE_DIR: Path = Path(__file__).resolve().parent.parent
+# objopa_ecosystem/
+STORAGE_PATH: Path = BASE_DIR / "storage" 
 STORAGE_PATH.mkdir(parents=True, exist_ok=True)
 
 TOKEN_BOT = get_required_env("TOKEN_BOT")

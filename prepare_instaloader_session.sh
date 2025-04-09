@@ -12,11 +12,11 @@ if [ -z "$INSTAGRAM_USERNAME" ]; then
 fi
 
 SESSION_SRC="$HOME/.config/instaloader/session-$INSTAGRAM_USERNAME"
-SESSION_DEST="./tg_bot/session/session-$INSTAGRAM_USERNAME"
+SESSION_DEST="./storage/session/session-$INSTAGRAM_USERNAME"
 
 if [ -f "$SESSION_SRC" ]; then
     echo "[+] Копирую instaloader session файл для $INSTAGRAM_USERNAME..."
-    mkdir -p ./tg_bot/session
+    mkdir -p ./storage/session
     cp "$SESSION_SRC" "$SESSION_DEST"
     echo "[+] Готово!"
 else

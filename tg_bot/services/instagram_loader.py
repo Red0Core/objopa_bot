@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 from pathlib import Path
+from core.config import STORAGE_PATH as STORAGE_DIR
 
 import instaloader
 from curl_cffi.requests import AsyncSession
@@ -45,7 +46,7 @@ def init_instaloader():
 
     try:
         if INSTAGRAM_USERNAME:
-            bot_loader.load_session_from_file(INSTAGRAM_USERNAME)
+            bot_loader.load_session_from_file(INSTAGRAM_USERNAME, STORAGE_DIR / "session" / f"session-{INSTAGRAM_USERNAME}")
             logger.success("✅ Успешная авторизация в Instagram.")
         else:
             raise ValueError("Не указаны имя пользователя и пароль Instagram.")
