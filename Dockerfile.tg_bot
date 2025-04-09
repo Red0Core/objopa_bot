@@ -1,0 +1,16 @@
+FROM python:3.13.2-slim
+WORKDIR /app
+
+# Копируем код
+COPY tg_bot/ ./tg_bot
+COPY core/ ./core
+
+# Устанавливаем зависимости
+RUN pip install -r tg_bot/requirements.txt uvloop
+
+# Переменная окружения, передаётся через docker-compose
+ARG INSTAGRAM_USERNAME
+ENV INSTAGRAM_USERNAME=${INSTAGRAM_USERNAME}
+
+# CMD
+CMD ["python", "-m", "tg_bot.main"]

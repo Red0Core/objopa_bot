@@ -1,21 +1,26 @@
-import instaloader
+import asyncio
 import os
 import re
-import asyncio
+from pathlib import Path
+from core.config import STORAGE_PATH as STORAGE_DIR
+
+import instaloader
 from curl_cffi.requests import AsyncSession
-from logger import logger
+
+from core.logger import logger
 
 INSTAGRAM_REGEX = re.compile(
     r"(https?:\/\/(?:www\.)?instagram\.com\/(?:share\/)?(p|reel|tv|stories)\/[\w\-]+)"
 )
 
-async def get_instagram_shortcode(url):
+
+async def get_instagram_shortcode(url: str) -> str | None:
     """
     Определяет shortcode поста Instagram (редиректим сразу).
     """
     async with AsyncSession() as session:
         try:
-            response = await session.get(url, allow_redirects=True, impersonate='chrome')
+            response = await session.get(url, allow_redirects=True, impersonate="chrome")  # type: ignore
             final_url = response.url  # Итоговый URL
             match = re.search(r"/(p|reel|tv)/([\w-]+)", final_url)
             if match:
@@ -27,30 +32,37 @@ async def get_instagram_shortcode(url):
 
     return None  # Shortcode не найден
 
+
 # Имя пользователя для сессии
 INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME")
 
+
 def init_instaloader():
-    """ Инициализация Instaloader с авторизацией """
+    """Инициализация Instaloader с авторизацией"""
     user_agent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36"
-    bot_loader = instaloader.Instaloader(filename_pattern='{shortcode}', iphone_support=False, user_agent=user_agent)
-    
+    bot_loader = instaloader.Instaloader(
+        filename_pattern="{shortcode}", iphone_support=False, user_agent=user_agent
+    )
+
     try:
         if INSTAGRAM_USERNAME:
-            bot_loader.load_session_from_file(INSTAGRAM_USERNAME)
-            print("✅ Успешная авторизация в Instagram.")
+            bot_loader.load_session_from_file(INSTAGRAM_USERNAME, STORAGE_DIR / "session" / f"session-{INSTAGRAM_USERNAME}")
+            logger.success("✅ Успешная авторизация в Instagram.")
         else:
             raise ValueError("Не указаны имя пользователя и пароль Instagram.")
     except FileNotFoundError:
-        print("⚠️ Файл сессии не найден. Будут загружены только открытые посты.")
-    
+        logger.error("⚠️ Файл сессии не найден. Будут загружены только открытые посты.")
+
     return bot_loader
+
 
 # Создаём Instaloader сессию при старте
 INSTALOADER_SESSION = init_instaloader()
 
-async def download_instagram_media(url):
-    """ Асинхронно загружает посты Instagram (фото, видео, текст) """
+
+async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
+    """Асинхронно загружает посты Instagram (фото, видео, текст)
+    и возвращает shortcode и ошибку, если есть."""
     bot_loader = INSTALOADER_SESSION
     try:
         shortcode = await get_instagram_shortcode(url)
@@ -60,7 +72,9 @@ async def download_instagram_media(url):
         download_path = "downloads"
         os.makedirs(download_path, exist_ok=True)
 
-        post = await asyncio.to_thread(instaloader.Post.from_shortcode, bot_loader.context, shortcode)
+        post = await asyncio.to_thread(
+            instaloader.Post.from_shortcode, bot_loader.context, shortcode
+        )
         await asyncio.to_thread(bot_loader.download_post, post, download_path)
 
         return shortcode, None
@@ -77,31 +91,31 @@ async def download_instagram_media(url):
     except Exception as e:
         return None, f"❌ Ошибка: {e}"
 
-async def select_instagram_media(shortcode, download_path="downloads"):
+
+Path("downloads").mkdir(exist_ok=True)
+
+
+async def select_instagram_media(
+    shortcode: str, download_path: Path = Path("downloads")
+) -> dict[str, list[Path] | str]:
     """
     Определяет, какие файлы скачал Instaloader, и выбирает нужный формат для отправки.
     """
-    files = [f for f in os.listdir(download_path) if f.startswith(shortcode)]
-    
-    images = []
-    videos = []
-    caption = None
+    files = [f for f in download_path.iterdir() if f.name.startswith(shortcode)]
 
-    for file in files:
-        file_path = os.path.join(download_path, file)
-        
+    images: list[Path] = []
+    videos: list[Path] = []
+    caption: str = ""
+
+    for file_path in files:
+        suffix = file_path.suffix.lower()
+
         # Определяем тип файла
-        if file.endswith((".jpg", ".jpeg", ".png")):
+        if suffix in (".jpg", ".jpeg", ".png"):
             images.append(file_path)
-        elif file.endswith((".mp4", ".mov")):
+        elif suffix in (".mp4", ".mov"):
             videos.append(file_path)
-        elif file.endswith(".txt"):
-            with open(file_path, "r", encoding="utf-8") as f:
-                caption = f.read()  # Читаем описание поста
+        elif suffix == ".txt":
+            caption = file_path.read_text(encoding="utf-8")  # Читаем описание поста
 
-    return {
-        "images": images,
-        "videos": videos,
-        "caption": caption
-    }
-
+    return {"images": images, "videos": videos, "caption": caption}

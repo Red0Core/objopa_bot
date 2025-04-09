@@ -1,16 +1,19 @@
-from pathlib import Path
-from aiogram import Router
-from aiogram.types import Message
-from aiogram.filters import Command
-from datetime import datetime
-import ujson
-import os
 import html
+import os
+from datetime import datetime, timedelta
+from typing import cast
 
-from .mention_dice import markdown_to_telegram_html, split_message_by_paragraphs, AI_CLIENT
+import ujson
+from aiogram import Router
+from aiogram.filters import Command
+from aiogram.types import Message
+
+from core.config import STORAGE_PATH
+
+from .mention_dice import AI_CLIENT, markdown_to_telegram_html, split_message_by_paragraphs
 
 track_router = Router()
-TRACK_FILE = Path('storage') / "trackers.json"
+TRACK_FILE = STORAGE_PATH / "trackers.json"
 
 
 # ===== Хранилище =====
@@ -28,16 +31,20 @@ def save_trackers(data):
 
 @track_router.message(Command("track"))
 async def handle_tracking(message: Message):
-    args = message.text.strip().split(maxsplit=2)
+    args = message.text.strip().split(maxsplit=2) if message.text else []
     if len(args) < 2 or args[1] not in ["start", "stop", "status", "desc", "stats"]:
-        await message.reply("Использование:\n"
-                            "/track start название\n"
-                            "/track stop название\n"
-                            "/track stats название\n"
-                            "/track status\n"
-                            "/track desc название описание")
+        await message.reply(
+            "Использование:\n"
+            "/track start название\n"
+            "/track stop название\n"
+            "/track stats название\n"
+            "/track status\n"
+            "/track desc название описание"
+        )
         return
-
+    if message.from_user is None:
+        await message.reply("Пользователь не найден.")
+        return
     action = args[1]
     user_id = str(message.from_user.id)
     user_name = message.from_user.full_name or message.from_user.first_name or "Безымянный герой"
@@ -64,9 +71,13 @@ async def handle_tracking(message: Message):
                 duration = int(now - info["start"])
                 days, rem = divmod(duration, 86400)
                 hours = rem // 3600
-                reply.append(f"• <b>{track_name}</b>: <code>{days}д {hours}ч</code>{' — ' + desc if desc else ''}")
+                reply.append(
+                    f"• <b>{track_name}</b>: <code>{days}д {hours}ч</code>{' — ' + desc if desc else ''}"
+                )
             else:
-                reply.append(f"• <b>{track_name}</b>: <i>неактивен</i>{' — ' + desc if desc else ''}")
+                reply.append(
+                    f"• <b>{track_name}</b>: <i>неактивен</i>{' — ' + desc if desc else ''}"
+                )
 
         await message.reply("\n".join(reply), parse_mode="HTML")
         return
@@ -136,7 +147,9 @@ async def handle_tracking(message: Message):
                 await message.answer(i, parse_mode="HTML")
         except Exception as e:
             print(f"[GPT STOP] Ошибка: {e}")
-        await message.reply(f"🛑 Трекер <b>{name}</b> остановлен и записан в историю.", parse_mode="HTML")
+        await message.reply(
+            f"🛑 Трекер <b>{name}</b> остановлен и записан в историю.", parse_mode="HTML"
+        )
 
     elif action == "stats":
         if name not in trackers or "start" not in trackers[name]:
@@ -157,16 +170,26 @@ async def handle_tracking(message: Message):
             reply.append(f"\n<b>{name}</b> — нет завершённых попыток.")
         else:
             reply.append(f"\n<b>{name}</b> — {len(history)} попыток")
-            for i, attempt in enumerate(history, 1):
-                start = datetime.fromtimestamp(attempt["start"])
-                end = datetime.fromtimestamp(attempt["end"])
-                duration = end - start
-                days = duration.days
-                hours = duration.seconds // 3600
-                reply.append(f"  {i}) {days} д. {hours} ч. (с {start:%d.%m %H:%M} по {end:%d.%m %H:%M})")
+            for history_iter, attempt in enumerate(history, 1):
+                attempt = cast(dict[str, float], attempt)
+                # Преобразуем временные метки в объекты datetime
+                start_time: datetime = datetime.fromtimestamp(attempt["start"])
+                end_time: datetime = datetime.fromtimestamp(attempt["end"])
+                
+                # Вычисляем разницу, которая будет объектом timedelta
+                duration_attempt: timedelta = end_time - start_time
+                
+                # Теперь можно обращаться к атрибутам timedelta
+                days = duration_attempt.days
+                hours = duration_attempt.seconds // 3600
+                
+                reply.append(
+                    f"  {history_iter}) {days} д. {hours} ч. (с {start_time:%d.%m %H:%M} по {end_time:%d.%m %H:%M})"
+                )
 
         await message.reply("\n".join(reply), parse_mode="HTML")
         return
+
 
 async def send_daily_message(bot):
     data = load_trackers()
@@ -191,11 +214,13 @@ async def send_daily_message(bot):
                 f"Пользователь {user_name} отслеживает цель «{track_name}» ({desc}).\n"
                 f"Текущая попытка длится уже {days} дней и {hours} часов.\n"
                 f"Всего попыток: {len(history) + 1}.\n"
-                f"Прошлые: " + ", ".join(
+                f"Прошлые: "
+                + ", ".join(
                     f"{int((h['end'] - h['start']) // 86400)}д {(int((h['end'] - h['start']) % 86400)) // 3600}ч"
                     for h in history
-                ) + ".\n"
-                f"Напиши бодрящее сообщение (1–2 абзаца) с иронией и лёгким уничижением. Можно немного эмодзи, но без HTML."
+                )
+                + ".\n"
+                "Напиши бодрящее сообщение (1–2 абзаца) с иронией и лёгким уничижением. Можно немного эмодзи, но без HTML."
             )
 
             try:

@@ -1,5 +1,6 @@
 annotated-types==0.7.0
 anyio==4.9.0
+curl-cffi==0.10.0
 certifi==2025.1.31
 click==8.1.8
 colorama==0.4.6
@@ -13,6 +14,8 @@ httptools==0.6.4
 httpx==0.28.1
 idna==3.10
 jinja2==3.1.6
+loguru==0.7.3
+lxml==5.3.1
 markdown-it-py==3.0.0
 markupsafe==3.0.2
 mdurl==0.1.2

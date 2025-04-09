@@ -6,24 +6,36 @@ services:
     restart: unless-stopped
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       - REDIS_HOST=redis
+      - BACKEND_ROUTE=http://backend:8000
     depends_on:
       - redis
+    volumes:
+      - ./storage:/app/storage
     ports:
-      - "127.0.0.1:8888:8000"
+      - "8888:8000"
 
-  tg-bot:
+  tg_bot:
     build:
-      context: ./tg_bot
+      context: .
+      dockerfile: Dockerfile.tg_bot
       args:
         INSTAGRAM_USERNAME: ${INSTAGRAM_USERNAME}
     restart: unless-stopped
     env_file:
-    - .env
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - BACKEND_ROUTE=http://backend:8000
     depends_on:
       - redis
+      - backend
     volumes:
-      - ./tg_bot/storage:/app/storage
+      - ./storage:/app/storage
