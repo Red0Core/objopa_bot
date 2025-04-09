@@ -23,7 +23,7 @@ async def get_cbr_rates_handler(message: Message):
     )
     try:
         async with httpx.AsyncClient() as session:
-            response = await session.get(f"{BACKEND_ROUTE}/markets/cbr")
+            response = await session.get(f"{BACKEND_ROUTE}/markets/cbr/rates")
             response.raise_for_status()
             data = response.json()
             await message.reply(data["html_output"], parse_mode="html")
@@ -42,7 +42,7 @@ async def get_forex_rub_rates_handler(message: Message):
     output = ""
     try:
         async with httpx.AsyncClient() as session:
-            response = await session.get(f"{BACKEND_ROUTE}/markets/cbr")
+            response = await session.get(f"{BACKEND_ROUTE}/markets/cbr/rates")
             response.raise_for_status()
             data = response.json()
             output = data["html_output"]
@@ -97,6 +97,7 @@ async def get_forex_rub_rates_handler(message: Message):
         await message.reply(f"Ошибка: {e}")
         return
 
+    await message.reply(output, parse_mode="html")
     logger.info(
         f"Успешно отправил рубль для {message.from_user.id if message.from_user else 'unknown'}"
     )
