@@ -17,7 +17,7 @@ def setup_routers(dp: Dispatcher):
         mention_dice_router,
         crypto_router,
         blackjack_router,
-        gpt_msg_router,
         day_tracker_router,
         currencies_router,
+        gpt_msg_router, # Всегда в конце
     )

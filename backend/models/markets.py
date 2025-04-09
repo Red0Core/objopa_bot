@@ -45,12 +45,12 @@ class ForexResponse(BaseModel):
 # Coinmarketcap Models
 class QuoteData(BaseModel):
     price: float | None
-    percent_change_1h: float
-    percent_change_24h: float
-    percent_change_7d: float
-    percent_change_30d: float
+    percent_change_1h: float | None
+    percent_change_24h: float | None
+    percent_change_7d: float | None
+    percent_change_30d: float | None
     market_cap: float | None
-    volume_24h: float
+    volume_24h: float | None
 
 
 class CoinData(BaseModel):

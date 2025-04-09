@@ -30,6 +30,7 @@ async def upload_to_pastebin(text: str, title: str = "GPT Response") -> str:
 
 if __name__ == '__main__':
     import asyncio
+
     from core.config import PASTEBIN_API_KEY
 
     async def main():

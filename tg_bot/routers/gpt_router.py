@@ -1,14 +1,11 @@
 import ujson
 from aiogram import Router
 from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message
 
 from core.config import GEMINI_API_KEY, STORAGE_PATH
 from core.logger import logger
 from tg_bot.services.gpt import (
-    AIChatInterface,
     AIModelError,
     APIKeyError,
     GeminiChatModel,
@@ -42,33 +39,6 @@ def save_whitelist(data, file_path=WHITELIST_PATH):
 whitelist = load_whitelist()
 
 
-class ChatStates(StatesGroup):
-    waiting_for_message = State()
-
-
-class ChatFSMStateSessionManager(ChatSessionManager):
-    def __init__(self):
-        super().__init__()
-        self.state: FSMContext | None = None
-
-    def set_state(self, state: FSMContext):
-        """Store FSMContext for later use in chat session management"""
-        self.state = state
-        return self
-
-    async def clear_state(self) -> None:
-        """Очистка FSM"""
-        if self.state is not None:
-            await self.state.clear()
-
-    async def async_get_chat(self, chat_id) -> AIChatInterface | None:
-        chat = super().get_chat(chat_id)
-        if chat is None:
-            await self.clear_state()
-
-        return chat
-
-
 @router.message(Command("ask"))
 async def handle_ask_gpt(message: Message):
     try:
@@ -98,11 +68,11 @@ async def handle_ask_gpt(message: Message):
 
 
 @router.message(Command("chat"))
-async def start_session(message: Message, state: FSMContext):
+async def start_session(message: Message):
     chat_id = message.chat.id
-    chat_manager = ChatFSMStateSessionManager()
+    chat_manager = ChatSessionManager()
 
-    if not await chat_manager.async_get_chat(chat_id):
+    if not chat_manager.get_chat(chat_id):
         chat_model = GeminiChatModel(api_key=GEMINI_API_KEY)
         text_input = message.text.split(maxsplit=1) if message.text else ""
         if len(text_input) > 1:
@@ -110,9 +80,6 @@ async def start_session(message: Message, state: FSMContext):
         else:
             chat_model.new_chat()
         chat_manager.create_chat(chat_id, chat_model)
-
-        await state.set_state(ChatStates.waiting_for_message)
-        chat_manager.set_state(state)
 
         await message.answer(
             "Чат создан! Можете начать общение.\n"
@@ -123,40 +90,62 @@ async def start_session(message: Message, state: FSMContext):
         await message.answer("Вы уже в чате. Продолжайте диалог.")
 
 
-@router.message(ChatStates.waiting_for_message)
-async def continue_session(message: Message, state: FSMContext):
+@router.message()
+async def handle_gpt_chat(message: Message):
+    text = message.text
     chat_id = message.chat.id
-    chat_manager = ChatFSMStateSessionManager()
+    from_user = message.from_user
 
-    chat_session = await chat_manager.async_get_chat(chat_id)
-    if chat_session and message.from_user and message.text:
-        ids = whitelist.get(message.chat.id, {})
-        user_name = ids.get(
-            message.from_user.id,
-            f"{message.from_user.first_name} {message.from_user.last_name or ''}",
-        )
+    # Пропускаем команды
+    if not text or text.startswith("/") or not from_user:
+        return
+    
+    # Разрешить только ответы на сообщения от бота
+    if (
+        message.reply_to_message
+        and message.reply_to_message.from_user
+        and message.bot
+        and message.reply_to_message.from_user.id != message.bot.id
+    ):
+        return
 
-        logger.info(
-            f"Отвечаю на сообщение в {chat_id} {message.from_user.username}-{message.from_user.first_name}+{message.from_user.last_name}"
-        )
-        
-        is_pastebin = message.text.strip().endswith("pastebin")
-        prompt_text = message.text.replace("pastebin", "").strip()
+    # Проверяем: есть ли активная сессия?
+    chat_manager = ChatSessionManager()
+    chat_session = chat_manager.get_chat(chat_id)
 
-        text = await chat_session.send_message(f"{user_name}: {prompt_text}")
-        await state.set_state(ChatStates.waiting_for_message)
+    if not chat_session:
+        # Нет активной сессии — не обрабатываем
+        return
+
+    # --- Обработка whitelist'а ---
+    ids = whitelist.get(message.chat.id, {})
+    user_name = ids.get(
+        from_user.id,
+        f"{from_user.first_name} {from_user.last_name or ''}",
+    )
+
+    logger.info(
+        f"GPT ответ для {user_name} в чате {chat_id} ({from_user.username})"
+    )
+
+    is_pastebin = text.strip().endswith("pastebin")
+    prompt_text = text.replace("pastebin", "").strip()
+
+    try:
+        response = await chat_session.send_message(f"{user_name}: {prompt_text}")
 
         if is_pastebin:
-            paste_link = await upload_to_pastebin(text)
+            paste_link = await upload_to_pastebin(response)
             await message.answer(f"Ответ загружен: {paste_link}")
         else:
-            cleaned_text = markdown_to_telegram_html(text)
-            messages = split_message_by_paragraphs(cleaned_text)
-            for i in messages:
-                await message.answer(i, parse_mode="HTML")
-    else:
-        await message.answer("Используйте команду /chat для начала общения.")
+            cleaned = markdown_to_telegram_html(response)
+            messages = split_message_by_paragraphs(cleaned)
+            for chunk in messages:
+                await message.answer(chunk, parse_mode="HTML")
 
+    except Exception:
+        logger.exception("Ошибка при отправке в GPT:")
+        await message.answer("Произошла ошибка. Попробуйте позже.")
 
 @router.message(Command("add_me_as"))
 async def add_user_to_whitelist(message: Message):
