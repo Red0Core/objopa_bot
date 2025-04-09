@@ -17,6 +17,7 @@ from tg_bot.services.gpt import (
     UnexpectedResponseError,
 )
 from tg_bot.services.gptchat_manager import ChatSessionManager
+from tg_bot.services.pastebin import upload_to_pastebin
 
 from .mention_dice import AI_CLIENT, markdown_to_telegram_html, split_message_by_paragraphs
 
@@ -128,7 +129,7 @@ async def continue_session(message: Message, state: FSMContext):
     chat_manager = ChatFSMStateSessionManager()
 
     chat_session = await chat_manager.async_get_chat(chat_id)
-    if chat_session and message.from_user:
+    if chat_session and message.from_user and message.text:
         ids = whitelist.get(message.chat.id, {})
         user_name = ids.get(
             message.from_user.id,
@@ -138,13 +139,21 @@ async def continue_session(message: Message, state: FSMContext):
         logger.info(
             f"Отвечаю на сообщение в {chat_id} {message.from_user.username}-{message.from_user.first_name}+{message.from_user.last_name}"
         )
-        text = await chat_session.send_message(f"{user_name}: {message.text}")
+        
+        is_pastebin = message.text.strip().endswith("pastebin")
+        prompt_text = message.text.replace("pastebin", "").strip()
+
+        text = await chat_session.send_message(f"{user_name}: {prompt_text}")
         await state.set_state(ChatStates.waiting_for_message)
 
-        cleaned_text = markdown_to_telegram_html(text)
-        messages = split_message_by_paragraphs(cleaned_text)
-        for i in messages:
-            await message.answer(i, parse_mode="HTML")
+        if is_pastebin:
+            paste_link = await upload_to_pastebin(text)
+            await message.answer(f"Ответ загружен: {paste_link}")
+        else:
+            cleaned_text = markdown_to_telegram_html(text)
+            messages = split_message_by_paragraphs(cleaned_text)
+            for i in messages:
+                await message.answer(i, parse_mode="HTML")
     else:
         await message.answer("Используйте команду /chat для начала общения.")
 

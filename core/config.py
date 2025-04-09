@@ -48,3 +48,5 @@ COINMARKETCAP_API_KEY = get_required_env("COINMARKETCAP_API_KEY")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+
+PASTEBIN_API_KEY = get_required_env("PASTEBIN_API_KEY")

@@ -2,9 +2,9 @@ import asyncio
 from datetime import datetime, timedelta
 
 import httpx
+
 import tg_bot.redis_worker as redis_worker
 import tg_bot.routers.day_tracker as day_tracker
-
 from core.config import BACKEND_ROUTE, MAIN_ACC, OBZHORA_CHAT_ID
 from core.logger import logger
 from tg_bot.services.horoscope_mail_ru import get_horoscope_mail_ru
