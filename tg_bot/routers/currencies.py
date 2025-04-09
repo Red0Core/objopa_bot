@@ -26,7 +26,28 @@ async def get_cbr_rates_handler(message: Message):
             response = await session.get(f"{BACKEND_ROUTE}/markets/cbr/rates")
             response.raise_for_status()
             data = response.json()
-            await message.reply(data["html_output"], parse_mode="html")
+
+            if not data["html_output"]:
+                await message.reply("Нет данных для отображения")
+                return
+            # Формируем сообщение
+            output = data["html_output"]
+            try:
+                if message.text and float(message.text.split()[1]):
+                    # Если указано значение, то конвертируем
+                    value = float(message.text.split()[1])
+                    eur_value = value / data["rates"]["EUR"]['rate']
+                    usd_value = value / data["rates"]["USD"]['rate']
+                    output += (
+                        f"\n\n💵 <b>Конвертация:</b>\n"
+                        f"<code>{value:.2f}</code> <b>₽</b> = "
+                        f"<code>{usd_value:.2f}</code> <b>$</b> "
+                        f"или <code>{eur_value:.2f}</code> <b>€</b>"
+                    )
+            except (ValueError, IndexError):
+                pass
+
+            await message.reply(output, parse_mode="html")
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 400:
             await message.reply("Ошибка: неверный запрос")
@@ -46,6 +67,9 @@ async def get_forex_rub_rates_handler(message: Message):
             response.raise_for_status()
             data = response.json()
             output = data["html_output"]
+
+            usd_rate = data["rates"]["USD"]['rate']
+            eur_rate = data["rates"]["EUR"]['rate']
 
             async def fetch_currency_data(from_symbol: str, to_symbol: str) -> dict[str, Any]:
                 response = await session.get(
@@ -88,6 +112,10 @@ async def get_forex_rub_rates_handler(message: Message):
                 if change_30d:
                     output += f"🔸 За 30 дней: <code>{change_30d[0]:+.2f} ({change_30d[1]:+.2f}%)</code>\n"
 
+                if symbol == "USD":
+                    usd_rate = max(today, usd_rate)
+                elif symbol == "EUR":
+                    eur_rate = max(today, eur_rate)
     except httpx.HTTPStatusError:
         output = f"{output}\nОшибка: не удалось получить данные"
         await message.reply(output, parse_mode="html")
@@ -96,6 +124,22 @@ async def get_forex_rub_rates_handler(message: Message):
         logger.error(f"Ошибка: {traceback.format_exc()}")
         await message.reply(f"Ошибка: {e}")
         return
+
+    # Если указано значение, то конвертируем
+    try:
+        if message.text and float(message.text.split()[1]):
+            # Если указано значение, то конвертируем
+            value = float(message.text.split()[1])
+            eur_value = value / eur_rate
+            usd_value = value / usd_rate
+            output += (
+                f"\n\n💵 <b>Конвертация:</b>\n"
+                f"<code>{value:.2f}</code> <b>₽</b> = "
+                f"<code>{usd_value:.2f}</code> <b>$</b> "
+                f"или <code>{eur_value:.2f}</code> <b>€</b>"
+            )
+    except (ValueError, IndexError):
+        pass
 
     await message.reply(output, parse_mode="html")
     logger.info(
