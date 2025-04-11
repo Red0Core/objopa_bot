@@ -8,6 +8,7 @@ from .gpt_router import router as gpt_msg_router
 from .mention_dice import router as mention_dice_router
 from .misc import router as commands_router
 from .utils import router as utils_router
+from .redis_workers_routers import router as redis_workers_router
 
 
 def setup_routers(dp: Dispatcher):
@@ -19,5 +20,6 @@ def setup_routers(dp: Dispatcher):
         blackjack_router,
         day_tracker_router,
         currencies_router,
+        redis_workers_router,
         gpt_msg_router, # Всегда в конце
     )

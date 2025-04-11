@@ -3,7 +3,8 @@ from datetime import datetime, timedelta
 
 import httpx
 
-import tg_bot.redis_worker as redis_worker
+from tg_bot.redis_workers import image_selection
+import tg_bot.redis_workers.base_notifications as base_notifications
 import tg_bot.routers.day_tracker as day_tracker
 from core.config import BACKEND_ROUTE, MAIN_ACC, OBZHORA_CHAT_ID
 from core.logger import logger
@@ -78,6 +79,7 @@ async def on_startup(bot):
         send_daily_cbr_rates(bot, OBZHORA_CHAT_ID),
         send_daily_horoscope_for_brothers(bot),
         send_daily_tracker_messages(bot),
-        redis_worker.poll_redis(bot),
+        base_notifications.poll_redis(bot),
+        image_selection.poll_image_selection(bot),
     ):
         asyncio.create_task(coro)
