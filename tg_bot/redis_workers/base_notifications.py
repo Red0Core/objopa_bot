@@ -1,13 +1,10 @@
 import asyncio
 
-import redis.asyncio as redis
 import ujson
 
 from core.config import MAIN_ACC, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
 from core.logger import logger
-
-r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
-
+from core.redis_client import redis as r
 
 async def poll_redis(bot):
     while True:

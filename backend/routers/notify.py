@@ -1,12 +1,10 @@
 from datetime import datetime
-import redis.asyncio
 from fastapi import APIRouter
 from pydantic import BaseModel, HttpUrl
 from core.logger import logger
-from core.config import REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
+from core.redis_client import redis as r
 from backend.models.workers import BaseWorkerTask, ImageSelectionTaskData
 
-r = redis.asyncio.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD, decode_responses=True)
 router = APIRouter(prefix="/notify", tags=["notifiers"])
 
 class Notification(BaseModel):
@@ -26,7 +24,7 @@ async def push_notification(notifier: Notification):
 class ImageSelectionRequest(BaseModel):
     task_id: str
     user_id: int
-    images: list[HttpUrl]
+    relative_paths: list[str]
 
 
 @router.post("/image-selection")
@@ -40,7 +38,7 @@ async def notify_image_selection(data: ImageSelectionRequest):
         created_at=datetime.now(),
         data= ImageSelectionTaskData(
             user_id=data.user_id,
-            images=data.images,
+            relative_paths=data.relative_paths,
         )
     )
 

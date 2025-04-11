@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 class BaseWorkerTask(BaseModel):
     task_id: str
@@ -13,5 +13,12 @@ class ImageGenerationTaskData(BaseModel):
     user_id: int
 
 class ImageSelectionTaskData(BaseModel):
-    images: list[HttpUrl]
+    relative_paths: list[str]
     user_id: int
+
+class FileUploadResponse(BaseModel):
+    filename: str
+    filepath: str
+    size: int
+    content_type: str
+    status: str = "uploaded"

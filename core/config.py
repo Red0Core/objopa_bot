@@ -24,8 +24,10 @@ BACKEND_ROUTE = get_required_env("BACKEND_ROUTE")
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 # objopa_ecosystem/
-STORAGE_PATH: Path = BASE_DIR / "storage" 
+STORAGE_PATH: Path = BASE_DIR / "storage"
 STORAGE_PATH.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR = STORAGE_PATH / "image_generation_uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 TOKEN_BOT = get_required_env("TOKEN_BOT")
 OBZHORA_CHAT_ID = get_required_env("OBZHORA_CHAT_ID")  # Используется в личных целях
