@@ -45,7 +45,11 @@ class QueueListener:
         await pipeline.run()
         logger.info(f"Задача {task["task_id"]} завершена.")
 
-if __name__ == "__main__":
-    listener = QueueListener("hailuo_tasks")
+async def main():
+    task = []
+    for _ in range(5):
+        task.append(QueueListener("hailuo_tasks").listen())
+    await asyncio.gather(*task)  # Запускаем все слушатели параллельно
 
-    asyncio.run(listener.listen())
+if __name__ == "__main__":
+    asyncio.run(main())

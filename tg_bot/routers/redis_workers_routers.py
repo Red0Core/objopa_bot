@@ -25,7 +25,7 @@ async def handle_selection(callback: CallbackQuery):
             msg_to_delete = await redis.lpop(f"delete:tg_messages_id:{callback.from_user.id}:{task_id}") # type: ignore
             if not msg_to_delete:
                 break
-            await callback.bot.delete_message(chat_id=callback.from_user.id, message_id=msg_to_delete)
+            await callback.bot.delete_message(chat_id=callback.from_user.id, message_id=msg_to_delete) # type: ignore
         await callback.message.delete() # type: ignore
         logger.info(f"Сообщение с выбором изображений удалено {task_id}")
     except Exception as e:
