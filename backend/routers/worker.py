@@ -11,6 +11,7 @@ from backend.models.workers import BaseWorkerTask, FileUploadResponse, ImageGene
 import os
 import xxhash
 import aiofiles
+import time
 
 router = APIRouter(prefix="/worker", tags=["worker"])
 
@@ -56,6 +57,7 @@ async def upload_file(
         raise HTTPException(status_code=400, detail="Файл не предоставлен")
     
     try:
+        start = time.time()
         # Создаем временное имя файла
         file_ext = os.path.splitext(file.filename or "")[1]
         temp_filename = f"temp_{uuid4().hex}{file_ext}"
@@ -113,7 +115,7 @@ async def upload_file(
                     DEFAULT_EXPIRY
                 )
             )
-            
+            logger.info(f"{time.time()-start} время с существующим файлом")
             return FileUploadResponse(
                 filename=file.filename or "unknown",
                 filepath=existing_filepath.decode() if isinstance(existing_filepath, bytes) else existing_filepath,
@@ -150,7 +152,7 @@ async def upload_file(
         # 10. ОПТИМИЗАЦИЯ: Логирование только для больших файлов
         if file_size > 1024 * 1024:  # Больше 1MB
             logger.info(f"Файл {file.filename} ({human_readable_size(file_size)}) загружен как {unique_filename}")
-        
+        logger.info(f"{time.time() - start} время без существующего файла")
         return FileUploadResponse(
             filename=file.filename or "unknown",
             filepath=unique_filename,
