@@ -2,7 +2,7 @@ from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel, HttpUrl
 from core.logger import logger
-from core.redis_client import redis as r
+from core.redis_client import get_redis
 from backend.models.workers import BaseWorkerTask, ImageSelectionTaskData
 
 router = APIRouter(prefix="/notify", tags=["notifiers"])
@@ -13,6 +13,7 @@ class Notification(BaseModel):
 
 @router.post("")
 async def push_notification(notifier: Notification):
+    r = await get_redis()
     await r.lpush("notifications", notifier.model_dump_json())  # type: ignore
     return {
         "status": "queued",
@@ -43,5 +44,6 @@ async def notify_image_selection(data: ImageSelectionRequest):
     )
 
     logger.info(f"Pushing image selection task to Redis: {payload}")
+    r = await get_redis()
     await r.rpush(notification_key, payload.model_dump_json())  # type: ignore
     return {"status": "ok"}

@@ -1,11 +1,11 @@
 import asyncio
-from core.redis_client import redis
+from core.redis_client import get_redis
 import ujson
 from aiogram import Bot
 from core.config import UPLOAD_DIR
 from core.logger import logger
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, FSInputFile
-from tg_bot.redis_workers.base_notifications import r
+
 
 async def poll_image_selection(bot: Bot):
     """
@@ -14,6 +14,7 @@ async def poll_image_selection(bot: Bot):
     """
     logger.info("Запущен слушатель задач image_selection...")
     while True:
+        r = await get_redis()
         # Получаем все ключи задач image_selection из Redis
         keys = await r.keys("notifications:image_selection:*")
         for key in keys:
@@ -47,7 +48,7 @@ async def poll_image_selection(bot: Bot):
                 # Отправляем альбом + кнопки
                 msgs = await bot.send_media_group(chat_id=user_id, media=media) # type: ignore
                 for msg in msgs:
-                    await redis.lpush(f"delete:tg_messages_id:{user_id}:{task_id}", msg.message_id) # type: ignore
+                    await r.lpush(f"delete:tg_messages_id:{user_id}:{task_id}", msg.message_id) # type: ignore
                 await bot.send_message(chat_id=user_id, text="Выберите одно изображение:", reply_markup=keyboard, reply_to_message_id=msgs[0].message_id) # type: ignore
 
             except Exception as e:

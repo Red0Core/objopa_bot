@@ -1,7 +1,7 @@
 import asyncio
 
 from pathlib import Path
-from core.redis_client import redis
+from core.redis_client import get_redis
 from workers.base_pipeline import BasePipeline
 from core.logger import logger
 from core.config import BACKEND_ROUTE, BASE_DIR
@@ -99,6 +99,7 @@ class VideoGenerationPipeline(BasePipeline):
 
     async def get_images_selection(self, task_id: str) -> int:
         while True:
+            redis = await get_redis()
             selection_index = await redis.get(f"result:image_selection:{task_id}")
             if selection_index is not None:
                 logger.info(f"Выбор получен: {selection_index}")

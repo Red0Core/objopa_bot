@@ -1,12 +1,13 @@
 import asyncio
 from pathlib import Path
-from fastapi import APIRouter, File, HTTPException, UploadFile, status, BackgroundTasks
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, BackgroundTasks
 from uuid import uuid4
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
+from redis.asyncio import Redis
 from core.config import UPLOAD_DIR
 from core.logger import logger
-from core.redis_client import redis
+from core.redis_client import get_redis
 from backend.models.workers import BaseWorkerTask, FileUploadResponse, VideoGenerationPipelineTaskData
 import os
 import xxhash
@@ -30,6 +31,7 @@ async def submit_image_task(request: VideoGenerationPipelineTaskData):
     )
 
     try:
+        redis = await get_redis()
         await redis.rpush("hailuo_tasks", task_data.model_dump_json()) # type: ignore
         logger.info(f"New image generation task submitted: {task_id}")
     except Exception as e:
@@ -48,6 +50,7 @@ DEFAULT_EXPIRY = timedelta(days=1)
 async def upload_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    redis: Redis =Depends(get_redis)
 ):
     """Загружает файл с оптимизацией для снижения CPU-нагрузки"""
     if not file:
@@ -167,6 +170,7 @@ async def upload_file(
 
 # Вспомогательная функция для фонового обновления статистики
 async def update_file_stats(hash_key: str, stats_key: str, expiry: timedelta):
+    redis = await get_redis()
     """Фоновое обновление статистики файла"""
     try:
         async with redis.pipeline() as pipe:
@@ -189,6 +193,7 @@ def human_readable_size(size, decimal_places=2) -> str:
 async def cleanup_expired_files():
     """Фоновая задача для очистки истекших файлов"""
     try:
+        redis = await get_redis()
         now = datetime.now().timestamp()
         
         # Получаем файлы с истекшим сроком

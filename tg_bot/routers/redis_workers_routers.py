@@ -1,7 +1,6 @@
 from aiogram import Router
 from aiogram.types import CallbackQuery
-from core.redis_client import redis
-from tg_bot.redis_workers.base_notifications import r
+from core.redis_client import get_redis
 from core.logger import logger
 
 router = Router()
@@ -19,6 +18,7 @@ async def handle_selection(callback: CallbackQuery):
     # Короткое уведомление
     await callback.answer(f"Вы выбрали изображение №{selected_index}", show_alert=True)
     
+    redis = await get_redis()
     # Удаляем сообщение полностью
     try:
         while True:
@@ -33,5 +33,5 @@ async def handle_selection(callback: CallbackQuery):
     
     
     # Отправляем результат выбора в Redis
-    await r.set(f"result:image_selection:{task_id}", index)
+    await redis.set(f"result:image_selection:{task_id}", index)
     logger.info(f"Пользователь выбрал изображение №{selected_index} для задачи {task_id}")

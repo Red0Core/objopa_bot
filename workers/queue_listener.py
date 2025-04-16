@@ -2,7 +2,7 @@ import asyncio
 import json
 from typing import Any
 from core.logger import logger
-from core.redis_client import redis
+from core.redis_client import get_redis
 from workers.base_pipeline import BasePipeline
 from workers.video_generation_pipeline import VideoGenerationPipeline
 
@@ -18,6 +18,7 @@ class QueueListener:
     async def listen(self):
         logger.info("Начинаем получать задачи...")
         while True:
+            redis = await get_redis()
             task_json = await redis.blpop(self.queue_name, timeout=5) # type: ignore
             if task_json:
                 _, task_data = task_json

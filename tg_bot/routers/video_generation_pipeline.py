@@ -1,7 +1,6 @@
 import uuid
 import asyncio
 import json
-from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from aiogram import Router, F
@@ -9,7 +8,7 @@ from aiogram.types import Message, FSInputFile
 from aiogram.filters import Command, CommandObject
 from aiogram.enums.parse_mode import ParseMode
 
-from core.redis_client import redis
+from core.redis_client import get_redis
 from core.logger import logger
 
 video_router = Router()
@@ -61,7 +60,8 @@ async def handle_prompt_file(message: Message):
     # Проверяем, есть ли уже сохраненные промпты
     existing_prompts_json = None
     overwrite_message = ""
-    
+
+    redis = await get_redis()
     # Сохраняем промпты в Redis в зависимости от типа файла
     if file_name.endswith(".img.txt"):
         # Проверяем, есть ли уже промпты для изображений
@@ -144,6 +144,7 @@ async def handle_start_generation(message: Message):
     anim_prompts_key = f"video_gen:anim_prompts:{session_key}"
     
     # Проверяем наличие обоих типов промптов
+    redis = await get_redis()
     has_img_prompts = await redis.exists(img_prompts_key)
     has_anim_prompts = await redis.exists(anim_prompts_key)
     
@@ -192,6 +193,7 @@ async def handle_media_group_with_start_command(message: Message):
         img_prompts_key = f"video_gen:img_prompts:{session_key}"
         anim_prompts_key = f"video_gen:anim_prompts:{session_key}"
         
+        redis = await get_redis()
         has_img_prompts = await redis.exists(img_prompts_key)
         has_anim_prompts = await redis.exists(anim_prompts_key)
         
@@ -271,6 +273,7 @@ async def start_video_generation(message: Message, img_prompts: List[str], anim_
     )
     
     # Добавляем задачу в очередь Redis
+    redis = await get_redis()
     await redis.rpush("hailuo_tasks", json.dumps(task))
     logger.info(f"Задача на генерацию видео {task_id} добавлена в очередь")
     

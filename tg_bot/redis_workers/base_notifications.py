@@ -4,10 +4,11 @@ import ujson
 
 from core.config import MAIN_ACC, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
 from core.logger import logger
-from core.redis_client import redis as r
+from core.redis_client import get_redis
 
 async def poll_redis(bot):
     while True:
+        r = await get_redis()
         data = await r.rpop("notifications")  # type: ignore[no-untyped-call]
         if data:
             try:
