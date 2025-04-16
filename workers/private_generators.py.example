@@ -1,0 +1,53 @@
+"""
+Реальные реализации генераторов изображений и видео.
+Этот файл содержит интеграцию с чужим кодом и не должен включаться в репозиторий.
+"""
+from pathlib import Path
+from typing import List
+
+from core.logger import logger
+from core.config import BASE_DIR
+from workers.generator_factory import ImageGenerator, VideoGenerator
+
+# Импортируем чужие библиотеки и модули
+import scripts.get_image as get_image
+import scripts.get_animations as get_animations
+import scripts.concat_clips as concat_clips
+
+class RealImageGenerator(ImageGenerator):
+    """
+    Реальная реализация генератора изображений.
+    Интегрируется с внешней библиотекой для генерации.
+    """
+    
+    async def generate(self, prompts: List[str]) -> List[List[Path]]:
+        """
+        Генерирует изображения с помощью внешнего API.
+        
+        Args:
+            prompts: Список текстовых промптов
+            
+        Returns:
+            Список групп изображений (список списков путей)
+        """
+        # Вызов внешнего скрипта для генерации изображений
+
+class RealVideoGenerator(VideoGenerator):
+    """
+    Реальная реализация генератора видео.
+    Интегрируется с внешней библиотекой для генерации.
+    """
+    
+    async def generate(self, images: List[Path], prompts: List[str]) -> Path:
+        """
+        Создает видео с помощью внешних скриптов.
+        
+        Args:
+            images: Список путей к изображениям
+            prompts: Список текстовых промптов для анимации
+            
+        Returns:
+            Путь к созданному видеофайлу
+        """
+        # Создание анимаций
+        

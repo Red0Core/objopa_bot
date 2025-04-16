@@ -6,3 +6,4 @@ objopa.code-workspace
 storage/
 logs/
 **/__pycache__/
+workers/private_generators.py

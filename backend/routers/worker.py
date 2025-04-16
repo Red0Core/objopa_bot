@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from core.config import UPLOAD_DIR
 from core.logger import logger
 from core.redis_client import redis
-from backend.models.workers import BaseWorkerTask, FileUploadResponse, ImageGenerationTaskData
+from backend.models.workers import BaseWorkerTask, FileUploadResponse, VideoGenerationPipelineTaskData
 import os
 import xxhash
 import aiofiles
@@ -15,19 +15,16 @@ import time
 
 router = APIRouter(prefix="/worker", tags=["worker"])
 
-class ImageGenerationRequest(BaseModel):
-    prompts: list[str] = Field(..., min_items=1, example=["cat with glasses", "dog with a cape"]) # type: ignore
-    user_id: int = Field(..., example=123456789) # type: ignore
-
-@router.post("/image")
-async def submit_image_task(request: ImageGenerationRequest):
+@router.post("/video_generation_pipeline", response_model=dict)
+async def submit_image_task(request: VideoGenerationPipelineTaskData):
     task_id = str(uuid4())
     task_data = BaseWorkerTask(
         type="video_generation",
         task_id=task_id,
         created_at=datetime.now(),
-        data=ImageGenerationTaskData(
-            prompts=request.prompts,
+        data=VideoGenerationPipelineTaskData(
+            image_prompts=request.image_prompts,
+            animation_prompts=request.animation_prompts,
             user_id=request.user_id,
         )
     )
@@ -180,8 +177,9 @@ async def update_file_stats(hash_key: str, stats_key: str, expiry: timedelta):
     except Exception as e:
         logger.error(f"Ошибка при обновлении статистики файла: {e}")
 
-def human_readable_size(size, decimal_places=2):
+def human_readable_size(size, decimal_places=2) -> str:
     """Преобразует размер в байтах в человеко-читаемый формат"""
+    unit = 'B'
     for unit in ['B', 'KB', 'MB', 'GB', 'TB', 'PB']:
         if size < 1024.0 or unit == 'PB':
             break

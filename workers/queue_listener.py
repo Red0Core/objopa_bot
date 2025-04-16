@@ -1,9 +1,6 @@
 import asyncio
 import json
 from typing import Any
-from httpx import AsyncClient
-from redis.asyncio import Redis
-from core.config import BACKEND_ROUTE
 from core.logger import logger
 from core.redis_client import redis
 from workers.base_pipeline import BasePipeline
@@ -45,11 +42,7 @@ class QueueListener:
         await pipeline.run()
         logger.info(f"Задача {task["task_id"]} завершена.")
 
-async def main():
-    task = []
-    for _ in range(5):
-        task.append(QueueListener("hailuo_tasks").listen())
-    await asyncio.gather(*task)  # Запускаем все слушатели параллельно
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    listener = QueueListener("hailuo_tasks")
+
+    asyncio.run(listener.listen())

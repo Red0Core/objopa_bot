@@ -4,23 +4,33 @@ from pathlib import Path
 from core.redis_client import redis
 from workers.base_pipeline import BasePipeline
 from core.logger import logger
-from core.config import BACKEND_ROUTE
+from core.config import BACKEND_ROUTE, BASE_DIR
 from httpx import AsyncClient
 import uuid
 
-class TestVideoGenerationPipeline(BasePipeline):
+# Импортируем фабрику
+from workers.generator_factory import GeneratorFactory
+
+class VideoGenerationPipeline(BasePipeline):
     def __init__(self, task_id: str, **params):
         self.task_id = task_id
         self.created_at = params.get("created_at")
         data = params.get("data", {})
-        self.prompts = data.get("prompts", [])
+        self.image_prompts = data.get("image_prompts", [])
+        self.animation_prompts = data.get("animation_prompts", [])
+        self.image_prompts = data.get("image_prompts", [])
+        self.animation_prompts = data.get("animation_prompts", [])
         self.user_id = data.get("user_id")
+
+        # Инициализируем генераторы
+        self.image_generator = GeneratorFactory.create_image_generator()
+        self.video_generator = GeneratorFactory.create_video_generator()
 
     async def run(self) -> None:
         # Пример обработки задачи генерации изображений
-        logger.info(f"Task ID: {self.task_id}; User ID: {self.user_id}; Prompts: {self.prompts}")
+        logger.info(f"Task ID: {self.task_id}; User ID: {self.user_id}; Image Prompts: {self.image_prompts}; Animations Prompts: {self.animation_prompts}")
 
-        all_generated_images_paths = await self.generate_images(self.prompts)
+        all_generated_images_paths = await self.generate_images(self.image_prompts)
         all_server_images_paths: list[list[str]] = []
         
         # Шаг 0: Параллельно загружаем все изображения на сервер батчами
@@ -58,27 +68,19 @@ class TestVideoGenerationPipeline(BasePipeline):
             
 
         # Генерация видео из выбранных изображений
-        video_path = await self.generate_video(final_selected_images)
+        video_path = await self.generate_video(final_selected_images, self.animation_prompts)
 
         # Отправляем уведомление о завершении генерации
         await self.send_notification(f"Генерация видео завершена. Путь к видео: {video_path}")
         
     async def generate_images(self, prompts: list[str]) -> list[list[Path]]:
-        # Здесь должна быть логика генерации изображений
         # Например, вызов API генерации изображений
-        return [[
-            Path(r"C:\Users\stepa\OneDrive\Изображения\Снимки экрана\mpv-shot.png"), 
-            Path(r"C:\Users\stepa\OneDrive\Изображения\Снимки экрана\Screenshot 2023-07-14 123954.png")
-        ], [
-            Path(r"C:\Users\stepa\OneDrive\Изображения\Снимки экрана\Screenshot 2023-07-14 144723.png"),
-            Path(r"C:\Users\stepa\OneDrive\Изображения\Снимки экрана\Screenshot 2023-07-18 121807.png")
-        ]]
+        return await self.image_generator.generate(prompts)
     
 
-    async def generate_video(self, images: list[Path]) -> Path:
-        # Здесь должна быть логика генерации видео из изображений
+    async def generate_video(self, images: list[Path], prompts) -> Path:
         # Например, вызов API генерации видео
-        return Path("video.mp4")
+        return await self.video_generator.generate(images, prompts)
 
     async def send_one_group_of_image(self, images: list[str]) -> uuid.UUID:
         # Отправка уведомления в бекенд
@@ -173,13 +175,3 @@ async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROU
     except Exception as e:
         logger.error(f"Ошибка при загрузке файла: {e}")
         raise RuntimeError(f"Не удалось загрузить файл: {str(e)}")
-    
-class VideoGenerationPipeline(TestVideoGenerationPipeline):
-    """
-    Для кастомной реализации генерации видео.
-    """
-    async def generate_video(self, images: list[Path]) -> Path:
-        return await super().generate_video(images)
-
-    async def generate_images(self, prompts: list[str]) -> list[list[Path]]:
-        return await super().generate_images(prompts)
