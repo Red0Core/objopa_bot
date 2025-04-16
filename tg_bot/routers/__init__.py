@@ -9,6 +9,7 @@ from .mention_dice import router as mention_dice_router
 from .misc import router as commands_router
 from .utils import router as utils_router
 from .redis_workers_routers import router as redis_workers_router
+from .video_generation_pipeline import video_router  # Импортируем наш новый маршрутизатор
 
 
 def setup_routers(dp: Dispatcher):
@@ -21,5 +22,6 @@ def setup_routers(dp: Dispatcher):
         day_tracker_router,
         currencies_router,
         redis_workers_router,
+        video_router,  # Добавляем наш маршрутизатор
         gpt_msg_router, # Всегда в конце
     )

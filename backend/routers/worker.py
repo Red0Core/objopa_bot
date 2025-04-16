@@ -15,7 +15,7 @@ import time
 
 router = APIRouter(prefix="/worker", tags=["worker"])
 
-@router.post("/video_generation_pipeline", response_model=dict)
+@router.post("/video-generation-pipeline", response_model=dict)
 async def submit_image_task(request: VideoGenerationPipelineTaskData):
     task_id = str(uuid4())
     task_data = BaseWorkerTask(
