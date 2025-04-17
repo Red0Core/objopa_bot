@@ -42,7 +42,7 @@ async def send_daily_cbr_rates(bot, chat_id):
     """
     try:
         async with httpx.AsyncClient() as session:
-            response = await session.get(f"{BACKEND_ROUTE}/markets/cbr")
+            response = await session.get(f"{BACKEND_ROUTE}/markets/cbr/rates")
             response.raise_for_status()
             data = response.json()
             await bot.send_message(chat_id=chat_id, text=data["html_output"], parse_mode="html")
