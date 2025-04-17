@@ -70,8 +70,11 @@ class VideoGenerationPipeline(BasePipeline):
         # Генерация видео из выбранных изображений
         video_path = await self.generate_video(final_selected_images, self.animation_prompts)
 
+        # Загружаем видео на сервер
+        video_server_path = await upload_file_to_backend(video_path)
         # Отправляем уведомление о завершении генерации
-        await self.send_notification(f"Генерация видео завершена. Путь к видео: {video_path}")
+        await self.send_notification("Генерация и загрузка видео завершена. " \
+                                     f"Cсылка к видео: {BACKEND_ROUTE}/worker/download-video/{video_server_path}")
         
     async def generate_images(self, prompts: list[str]) -> list[list[Path]]:
         # Например, вызов API генерации изображений
@@ -129,7 +132,7 @@ class VideoGenerationPipeline(BasePipeline):
         except Exception as e:
             logger.error(f"Ошибка при отправке уведомления: {e}")
 
-async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROUTE) -> str:
+async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROUTE, is_video=False) -> str:
     """
     Загружает файл на сервер и возвращает путь к нему.
     
@@ -156,7 +159,7 @@ async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROU
             # Отправляем запрос
             async with AsyncClient() as client:
                 response = await client.post(
-                    f"{backend_url}/worker/upload",
+                    f"{backend_url}/worker/upload{'-video' if is_video else ''}",
                     files=files
                 )
                 
