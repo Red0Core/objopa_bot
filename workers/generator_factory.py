@@ -181,7 +181,7 @@ class GeneratorFactory:
         """
         try:
             # Пытаемся импортировать реальную реализацию
-            from private_generators import RealImageGenerator
+            from workers.private_generators import RealImageGenerator
             logger.info("Используется реальный генератор изображений")
             return RealImageGenerator()
         except ImportError:
@@ -197,7 +197,7 @@ class GeneratorFactory:
         """
         try:
             # Пытаемся импортировать реальную реализацию
-            from private_generators import RealVideoGenerator
+            from workers.private_generators import RealVideoGenerator
             logger.info("Используется реальный генератор видео")
             return RealVideoGenerator()
         except ImportError:

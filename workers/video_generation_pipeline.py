@@ -33,7 +33,7 @@ class VideoGenerationPipeline(BasePipeline):
         all_generated_images_paths = await self.generate_images(self.image_prompts)
         all_server_images_paths: list[list[str]] = []
         
-        # Шаг 0: Параллельно загружаем все изображения на сервер батчами
+        # Шаг 1: Параллельно загружаем все изображения на сервер батчами
         for group_of_images in all_generated_images_paths:
             upload_tasks = []
             for image in group_of_images:
@@ -41,31 +41,43 @@ class VideoGenerationPipeline(BasePipeline):
             all_server_images_paths.append([x for x in await asyncio.gather(*upload_tasks)])
 
         logger.info(f"Все изображения загружены на сервер: {all_server_images_paths}")
-        # Шаг 1: Параллельно отправляем все группы изображений
-        send_tasks = []
-        for i, group_of_images in enumerate(all_server_images_paths):
-            # Создаем задачи для параллельной отправки
-            task = asyncio.create_task(
-                self.send_one_group_of_image(group_of_images)
-            )
-            send_tasks.append(task)
         
-        # Ожидаем завершения всех отправок и получаем идентификаторы задач
-        task_ids = await asyncio.gather(*send_tasks)
-        logger.info(f"Все группы изображений отправлены успешно: {len(task_ids)} групп")
-        
-        # Шаг 2: Последовательно ожидаем выбор пользователя для каждой группы
-        # (оставляем последовательным для лучшего пользовательского опыта)
+        # Шаг 2: Последовательная отправка групп и ожидание выбора пользователя
         final_selected_images = []
-        for i, task_id in enumerate(task_ids):
-            logger.info(f"Ожидание выбора для группы {i+1}/{len(task_ids)}...")
-            selection_index = await self.get_images_selection(str(task_id))
-            # Convert to integer and select the image from the group
-            selection_index = int(selection_index)
-            selected_image = all_generated_images_paths[i][selection_index]
-            final_selected_images.append(selected_image)
-            logger.info(f"Выбрано изображение из группы {i+1}: {selected_image}")
+        for i, group_server_paths in enumerate(all_server_images_paths):
+            logger.info(f"Отправка группы {i+1}/{len(all_server_images_paths)} для выбора...")
             
+            # Отправляем ОДНУ группу изображений и получаем ее task_id
+            selection_task_id = await self.send_one_group_of_image(group_server_paths)
+            logger.info(f"Группа {i+1} отправлена. Task ID для выбора: {selection_task_id}. Ожидание выбора пользователя...")
+
+            # Ждем выбора пользователя ИМЕННО для этой группы
+            selection_index_str = await self.get_images_selection(str(selection_task_id))
+            
+            try:
+                selection_index = int(selection_index_str)
+                if 0 <= selection_index < len(all_generated_images_paths[i]):
+                    # Используем индекс для выбора пути к ЛОКАЛЬНОМУ файлу из исходного списка
+                    selected_local_image_path = all_generated_images_paths[i][selection_index]
+                    final_selected_images.append(selected_local_image_path)
+                    logger.info(f"Выбрано изображение {selection_index + 1} из группы {i+1}: {selected_local_image_path}")
+                else:
+                    logger.error(f"Некорректный индекс выбора {selection_index} для группы {i+1}. Пропуск.")
+                    # Можно добавить логику обработки ошибки, например, запросить выбор заново или использовать дефолтное изображение
+                    # Пока просто пропустим эту группу или можно прервать пайплайн
+                    raise ValueError(f"Invalid selection index {selection_index} for group {i+1}")
+
+            except (ValueError, TypeError) as e:
+                 logger.error(f"Ошибка при обработке выбора для группы {i+1} (task_id: {selection_task_id}): {e}. Получено: '{selection_index_str}'.")
+                 # Обработка ошибки - можно прервать, повторить запрос или выбрать дефолтное
+                 raise RuntimeError(f"Invalid selection received for group {i+1}") from e
+
+
+        # Шаг 3: Генерация видео из выбранных изображений
+        if not final_selected_images:
+             logger.error("Не выбрано ни одного изображения. Генерация видео невозможна.")
+             await self.send_notification("Не удалось выбрать изображения для генерации видео.", send_to=self.user_id)
+             return # Завершаем пайплайн
 
         # Генерация видео из выбранных изображений
         video_path = await self.generate_video(final_selected_images, self.animation_prompts)
