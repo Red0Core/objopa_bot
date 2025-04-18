@@ -83,7 +83,7 @@ class VideoGenerationPipeline(BasePipeline):
         video_path = await self.generate_video(final_selected_images, self.animation_prompts)
 
         # Загружаем видео на сервер
-        video_server_path = await upload_file_to_backend(video_path)
+        video_server_path = await upload_file_to_backend(video_path, is_video=True)
         # Отправляем уведомление о завершении генерации
         await self.send_notification("Генерация и загрузка видео завершена. " \
                                      f"Cсылка к видео: {BACKEND_ROUTE}/worker/download-video/{video_server_path}")
