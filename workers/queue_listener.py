@@ -3,7 +3,7 @@ import json
 from typing import Any
 from core.logger import logger
 from core.redis_client import get_redis
-from core.locks import lock_hailuo, LockAcquireError
+from core.locks import LockAcquireError
 from workers.base_pipeline import BasePipeline
 from workers.video_generation_pipeline import VideoGenerationPipeline
 
@@ -25,8 +25,7 @@ class QueueListener:
                 _, task_data = task_json
                 try:
                     task = json.loads(task_data)
-                    async with lock_hailuo():
-                        await self.process_task(task)
+                    await self.process_task(task)
                 except LockAcquireError:
                     await redis.rpush(self.queue_name, task_data)
                     logger.info("Не удалось получить блокировку, задача помещена обратно в очередь. Таймаут минута. (Можно выключить софт если не нужно)")
