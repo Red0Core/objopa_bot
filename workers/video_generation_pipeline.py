@@ -121,28 +121,31 @@ class VideoGenerationPipeline(BasePipeline):
                 await redis.delete(f"result:image_selection:{task_id}")
                 return selection_index
             await asyncio.sleep(1)
-    
-    async def send_notification(self, text: str, send_to: int | None = None) -> None:
+
+    async def send_notification(self, text: str, send_to: str | None = None) -> None:
         if send_to is None:
-            send_to = self.user_id
-        
-        try:
-            async with AsyncClient() as session:
-                session.headers.update({
-                    "accept": "application/json",
-                    "Content-Type": "application/json"
-                })
-                req = await session.post(
-                    f"{BACKEND_ROUTE}/notify",
-                    json={
-                        "text": text,
-                        "send_to": str(send_to)
-                    }
-                )
-                req.raise_for_status()
-            logger.info(f"Уведомление отправлено: {text} для {send_to}")
-        except Exception as e:
-            logger.error(f"Ошибка при отправке уведомления: {e}")
+            send_to = str(self.user_id)
+        # Отправляем уведомление через бекенд
+        await send_notification(text, send_to)
+    
+async def send_notification(text: str, send_to: str) -> None:    
+    try:
+        async with AsyncClient() as session:
+            session.headers.update({
+                "accept": "application/json",
+                "Content-Type": "application/json"
+            })
+            req = await session.post(
+                f"{BACKEND_ROUTE}/notify",
+                json={
+                    "text": text,
+                    "send_to": send_to
+                }
+            )
+            req.raise_for_status()
+        logger.info(f"Уведомление отправлено: {text} для {send_to}")
+    except Exception as e:
+        logger.error(f"Ошибка при отправке уведомления: {e}")
 
 async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROUTE, is_video=False) -> str:
     """
