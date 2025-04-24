@@ -3,7 +3,7 @@ from redis.asyncio import Redis
 from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
 from redis.backoff import ExponentialBackoff
 from redis.asyncio.retry import Retry
-from core.config import REDIS_HOST, REDIS_PORT, REDIS_PASSWORD
+from core.config import REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_SSL
 from core.logger import logger
 
 _redis: Optional[Redis] = None
@@ -21,6 +21,7 @@ def _make_redis() -> Redis:
             retries=5
         ),
         retry_on_error=[ConnectionError, TimeoutError, BusyLoadingError],
+        ssl=REDIS_SSL,
     )
 
 

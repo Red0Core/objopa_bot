@@ -55,3 +55,4 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 REDIS_PASSWORD = get_required_env("REDIS_PASSWORD")
 
 PASTEBIN_API_KEY = get_required_env("PASTEBIN_API_KEY")
+REDIS_SSL = bool(os.getenv("REDIS_SSL", False))
