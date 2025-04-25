@@ -30,7 +30,7 @@ async def handle_generate_video_command(message: Message):
     )
     await message.reply(help_text, parse_mode=ParseMode.HTML)
 
-@video_router.message(F.document.file_name.endswith(".img.txt") | F.document.file_name.endswith(".anim.txt"))
+@video_router.message(F.document.file_name.endswith(".img.txt") | F.document.file_name.endswith(".anim.txt") | F.document.file_name.starts_with("get") | F.document.file_name.contains("prompts"))
 async def handle_prompt_file(message: Message):
     """
     Обработчик файлов .img.txt и .anim.txt с промптами.
@@ -63,7 +63,7 @@ async def handle_prompt_file(message: Message):
 
     redis = await get_redis()
     # Сохраняем промпты в Redis в зависимости от типа файла
-    if file_name.endswith(".img.txt"):
+    if file_name.endswith(".img.txt") or file_name == 'get_images.txt' or file_name == 'image_prompts.txt':
         # Проверяем, есть ли уже промпты для изображений
         existing_prompts_json = await redis.get(img_prompts_key)
         if existing_prompts_json:
@@ -76,7 +76,7 @@ async def handle_prompt_file(message: Message):
             f"если вы ещё этого не сделали.",
             parse_mode=ParseMode.HTML
         )
-    elif file_name.endswith(".anim.txt"):
+    elif file_name.endswith(".anim.txt") or file_name == 'get_animations.txt' or file_name == 'animation_prompts.txt':
         # Проверяем, есть ли уже промпты для анимаций
         existing_prompts_json = await redis.get(anim_prompts_key)
         if existing_prompts_json:

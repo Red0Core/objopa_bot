@@ -24,7 +24,7 @@ run-bot:
 
 run-api:
 	@echo "🚀 Running FastAPI in tmux: $(API_SESSION)"
-	tmux new-session -d -s $(API_SESSION) '$(PYTHON) -m uvicorn backend.main:app --host 0.0.0.0 --port 8888'
+	tmux new-session -d -s $(API_SESSION) '$(PYTHON) -m uvicorn backend.main:app --host 127.0.0.1 --port 8888'
 
 restart-bot:
 	@echo "♻️ Restarting Telegram Bot..."

@@ -1,6 +1,7 @@
 import asyncio
 import time
 from core.redis_client import get_redis
+from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
 import ujson
 from aiogram import Bot
 from core.config import UPLOAD_DIR
@@ -16,7 +17,12 @@ async def poll_image_selection(bot: Bot):
     """
     logger.info("Запущен слушатель задач image_selection...")
     while True:
-        r = await get_redis()
+        try:
+            r = await get_redis()
+        except (ConnectionError, TimeoutError, BusyLoadingError) as err:
+            logger.warning("[image_selection] Redis сдох временно")
+            await asyncio.sleep(2)
+            continue
         # Получаем все ключи задач image_selection из Redis
         keys = await r.keys("notifications:image_selection:*")
         for key in keys:

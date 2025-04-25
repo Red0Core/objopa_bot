@@ -41,6 +41,8 @@ async def get_redis() -> Redis:
             await _redis.close()
         except Exception:
             logger.debug("Error closing broken Redis client", exc_info=True)
+        finally:
+            _redis.connection_pool.disconnect()
         _redis = _make_redis()
         # гарантируем соединение
         await _redis.ping()
@@ -59,4 +61,5 @@ async def close_redis() -> None:
         except Exception as err:
             logger.error(f"Error closing Redis client: {err}")
         finally:
+            _redis.connection_pool.disconnect()
             _redis = None
