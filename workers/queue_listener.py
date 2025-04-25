@@ -2,6 +2,7 @@ import asyncio
 import json
 import signal
 from typing import Any
+from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
 from core.logger import logger
 from core.redis_client import get_redis
 from core.locks import lock_hailuo, LockAcquireError
@@ -44,7 +45,12 @@ class QueueListener:
                  logger.warning(f"Не удалось добавить обработчик для сигнала {s}. Возможно, Windows?")
         
         while not self.shutdown_requested:
-            redis = await get_redis()
+            try:
+                redis = await get_redis()
+            except (ConnectionError, TimeoutError, BusyLoadingError) as err:
+                logger.warning("Redis временно сдох. жду 2 секунды..")
+                await asyncio.sleep(2)
+                continue
             task_json = await redis.blpop(self.queue_name, timeout=5) # type: ignore
             if task_json:
                 _, task_data = task_json
