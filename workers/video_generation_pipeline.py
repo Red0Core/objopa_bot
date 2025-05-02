@@ -44,33 +44,58 @@ class VideoGenerationPipeline(BasePipeline):
         
         # Шаг 2: Последовательная отправка групп и ожидание выбора пользователя
         final_selected_images = []
-        for i, group_server_paths in enumerate(all_server_images_paths):
-            logger.info(f"Отправка группы {i+1}/{len(all_server_images_paths)} для выбора...")
+        for i, initial_group_server_paths in enumerate(all_server_images_paths):
+            logger.info(f"Обработка группы {i+1}/{len(all_server_images_paths)} для выбора...")
             
-            # Отправляем ОДНУ группу изображений и получаем ее task_id
-            selection_task_id = await self.send_one_group_of_image(group_server_paths)
-            logger.info(f"Группа {i+1} отправлена. Task ID для выбора: {selection_task_id}. Ожидание выбора пользователя...")
+            # Для пересоздания изображений нужна, чтобы грузануть новые изображения в текущую группу
+            current_group_server_paths = initial_group_server_paths
 
-            # Ждем выбора пользователя ИМЕННО для этой группы
-            selection_index_str = await self.get_images_selection(str(selection_task_id))
-            
-            try:
-                selection_index = int(selection_index_str)
-                if 0 <= selection_index < len(all_generated_images_paths[i]):
-                    # Используем индекс для выбора пути к ЛОКАЛЬНОМУ файлу из исходного списка
-                    selected_local_image_path = all_generated_images_paths[i][selection_index]
-                    final_selected_images.append(selected_local_image_path)
-                    logger.info(f"Выбрано изображение {selection_index + 1} из группы {i+1}: {selected_local_image_path}")
-                else:
-                    logger.error(f"Некорректный индекс выбора {selection_index} для группы {i+1}. Пропуск.")
-                    # Можно добавить логику обработки ошибки, например, запросить выбор заново или использовать дефолтное изображение
-                    # Пока просто пропустим эту группу или можно прервать пайплайн
-                    raise ValueError(f"Invalid selection index {selection_index} for group {i+1}")
+            while True:
+                # Отправляем ОДНУ группу изображений и получаем ее task_id
+                selection_task_id = await self.send_one_group_of_image(current_group_server_paths)
+                logger.info(f"Группа {i+1} отправлена. Task ID для выбора: {selection_task_id}. Ожидание выбора пользователя...")
 
-            except (ValueError, TypeError) as e:
-                 logger.error(f"Ошибка при обработке выбора для группы {i+1} (task_id: {selection_task_id}): {e}. Получено: '{selection_index_str}'.")
-                 # Обработка ошибки - можно прервать, повторить запрос или выбрать дефолтное
-                 raise RuntimeError(f"Invalid selection received for group {i+1}") from e
+                # Ждем выбора пользователя ИМЕННО для этой группы
+                selection_index_str = await self.get_images_selection(str(selection_task_id))
+                
+                if selection_index_str == "-1":
+                    logger.info(f"Пользователь выбрал пересоздание группы {i+1}.")
+                    try:
+                        # Пересоздаем изображения для этой группы [[текущая группа]]
+                        regenerated_paths_group = await self.generate_images([self.image_prompts[i]])
+                        if not regenerated_paths_group:
+                            raise RuntimeError("Не удалось пересоздать изображения.")
+                        # Загружаем пересозданные изображения на сервер
+                        logger.info(f"Грузим на сервак пересозданные изображения в группе {i+1}...")
+                        
+                        # Загружаем пересозданные изображения на сервер и заменяем их на текущую группу
+                        current_group_server_paths = await asyncio.gather(
+                            *[upload_file_to_backend(path) for path in regenerated_paths_group[0]]
+                        )
+
+                        logger.info(f"Пересозданные изображения закидыаем на выбор")
+                        continue
+                    except Exception as regen_error:
+                        raise RuntimeError("Ошибка при пересоздании изображений.") from regen_error
+
+                try:
+                    selection_index = int(selection_index_str)
+                    if 0 <= selection_index < len(all_generated_images_paths[i]):
+                        # Используем индекс для выбора пути к ЛОКАЛЬНОМУ файлу из исходного списка
+                        selected_local_image_path = all_generated_images_paths[i][selection_index]
+                        final_selected_images.append(selected_local_image_path)
+                        logger.info(f"Выбрано изображение {selection_index + 1} из группы {i+1}: {selected_local_image_path}")
+                        break
+                    else:
+                        logger.error(f"Некорректный индекс выбора {selection_index} для группы {i+1}. Пропуск.")
+                        # Можно добавить логику обработки ошибки, например, запросить выбор заново или использовать дефолтное изображение
+                        # Пока просто пропустим эту группу или можно прервать пайплайн
+                        raise ValueError(f"Invalid selection index {selection_index} for group {i+1}")
+
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Ошибка при обработке выбора для группы {i+1} (task_id: {selection_task_id}): {e}. Получено: '{selection_index_str}'.")
+                    # Обработка ошибки - можно прервать, повторить запрос или выбрать дефолтное
+                    raise RuntimeError(f"Invalid selection received for group {i+1}") from e
 
 
         # Шаг 3: Генерация видео из выбранных изображений

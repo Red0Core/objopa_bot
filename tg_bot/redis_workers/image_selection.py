@@ -43,13 +43,17 @@ async def poll_image_selection(bot: Bot):
                     logger.warning(f"Callback data слишком длинная: {len(f"select_image:{task_id}:1".encode('utf-8'))} байт")
                     # Возможно, используйте более короткий task_id
 
-                # Создаём инлайн-кнопки
-                keyboard = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [InlineKeyboardButton(text=f"Выбрать {i+1}", callback_data=f"select_image:{task_id}:{i}")]
-                        for i in range(len(relative_paths))
-                    ]
-                )
+                # Создаём ряды кнопок для выбора изображений
+                selection_buttons_rows = [
+                    [InlineKeyboardButton(text=f"{i+1}", callback_data=f"select_image:{task_id}:{i}")]
+                    for i in range(len(relative_paths))
+                ]
+                # Создаём кнопку для пересоздания
+                regenerate_button_row = [
+                    InlineKeyboardButton(text="🔄", callback_data=f"select_image:{task_id}:-1")
+                ]
+                inline_keyboard = selection_buttons_rows + [regenerate_button_row]
+                keyboard = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
                 media = [InputMediaPhoto(media=FSInputFile(UPLOAD_DIR.joinpath(relative_path))) for relative_path in relative_paths]
 
