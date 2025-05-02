@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter
 from pydantic import BaseModel, HttpUrl
 from core.logger import logger
@@ -36,7 +36,7 @@ async def notify_image_selection(data: ImageSelectionRequest):
     payload = BaseWorkerTask(
         type="image_selection",
         task_id=data.task_id,
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
         data= ImageSelectionTaskData(
             user_id=data.user_id,
             relative_paths=data.relative_paths,

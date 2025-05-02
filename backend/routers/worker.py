@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, BackgroundTasks
 from uuid import uuid4
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
@@ -23,7 +23,7 @@ async def submit_image_task(request: VideoGenerationPipelineTaskData):
     task_data = BaseWorkerTask(
         type="video_generation",
         task_id=task_id,
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
         data=VideoGenerationPipelineTaskData(
             image_prompts=request.image_prompts,
             animation_prompts=request.animation_prompts,
@@ -108,7 +108,7 @@ async def submit_scenario_task(scenario: ScenarioInput):
         task_data = BaseWorkerTask(
             type="video_generation", # Убедитесь, что тип соответствует тому, что ожидает ваш воркер
             task_id=task_id,
-            created_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
             data=VideoGenerationPipelineTaskData(
                 image_prompts=image_prompts,
                 animation_prompts=animation_prompts,

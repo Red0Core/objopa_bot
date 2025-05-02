@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import signal
 import sys
@@ -61,7 +61,7 @@ class QueueListener:
                 _, task_data = task_json
                 try:
                     task = json.loads(task_data)
-                    if datetime.now() - datetime.fromisoformat(task['created_at']) > timedelta(hours=3):
+                    if datetime.now(timezone.utc) - datetime.fromisoformat(task['created_at']) > timedelta(hours=3):
                         logger.info(f"Задача {task['task_id']} устарела (> 3 часа). Пропускаю.")
                         continue
                     await self.process_task(task)
