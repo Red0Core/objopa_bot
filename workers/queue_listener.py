@@ -1,16 +1,21 @@
 import asyncio
+from datetime import datetime, timedelta
 import json
 import signal
+import sys
 from typing import Any
 from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
 from core.logger import logger
 from core.redis_client import get_redis
 from core.locks import lock_hailuo, LockAcquireError
+from core.config import OBZHORA_CHAT_ID
 from workers.base_pipeline import BasePipeline
 from workers.video_generation_pipeline import VideoGenerationPipeline, send_notification
 
 WHO_LAUNCHED_WORKER = "Михуил"
-CHAT_ID = "..."
+CHAT_ID = OBZHORA_CHAT_ID
+NEED_TO_RETURN_TO_QUEUE = True # False для отладки, True для продакшена
+queue_name = "hailuo_tasks"
 
 # Возможные типы задач и воркеры для них
 PIPELINE_TYPE_REGISTRY = {
@@ -56,15 +61,21 @@ class QueueListener:
                 _, task_data = task_json
                 try:
                     task = json.loads(task_data)
+                    if datetime.now() - datetime.fromisoformat(task['created_at']) > timedelta(hours=3):
+                        logger.info(f"Задача {task['task_id']} устарела (> 3 часа). Пропускаю.")
+                        continue
                     await self.process_task(task)
                 except LockAcquireError:
-                    await redis.rpush(self.queue_name, task_data)
-                    logger.info("Не удалось получить блокировку, задача помещена обратно в очередь. Таймаут минута. (Можно выключить софт если не нужно)")
+                    if NEED_TO_RETURN_TO_QUEUE:
+                        await redis.rpush(self.queue_name, task_data)
+                        logger.info("Задача помещена обратно в очередь.")
+                    logger.info("Не удалось получить блокировку. Таймаут минута. (Можно выключить софт если не нужно)")
                     await asyncio.sleep(60)
                 except Exception as e:
-                    await redis.rpush(self.queue_name, task_data)
-                    logger.error(f"Ошибка при обработке задачи: {e}")
-                    logger.info("Задача помещена обратно в очередь.")
+                    if NEED_TO_RETURN_TO_QUEUE:
+                        await redis.rpush(self.queue_name, task_data)
+                        logger.info("Задача помещена обратно в очередь.")
+                    logger.exception(f"Ошибка при обработке задачи: {e}")
                     await asyncio.sleep(60)
             else:
                 await asyncio.sleep(1)
@@ -109,7 +120,24 @@ class QueueListener:
         await asyncio.gather(*tasks, return_exceptions=True)
         logger.info("Завершение работы.")
 
-if __name__ == "__main__":
-    listener = QueueListener("hailuo_tasks")
+    async def clear_queue(self):
+        """Очистка очереди путем удаления ключа."""
+        try:
+            redis = await get_redis()
+            deleted_count = await redis.delete(self.queue_name)
+            if deleted_count > 0:
+                logger.info(f"Очередь '{self.queue_name}' успешно очищена (ключ удален).")
+            else:
+                logger.info(f"Очередь '{self.queue_name}' уже была пуста или не существовала.")
+        except (ConnectionError, TimeoutError) as err:
+             logger.error(f"Не удалось подключиться к Redis для очистки очереди: {err}")
+        except Exception as e:
+            logger.exception(f"Ошибка при очистке очереди '{self.queue_name}': {e}", exc_info=True)
 
-    asyncio.run(listener.listen())
+if __name__ == "__main__":
+    listener = QueueListener(queue_name)
+    if len(sys.argv) > 1 and sys.argv[1] == "clear":
+        asyncio.run(listener.clear_queue())
+        logger.success("Очередь очищена.")
+    else:
+        asyncio.run(listener.listen())
