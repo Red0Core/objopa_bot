@@ -2,9 +2,10 @@ import asyncio
 
 import ujson
 
-from core.config import MAIN_ACC, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
+from core.config import MAIN_ACC
 from core.logger import logger
-from core.redis_client import get_redis, ConnectionError
+from core.redis_client import ConnectionError, get_redis
+
 
 async def poll_redis(bot):
     while True:

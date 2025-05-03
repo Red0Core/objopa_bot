@@ -1,13 +1,15 @@
 import asyncio
 import time
-from core.redis_client import get_redis
-from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
+
 import ujson
 from aiogram import Bot
+from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter
+from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+from redis.exceptions import BusyLoadingError, ConnectionError, TimeoutError
+
 from core.config import UPLOAD_DIR
 from core.logger import logger
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, FSInputFile
-from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter
+from core.redis_client import get_redis
 
 
 async def poll_image_selection(bot: Bot):
@@ -19,7 +21,7 @@ async def poll_image_selection(bot: Bot):
     while True:
         try:
             r = await get_redis()
-        except (ConnectionError, TimeoutError, BusyLoadingError) as err:
+        except (ConnectionError, TimeoutError, BusyLoadingError):
             logger.warning("[image_selection] Redis сдох временно")
             await asyncio.sleep(2)
             continue

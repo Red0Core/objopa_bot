@@ -1,15 +1,17 @@
 import asyncio
-
+import uuid
 from pathlib import Path
+
+from httpx import AsyncClient
+
+from core.config import BACKEND_ROUTE
+from core.logger import logger
 from core.redis_client import get_redis
 from workers.base_pipeline import BasePipeline
-from core.logger import logger
-from core.config import BACKEND_ROUTE, BASE_DIR
-from httpx import AsyncClient
-import uuid
 
 # Импортируем фабрику
 from workers.generator_factory import GeneratorFactory
+
 
 class VideoGenerationPipeline(BasePipeline):
     def __init__(self, task_id: str, **params):
@@ -211,4 +213,4 @@ async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROU
         raise
     except Exception as e:
         logger.error(f"Ошибка при загрузке файла: {e}")
-        raise RuntimeError(f"Не удалось загрузить файл: {str(e)}")
+        raise RuntimeError(f"Не удалось загрузить файл: {str(e)}") from e

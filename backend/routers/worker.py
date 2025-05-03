@@ -1,19 +1,27 @@
 import asyncio
-from pathlib import Path
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, BackgroundTasks
-from uuid import uuid4
+import os
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from uuid import uuid4
+
+import aiofiles
+import xxhash
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
 from redis.asyncio import Redis
+
+from backend.models.workers import (
+    AnimationPromptItem,
+    BaseWorkerTask,
+    FileUploadResponse,
+    ImagePromptItem,
+    ScenarioInput,
+    VideoGenerationPipelineTaskData,
+)
 from core.config import UPLOAD_DIR, UPLOAD_VIDEO_DIR
 from core.logger import logger
 from core.redis_client import get_redis
-from backend.models.workers import AnimationPromptItem, BaseWorkerTask, FileUploadResponse, ImagePromptItem, ScenarioInput, VideoGenerationPipelineTaskData
-import os
-import xxhash
-import aiofiles
-import time
 
 router = APIRouter(prefix="/worker", tags=["worker"])
 
@@ -37,7 +45,7 @@ async def submit_image_task(request: VideoGenerationPipelineTaskData):
         logger.info(f"New image generation task submitted: {task_id}")
     except Exception as e:
         logger.error(f"Redis error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to queue task")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to queue task") from e
 
     return {"task_id": task_id, "status": "queued"}
 
@@ -118,12 +126,12 @@ async def submit_scenario_task(scenario: ScenarioInput):
 
         # Задачу в очередь Redis
         redis = await get_redis()
-        await redis.rpush("hailuo_tasks", task_data.model_dump_json()) # Используем ту же очередь
+        await redis.rpush("hailuo_tasks", task_data.model_dump_json()) # Используем ту же очередь #type:ignore
         logger.info(f"New video generation task from scenario submitted: {task_id} for user {scenario.user_id}")
 
     except Exception as e:
         logger.exception(f"Error processing scenario task {task_id}: {e}") # Логируем с traceback
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to process scenario and queue task: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to process scenario and queue task: {str(e)}") from e
 
     return {"task_id": task_id, "status": "queued"}
 
@@ -139,8 +147,8 @@ VIDEO_EXPIRY = timedelta(days=7)
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    redis: Redis = Depends(get_redis)
+    file: UploadFile = File(...), # noqa: B008
+    redis: Redis = Depends(get_redis) # noqa: B008
 ):
     if not file:
         raise HTTPException(400, "Файл не предоставлен")
@@ -236,8 +244,8 @@ async def download_video(filename: str):
 
 @router.post("/upload-video", response_model=FileUploadResponse)
 async def upload_video(
-    file: UploadFile = File(...),
-    redis: Redis = Depends(get_redis)
+    file: UploadFile = File(...), # noqa: B008
+    redis: Redis = Depends(get_redis) # noqa: B008
 ):
     if not file:
         raise HTTPException(400, "Видео не предоставлено")
@@ -294,7 +302,7 @@ async def _cleanup_set(
 
 @router.post("/cleanup", summary="Ручная очистка истёкших файлов/видео")
 async def manual_cleanup(
-    redis: Redis = Depends(get_redis)
+    redis: Redis = Depends(get_redis) # noqa: B008
 ):
     files_deleted  = await _cleanup_set(redis, FILE_EXPIRY_SET,  UPLOAD_DIR)
     videos_deleted = await _cleanup_set(redis, VIDEO_EXPIRY_SET, UPLOAD_VIDEO_DIR)

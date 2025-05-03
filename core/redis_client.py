@@ -1,9 +1,11 @@
 from typing import Optional
+
 from redis.asyncio import Redis
-from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
-from redis.backoff import ExponentialBackoff
 from redis.asyncio.retry import Retry
-from core.config import REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_SSL
+from redis.backoff import ExponentialBackoff
+from redis.exceptions import BusyLoadingError, ConnectionError, TimeoutError
+
+from core.config import REDIS_HOST, REDIS_PASSWORD, REDIS_PORT, REDIS_SSL
 from core.logger import logger
 
 _redis: Optional[Redis] = None

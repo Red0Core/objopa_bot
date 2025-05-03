@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Any
+
 from pydantic import BaseModel, Field
-from pydantic import BaseModel, Field
+
 
 class BaseWorkerTask(BaseModel):
     task_id: str

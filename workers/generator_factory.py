@@ -2,32 +2,29 @@
 Фабрики для создания генераторов изображений и видео.
 Позволяет отделить логику интеграции с внешними сервисами от основного кода.
 """
-from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import List, Tuple
 import asyncio
-import os
 import random
 import string
+from abc import ABC, abstractmethod
+from pathlib import Path
+
 import httpx
-from core.logger import logger
+
 from core.config import BASE_DIR
+from core.logger import logger
 
 # Создаем директорию для демо-изображений, если она не существует
 DEMO_STORAGE_DIR = BASE_DIR / "storage" / "demo_images"
 DEMO_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
-from abc import ABC, abstractmethod
-from typing import List, Optional
-from pathlib import Path
 
 class ImageGenerator(ABC):
     @abstractmethod
     async def generate(
         self,
-        prompts: List[str],
-        indices_to_generate: Optional[List[int]] = None # Новый аргумент: 0-based индексы
-    ) -> List[List[Path]]:
+        prompts: list[str],
+        indices_to_generate: list[int] | None = None # Новый аргумент: 0-based индексы
+    ) -> list[list[Path]]:
         """
         Генерирует изображения для указанных промптов.
         Если indices_to_generate предоставлен, генерирует ТОЛЬКО для промптов с этими индексами.
@@ -40,7 +37,7 @@ class VideoGenerator(ABC):
     """Абстрактный класс для генераторов видео"""
     
     @abstractmethod
-    async def generate(self, images: List[Path], prompts: List[str]) -> Path:
+    async def generate(self, images: list[Path], prompts: list[str]) -> Path:
         """
         Создает видео на основе изображений и промптов.
         
@@ -59,7 +56,7 @@ class DummyImageGenerator(ImageGenerator):
     Генерирует реальные изображения для каждого промпта.
     """
     
-    async def generate(self, prompts: List[str], indices_to_generate: list[int] | None = None) -> List[List[Path]]:
+    async def generate(self, prompts: list[str], indices_to_generate: list[int] | None = None) -> list[list[Path]]:
         """
         Возвращает реальные изображения, сгенерированные через dummyimage.com
         
@@ -137,7 +134,7 @@ class DummyImageGenerator(ImageGenerator):
             # В случае ошибки возвращаем путь по умолчанию
             return DEMO_STORAGE_DIR / f"default_scene_{group_idx+1}_img_{img_idx+1}.png"
     
-    def _get_random_dimensions(self) -> Tuple[int, int]:
+    def _get_random_dimensions(self) -> tuple[int, int]:
         """Возвращает случайные размеры изображения"""
         dimensions = [
             (600, 400),  # Стандартный размер
@@ -147,7 +144,7 @@ class DummyImageGenerator(ImageGenerator):
         ]
         return random.choice(dimensions)
     
-    def _get_random_colors(self) -> Tuple[str, str]:
+    def _get_random_colors(self) -> tuple[str, str]:
         """Возвращает случайные цвета для фона и текста"""
         colors = [
             ("000000", "ffffff"),  # Черный фон, белый текст
@@ -162,7 +159,7 @@ class DummyImageGenerator(ImageGenerator):
 class DemoVideoGenerator(VideoGenerator):
     """Демонстрационная реализация генератора видео"""
     
-    async def generate(self, images: List[Path], prompts: List[str]) -> Path:
+    async def generate(self, images: list[Path], prompts: list[str]) -> Path:
         """Возвращает тестовый путь к видео"""
         logger.info("Используется демо-генератор видео")
         logger.info(f"Виртуальное создание видео из {len(images)} изображений с {len(prompts)} промптами")

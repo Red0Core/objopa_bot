@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
+
 from fastapi import APIRouter
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
+
+from backend.models.workers import BaseWorkerTask, ImageSelectionTaskData
 from core.logger import logger
 from core.redis_client import get_redis
-from backend.models.workers import BaseWorkerTask, ImageSelectionTaskData
 
 router = APIRouter(prefix="/notify", tags=["notifiers"])
 

@@ -7,8 +7,8 @@ from .day_tracker import track_router as day_tracker_router
 from .gpt_router import router as gpt_msg_router
 from .mention_dice import router as mention_dice_router
 from .misc import router as commands_router
-from .utils import router as utils_router
 from .redis_workers_routers import router as redis_workers_router
+from .utils import router as utils_router
 from .video_generation_pipeline import video_router  # Импортируем наш новый маршрутизатор
 
 

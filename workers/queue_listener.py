@@ -1,14 +1,16 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
 import json
 import signal
 import sys
+from datetime import datetime, timedelta, timezone
 from typing import Any
-from redis.exceptions import ConnectionError, TimeoutError, BusyLoadingError
+
+from redis.exceptions import BusyLoadingError, ConnectionError, TimeoutError
+
+from core.config import OBZHORA_CHAT_ID
+from core.locks import LockAcquireError
 from core.logger import logger
 from core.redis_client import get_redis
-from core.locks import lock_hailuo, LockAcquireError
-from core.config import OBZHORA_CHAT_ID
 from workers.base_pipeline import BasePipeline
 from workers.video_generation_pipeline import VideoGenerationPipeline, send_notification
 
@@ -52,7 +54,7 @@ class QueueListener:
         while not self.shutdown_requested:
             try:
                 redis = await get_redis()
-            except (ConnectionError, TimeoutError, BusyLoadingError) as err:
+            except (ConnectionError, TimeoutError, BusyLoadingError):
                 logger.warning("Redis временно сдох. жду 2 секунды..")
                 await asyncio.sleep(2)
                 continue
@@ -67,13 +69,13 @@ class QueueListener:
                     await self.process_task(task)
                 except LockAcquireError:
                     if NEED_TO_RETURN_TO_QUEUE:
-                        await redis.rpush(self.queue_name, task_data)
+                        await redis.rpush(self.queue_name, task_data) # type: ignore
                         logger.info("Задача помещена обратно в очередь.")
                     logger.info("Не удалось получить блокировку. Таймаут минута. (Можно выключить софт если не нужно)")
                     await asyncio.sleep(60)
                 except Exception as e:
                     if NEED_TO_RETURN_TO_QUEUE:
-                        await redis.rpush(self.queue_name, task_data)
+                        await redis.rpush(self.queue_name, task_data) # type: ignore
                         logger.info("Задача помещена обратно в очередь.")
                     logger.exception(f"Ошибка при обработке задачи: {e}")
                     await asyncio.sleep(60)

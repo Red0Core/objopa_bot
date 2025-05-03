@@ -1,7 +1,8 @@
 from aiogram import Router
 from aiogram.types import CallbackQuery
-from core.redis_client import get_redis
+
 from core.logger import logger
+from core.redis_client import get_redis
 
 router = Router()
 

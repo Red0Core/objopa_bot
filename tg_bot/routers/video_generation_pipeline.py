@@ -1,15 +1,15 @@
-import uuid
 import asyncio
 import json
-from typing import List, Dict, Any, Optional
+import uuid
+from typing import List
 
-from aiogram import Router, F
-from aiogram.types import Message, FSInputFile
-from aiogram.filters import Command, CommandObject
+from aiogram import F, Router
 from aiogram.enums.parse_mode import ParseMode
+from aiogram.filters import Command
+from aiogram.types import Message
 
-from core.redis_client import get_redis
 from core.logger import logger
+from core.redis_client import get_redis
 
 video_router = Router()
 
@@ -39,7 +39,6 @@ async def handle_prompt_file(message: Message):
     if not message.document:
         return
     
-    file_name = message.document.file_name
     # Используем комбинацию chat_id и user_id для уникальной идентификации
     chat_id = str(message.chat.id)
     user_id = str(message.from_user.id) if message.from_user else "unknown"
@@ -50,9 +49,19 @@ async def handle_prompt_file(message: Message):
     anim_prompts_key = f"video_gen:anim_prompts:{session_key}"
     
     # Скачиваем файл
-    file = await message.bot.get_file(message.document.file_id)
-    file_path = await message.bot.download_file(file.file_path)
+    if message.bot is None:
+        logger.error("Бот не инициализирован. Не удалось скачать файл.")
+        return
     
+    file = await message.bot.get_file(message.document.file_id)
+    if file is None or file.file_path is None:
+        logger.error("Не удалось получить файл.")
+        return
+    
+    file_path = await message.bot.download_file(file.file_path)
+    if file_path is None:
+        logger.error("Не удалось скачать файл.")
+        return
     # Читаем содержимое файла и разбиваем на строки
     content = file_path.read().decode('utf-8').strip()
     prompts = [line.strip() for line in content.split('\n') if line.strip()]
@@ -61,6 +70,10 @@ async def handle_prompt_file(message: Message):
     existing_prompts_json = None
     overwrite_message = ""
 
+    if message.document.file_name is None:
+        logger.error("Нет имени файла")
+        return
+    file_name = message.document.file_name
     redis = await get_redis()
     # Сохраняем промпты в Redis в зависимости от типа файла
     if file_name.endswith(".img.txt") or file_name == 'get_images.txt' or file_name == 'image_prompts.txt':
@@ -274,7 +287,7 @@ async def start_video_generation(message: Message, img_prompts: List[str], anim_
     
     # Добавляем задачу в очередь Redis
     redis = await get_redis()
-    await redis.rpush("hailuo_tasks", json.dumps(task))
+    await redis.rpush("hailuo_tasks", json.dumps(task)) # type: ignore
     logger.info(f"Задача на генерацию видео {task_id} добавлена в очередь")
     
     # Очищаем промпты из Redis
