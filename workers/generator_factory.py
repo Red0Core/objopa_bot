@@ -17,19 +17,22 @@ from core.config import BASE_DIR
 DEMO_STORAGE_DIR = BASE_DIR / "storage" / "demo_images"
 DEMO_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
+from abc import ABC, abstractmethod
+from typing import List, Optional
+from pathlib import Path
+
 class ImageGenerator(ABC):
-    """Абстрактный класс для генераторов изображений"""
-    
     @abstractmethod
-    async def generate(self, prompts: List[str]) -> List[List[Path]]:
+    async def generate(
+        self,
+        prompts: List[str],
+        indices_to_generate: Optional[List[int]] = None # Новый аргумент: 0-based индексы
+    ) -> List[List[Path]]:
         """
-        Генерирует группы изображений на основе промптов.
-        
-        Args:
-            prompts: Список текстовых промптов
-            
-        Returns:
-            Список групп изображений (список списков путей)
+        Генерирует изображения для указанных промптов.
+        Если indices_to_generate предоставлен, генерирует ТОЛЬКО для промптов с этими индексами.
+        Возвращаемый список ДОЛЖЕН соответствовать длине prompts,
+        содержа пустые списки для индексов, которые не генерировались в этом вызове.
         """
         pass
 
@@ -56,7 +59,7 @@ class DummyImageGenerator(ImageGenerator):
     Генерирует реальные изображения для каждого промпта.
     """
     
-    async def generate(self, prompts: List[str]) -> List[List[Path]]:
+    async def generate(self, prompts: List[str], indices_to_generate: list[int] | None = None) -> List[List[Path]]:
         """
         Возвращает реальные изображения, сгенерированные через dummyimage.com
         

@@ -18,8 +18,6 @@ class VideoGenerationPipeline(BasePipeline):
         data = params.get("data", {})
         self.image_prompts = data.get("image_prompts", [])
         self.animation_prompts = data.get("animation_prompts", [])
-        self.image_prompts = data.get("image_prompts", [])
-        self.animation_prompts = data.get("animation_prompts", [])
         self.user_id = data.get("user_id")
 
         # Инициализируем генераторы
@@ -30,82 +28,56 @@ class VideoGenerationPipeline(BasePipeline):
         # Пример обработки задачи генерации изображений
         logger.info(f"Task ID: {self.task_id}; User ID: {self.user_id}; Image Prompts: {self.image_prompts}; Animations Prompts: {self.animation_prompts}")
 
-        all_generated_images_paths = await self.generate_images(self.image_prompts)
-        all_server_images_paths: list[list[str]] = []
+        current_local_paths: list[list[Path]] = await self.generate_images(self.image_prompts)
+        current_server_paths: list[list[str]] = await self._upload_groups(current_local_paths)
         
-        # Шаг 1: Параллельно загружаем все изображения на сервер батчами
-        for group_of_images in all_generated_images_paths:
-            upload_tasks = []
-            for image in group_of_images:
-                upload_tasks.append(upload_file_to_backend(image))
-            all_server_images_paths.append([x for x in await asyncio.gather(*upload_tasks)])
+        # Инициализация состояния выбора
+        final_chosen_local_paths: list[Path | None] = [None] * len(self.image_prompts)
+        indices_requiring_regenerate: list[int] = []
 
-        logger.info(f"Все изображения загружены на сервер: {all_server_images_paths}")
-        
-        # Шаг 2: Последовательная отправка групп и ожидание выбора пользователя
-        final_selected_images = []
-        for i, initial_group_server_paths in enumerate(all_server_images_paths):
-            logger.info(f"Обработка группы {i+1}/{len(all_server_images_paths)} для выбора...")
-            
-            # Для пересоздания изображений нужна, чтобы грузануть новые изображения в текущую группу
-            current_group_server_paths = initial_group_server_paths
-
-            while True:
-                # Отправляем ОДНУ группу изображений и получаем ее task_id
-                selection_task_id = await self.send_one_group_of_image(current_group_server_paths)
-                logger.info(f"Группа {i+1} отправлена. Task ID для выбора: {selection_task_id}. Ожидание выбора пользователя...")
-
-                # Ждем выбора пользователя ИМЕННО для этой группы
-                selection_index_str = await self.get_images_selection(str(selection_task_id))
-                
-                if selection_index_str == "-1":
-                    logger.info(f"Пользователь выбрал пересоздание группы {i+1}.")
-                    try:
-                        # Пересоздаем изображения для этой группы [[текущая группа]]
-                        regenerated_paths_group = await self.generate_images([self.image_prompts[i]])
-                        if not regenerated_paths_group:
-                            raise RuntimeError("Не удалось пересоздать изображения.")
-                        # Загружаем пересозданные изображения на сервер
-                        logger.info(f"Грузим на сервак пересозданные изображения в группе {i+1}...")
-                        
-                        # Загружаем пересозданные изображения на сервер и заменяем их на текущую группу
-                        current_group_server_paths = await asyncio.gather(
-                            *[upload_file_to_backend(path) for path in regenerated_paths_group[0]]
-                        )
-
-                        logger.info(f"Пересозданные изображения закидыаем на выбор")
-                        continue
-                    except Exception as regen_error:
-                        raise RuntimeError("Ошибка при пересоздании изображений.") from regen_error
-
-                try:
-                    selection_index = int(selection_index_str)
-                    if 0 <= selection_index < len(all_generated_images_paths[i]):
-                        # Используем индекс для выбора пути к ЛОКАЛЬНОМУ файлу из исходного списка
-                        selected_local_image_path = all_generated_images_paths[i][selection_index]
-                        final_selected_images.append(selected_local_image_path)
-                        logger.info(f"Выбрано изображение {selection_index + 1} из группы {i+1}: {selected_local_image_path}")
-                        break
+        # Перебор до тех пор пока все не будут выбраны 
+        while None in final_chosen_local_paths:
+            # Фаза выбора изображений
+            for idx, server_group in enumerate(current_server_paths):
+                if final_chosen_local_paths[idx] is None:
+                    # Отправляем уведомление с выбором изображений
+                    image_selection_task_id = await self.send_one_group_of_image(server_group)
+                    # Ждем выбора пользователя
+                    selection_index = await self.get_images_selection(str(image_selection_task_id))
+                    if selection_index == -1:
+                        # Если пользователь выбрал пересоздание, то добавляем в список
+                        indices_requiring_regenerate.append(idx)
                     else:
-                        logger.error(f"Некорректный индекс выбора {selection_index} для группы {i+1}. Пропуск.")
-                        # Можно добавить логику обработки ошибки, например, запросить выбор заново или использовать дефолтное изображение
-                        # Пока просто пропустим эту группу или можно прервать пайплайн
-                        raise ValueError(f"Invalid selection index {selection_index} for group {i+1}")
-
-                except (ValueError, TypeError) as e:
-                    logger.error(f"Ошибка при обработке выбора для группы {i+1} (task_id: {selection_task_id}): {e}. Получено: '{selection_index_str}'.")
-                    # Обработка ошибки - можно прервать, повторить запрос или выбрать дефолтное
-                    raise RuntimeError(f"Invalid selection received for group {i+1}") from e
-
-
-        # Шаг 3: Генерация видео из выбранных изображений
-        if not final_selected_images:
-             logger.error("Не выбрано ни одного изображения. Генерация видео невозможна.")
-             await self.send_notification("Не удалось выбрать изображения для генерации видео.", send_to=self.user_id)
-             return # Завершаем пайплайн
+                        # Сохраняем выбранный путь
+                        final_chosen_local_paths[idx] = current_local_paths[idx][selection_index]
+            
+            # Фаза перегенерации
+            if indices_requiring_regenerate:
+                # Генерируем только те группы, которые нужно перегенерировать
+                logger.info(f"Перегенерация сцен: {indices_requiring_regenerate}")
+                # Возвращает только перегенерированные группы len(indices_requiring_regenerate)
+                regenerated_local_paths = await self.generate_images(self.image_prompts, indices_requiring_regenerate)
+                regenerated_server_paths = await self._upload_groups(regenerated_local_paths)
+                
+                for i, original_idx in enumerate(indices_requiring_regenerate):
+                    # Обновляем пути для перегенерированных сцен
+                    current_server_paths[original_idx] = regenerated_server_paths[i]
+                    current_local_paths[original_idx] = regenerated_local_paths[i]
+                
+                indices_requiring_regenerate.clear()  # Очищаем список для следующей итерации
+        
+        final_local_paths: list[Path] = []
+        for idx, server_group in enumerate(current_local_paths):
+            if final_chosen_local_paths[idx] is None:
+                # Если все еще None, то берем первое изображение из группы
+                final_local_paths.append(server_group[0])
+            else:
+                path = final_chosen_local_paths[idx]
+                assert path is not None  # Линтер гадит, что path может быть None
+                final_local_paths.append(path)
 
         # Генерация видео из выбранных изображений
-        video_path = await self.generate_video(final_selected_images, self.animation_prompts)
+        video_path = await self.generate_video(final_local_paths, self.animation_prompts)
 
         # Загружаем видео на сервер
         video_server_path = await upload_file_to_backend(video_path, is_video=True)
@@ -113,10 +85,9 @@ class VideoGenerationPipeline(BasePipeline):
         await self.send_notification("Генерация и загрузка видео завершена. " \
                                      f"Cсылка к видео: {BACKEND_ROUTE}/worker/download-video/{video_server_path}")
         
-    async def generate_images(self, prompts: list[str]) -> list[list[Path]]:
+    async def generate_images(self, prompts: list[str], indicies_to_generate: list[int] | None = None) -> list[list[Path]]:
         # Например, вызов API генерации изображений
-        return await self.image_generator.generate(prompts)
-    
+        return await self.image_generator.generate(prompts, indicies_to_generate)
 
     async def generate_video(self, images: list[Path], prompts) -> Path:
         # Например, вызов API генерации видео
@@ -131,7 +102,7 @@ class VideoGenerationPipeline(BasePipeline):
                 json={
                     "task_id": str(image_selection_task_id),
                     "user_id": self.user_id, # В тг боте это user_id
-                    "relative_paths": images
+                    "relative_paths": images,
                 }
             )
         logger.info(f"Task ID: {self.task_id}; Images sent to backend.")
@@ -144,7 +115,7 @@ class VideoGenerationPipeline(BasePipeline):
             if selection_index is not None:
                 logger.info(f"Выбор получен: {selection_index}")
                 await redis.delete(f"result:image_selection:{task_id}")
-                return selection_index
+                return int(selection_index)
             await asyncio.sleep(1)
 
     async def send_notification(self, text: str, send_to: str | None = None) -> None:
@@ -152,6 +123,28 @@ class VideoGenerationPipeline(BasePipeline):
             send_to = str(self.user_id)
         # Отправляем уведомление через бекенд
         await send_notification(text, send_to)
+
+    async def _upload_groups(self, local_paths_groups: list[list[Path]]) -> list[list[str]]:
+        """Параллельно загружает группы изображений и возвращает серверные пути."""
+        all_upload_tasks = []
+        for group in local_paths_groups:
+            if group:
+                group_tasks = [upload_file_to_backend(image_path) for image_path in group]
+                all_upload_tasks.append(asyncio.gather(*group_tasks)) # Оборачиваем в газер для будущего await
+            else:
+                # Добавляем "пустую" корутину, чтобы сохранить структуру
+                all_upload_tasks.append(asyncio.sleep(0, result=[]))
+
+        try:
+            server_paths_groups = await asyncio.gather(*all_upload_tasks)
+            logger.info(f"Загружено {sum(len(g) for g in server_paths_groups)} изображений из {len(server_paths_groups)} групп.")
+            return server_paths_groups
+        except Exception as upload_err:
+            logger.error(f"Критическая ошибка при массовой загрузке изображений: {upload_err}", exc_info=True)
+            # Пробрасываем ошибку, чтобы прервать пайплайн
+            raise RuntimeError("Ошибка загрузки изображений") from upload_err
+
+
     
 async def send_notification(text: str, send_to: str) -> None:    
     try:
