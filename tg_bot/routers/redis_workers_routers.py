@@ -15,11 +15,7 @@ async def handle_selection(callback: CallbackQuery):
     _, task_id, index = callback.data.split(":") # select_image:task_id:index
     selected_index = int(index) + 1
     
-    # Короткое уведомление
-    await callback.answer(f"Вы выбрали изображение №{selected_index}", show_alert=True)
-    
     redis = await get_redis()
-    # Удаляем сообщение полностью
     try:
         while True:
             msg_to_delete = await redis.lpop(f"delete:tg_messages_id:{callback.message.chat.id}:{task_id}") # type: ignore
