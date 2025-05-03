@@ -65,6 +65,7 @@ class DummyImageGenerator(ImageGenerator):
         
         Args:
             prompts: Список текстовых промптов
+            indices_to_generate: Список индексов для генерации изображений (0-based)
             
         Returns:
             Список групп изображений
@@ -76,7 +77,8 @@ class DummyImageGenerator(ImageGenerator):
             # Создаем случайные параметры для изображений
             group_images = []
             image_generation_tasks = []
-            
+            if indices_to_generate is not None and idx not in indices_to_generate:
+                continue  # Пропускаем, если индекс не в списке для генерации
             # Создаем 4 изображения для каждого промпта
             for i in range(4):
                 # Добавляем задачу на генерацию изображения

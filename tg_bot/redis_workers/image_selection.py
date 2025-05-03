@@ -43,18 +43,21 @@ async def poll_image_selection(bot: Bot):
                     logger.warning(f"Callback data слишком длинная: {len(f"select_image:{task_id}:1".encode('utf-8'))} байт")
                     # Возможно, используйте более короткий task_id
 
-                # Создаём ряды кнопок для выбора изображений
-                selection_buttons_rows = [
-                    [InlineKeyboardButton(text=f"{i+1}", callback_data=f"select_image:{task_id}:{i}")]
-                    for i in range(len(relative_paths))
-                ]
-                # Создаём кнопку для пересоздания
-                regenerate_button_row = [
-                    InlineKeyboardButton(text="🔄", callback_data=f"select_image:{task_id}:-1")
-                ]
-                inline_keyboard = selection_buttons_rows + [regenerate_button_row]
-                keyboard = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+                # Создаём ряды кнопок для 4 изображений + 1 кнопка пересоздания
+                selection_buttons_rows: list[list[InlineKeyboardButton]] = []
 
+                # Ряд с кнопками выбора изображений (1, 2, 3, 4)
+                image_buttons_row = []
+                for i in range(len(relative_paths)): # Должно быть 4 итерации
+                    button = InlineKeyboardButton(text=f"{i+1}", callback_data=f"select_image:{task_id}:{i}")
+                    image_buttons_row.append(button)
+                selection_buttons_rows.append(image_buttons_row)
+
+                # Ряд с кнопкой "Пересоздать"
+                regenerate_button = InlineKeyboardButton(text="🔄 Пересоздать", callback_data=f"select_image:{task_id}:-1")
+                selection_buttons_rows.append([regenerate_button]) # Кнопка в своем ряду
+
+                keyboard = InlineKeyboardMarkup(inline_keyboard=selection_buttons_rows)
                 media = [InputMediaPhoto(media=FSInputFile(UPLOAD_DIR.joinpath(relative_path))) for relative_path in relative_paths]
 
                 # Отправляем альбом + кнопки
