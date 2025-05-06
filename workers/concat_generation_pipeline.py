@@ -20,7 +20,7 @@ class ConcatAnimationsPipeline(BasePipeline):
         """
         Запуск пайплайна конкатенации анимаций.
         """
-        if not self.worker_status_manager.check_worker_animations_ready_flag(self.worker_status_manager.worker_id):
+        if not await self.worker_status_manager.check_worker_animations_ready_flag(self.worker_status_manager.worker_id):
             logger.error("No animations ready for concatenation.")
             await send_notification(
                 f"Нет готовых анимаций для конкатенации.",

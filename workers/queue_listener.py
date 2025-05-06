@@ -21,7 +21,7 @@ from workers.video_generation_pipeline import VideoGenerationPipeline
 
 WHO_LAUNCHED_WORKER = "Mihuil" # ENGLISH NAME
 CHAT_ID = OBZHORA_CHAT_ID
-NEED_TO_RETURN_TO_QUEUE = True # False для отладки, True для продакшена
+NEED_TO_RETURN_TO_QUEUE = False # False для отладки, True для продакшена
 queue_name = "hailuo_tasks"
 
 # Возможные типы задач и воркеры для них

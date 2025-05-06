@@ -9,7 +9,10 @@ except ImportError as e:
     raise
 
 class DeleteImagesFolderPipeline:
-    def run(self):
+    def __init__(self, **params) -> None:
+        pass
+
+    async def run(self):
         """
         Запускает процесс удаления изображений.
         """

@@ -10,7 +10,7 @@ from workers.base_pipeline import BasePipeline
 from workers.generator_factory import GeneratorFactory
 from core.logger import logger
 from workers.utils import upload_file_to_backend, send_notification
-from worker_status_manager import WorkerStatusManager
+from workers.worker_status_manager import WorkerStatusManager
 
 class ImageGenerationPipeline(BasePipeline):
     def __init__(self, task_id: str, **params):
@@ -31,8 +31,12 @@ class ImageGenerationPipeline(BasePipeline):
         logger.info(f"ImageGenerationPipeline: {self.task_id}, prompts: {self.image_prompts}, user_id: {self.user_id}")
         
         # Генерация изображений с выбором пользователем
-        final_local_paths = await self.generate_images_with_selection()
-
+        try:
+            final_local_paths = await self.generate_images_with_selection()
+        except Exception as e:
+            logger.exception(f"Ошибка при генерации изображений: {e}", exc_info=True)
+            await self.worker_status_manager.clear_worker_selected_images(self.worker_status_manager.worker_id)
+            
         # Отправляем уведомление о завершении генерации
         await send_notification(
             f"Генерация изображений завершена. {len(final_local_paths)} изображений.",
@@ -98,8 +102,8 @@ class ImageGenerationPipeline(BasePipeline):
                 final_local_paths.append(path)
         
         # Сохраняем выбранные изображения в Redis для текущего воркера
-        await self.worker_status_manager.clear_worker_selected_images(self.task_id)
-        await self.worker_status_manager.save_worker_selected_images(self.task_id, final_local_paths)
+        await self.worker_status_manager.clear_worker_selected_images(self.worker_status_manager.worker_id)
+        await self.worker_status_manager.save_worker_selected_images(self.worker_status_manager.worker_id, final_local_paths)
 
         return final_local_paths
 
