@@ -206,67 +206,6 @@ async def handle_start_generation(message: Message):
     # Запускаем процесс генерации
     await start_video_generation(message, img_prompts, anim_prompts)
 
-# Добавляем обработчик для альбомов файлов
-@video_router.message(F.media_group_id, F.caption)
-async def handle_media_group_with_start_command(message: Message):
-    """
-    Обработчик для медиагрупп с командой в описании.
-    Запускает генерацию, если в описании есть команда /start_generation
-    """
-    # Проверяем наличие команды в описании
-    if message.caption and "/start_generation" in message.caption:
-        # Добавляем небольшую задержку, чтобы дать время на обработку файлов
-        await asyncio.sleep(1)
-        
-        # Используем комбинацию chat_id и user_id для уникальной идентификации
-        chat_id = str(message.chat.id)
-        user_id = str(message.from_user.id) if message.from_user else "unknown"
-        session_key = f"{chat_id}:{user_id}"
-        
-        # Проверяем, есть ли промпты
-        img_prompts_key = f"{IMAGE_PROMPTS_PREFIX}{session_key}"
-        anim_prompts_key = f"{ANIMATION_PROMPTS_PREFIX}{session_key}"
-        
-        redis = await get_redis()
-        has_img_prompts = await redis.exists(img_prompts_key)
-        has_anim_prompts = await redis.exists(anim_prompts_key)
-        
-        if has_img_prompts and has_anim_prompts:
-            # Получаем промпты
-            img_prompts_json = await redis.get(img_prompts_key)
-            anim_prompts_json = await redis.get(anim_prompts_key)
-            
-            img_prompts = json.loads(img_prompts_json)
-            anim_prompts = json.loads(anim_prompts_json)
-            
-            # Запускаем генерацию
-            await start_video_generation(message, img_prompts, anim_prompts)
-        else:
-            # Если файлы еще не обработаны, подождем еще немного
-            await asyncio.sleep(2)
-            
-            # Проверяем еще раз
-            has_img_prompts = await redis.exists(img_prompts_key)
-            has_anim_prompts = await redis.exists(anim_prompts_key)
-            
-            if has_img_prompts and has_anim_prompts:
-                # Получаем промпты
-                img_prompts_json = await redis.get(img_prompts_key)
-                anim_prompts_json = await redis.get(anim_prompts_key)
-                
-                img_prompts = json.loads(img_prompts_json)
-                anim_prompts = json.loads(anim_prompts_json)
-                
-                # Запускаем генерацию
-                await start_video_generation(message, img_prompts, anim_prompts)
-            else:
-                # Если все равно нет промптов, отправляем сообщение
-                await message.reply(
-                    "⚠️ Не удалось начать генерацию. Убедитесь, что вы отправили оба файла "
-                    "с промптами и они имеют правильные расширения (<code>.img.txt</code> и <code>.anim.txt</code>).",
-                    parse_mode=ParseMode.HTML
-                )
-
 async def start_video_generation(message: Message, img_prompts: List[str], anim_prompts: List[str]):
     """
     Запускает процесс генерации видео.
@@ -342,7 +281,7 @@ async def enqueue_pipeline_task(
     pipeline_type: str, 
     chat_id_for_context: int, 
     message_date: datetime, # Added for created_at
-    specific_data: dict[Any, Any] = {}
+    specific_data: dict[str, Any] = {}
 ):
     """
     Helper function to create and enqueue a task for a specific pipeline.
@@ -385,7 +324,7 @@ async def handle_pipeline_button(callback_query: CallbackQuery):
     session_key = f"{str(chat_id)}:{user_id}" # For fetching prompts if needed
 
     redis = await get_redis()
-    specific_task_data: dict[Any, Any] = {}
+    specific_task_data: dict[str, Any] = {}
     
     # Prepare data based on pipeline type
     if pipeline_type_to_run == "image_generation":
@@ -413,7 +352,7 @@ async def handle_pipeline_button(callback_query: CallbackQuery):
     if not isinstance(curr_date, datetime):
         curr_date = datetime.now(timezone.utc)
     else:
-        curr_date.replace(tzinfo=timezone.utc) # Ensure it's timezone-aware
+        curr_date = curr_date.replace(tzinfo=timezone.utc) # Ensure it's timezone-aware
 
     try:
         task_id = await enqueue_pipeline_task(
