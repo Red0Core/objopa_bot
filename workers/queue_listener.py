@@ -16,6 +16,7 @@ from workers.base_pipeline import BasePipeline
 from workers.concat_generation_pipeline import ConcatAnimationsPipeline
 from workers.delete_images_folder_pipeline import DeleteImagesFolderPipeline
 from workers.image_generation_pipeline import ImageGenerationPipeline
+from workers.reset_worker_state_pipeline import ResetWorkerStatePipeline
 from workers.utils import send_notification
 from workers.video_generation_pipeline import VideoGenerationPipeline
 
@@ -31,6 +32,7 @@ PIPELINE_TYPE_REGISTRY = {
     "animation_generation": AnimationGenerationPipeline,
     "delete_image_folder": DeleteImagesFolderPipeline,
     "concat_animations": ConcatAnimationsPipeline,
+    "reset_worker_session": ResetWorkerStatePipeline,
 }
 
 class QueueListener:

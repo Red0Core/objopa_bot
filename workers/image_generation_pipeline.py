@@ -33,15 +33,15 @@ class ImageGenerationPipeline(BasePipeline):
         # Генерация изображений с выбором пользователем
         try:
             final_local_paths = await self.generate_images_with_selection()
+            # Отправляем уведомление о завершении генерации
+            await send_notification(
+                f"Генерация изображений завершена. {len(final_local_paths)} изображений.",
+                str(self.user_id)
+            )
         except Exception as e:
             logger.exception(f"Ошибка при генерации изображений: {e}", exc_info=True)
             await self.worker_status_manager.clear_worker_selected_images(self.worker_status_manager.worker_id)
             
-        # Отправляем уведомление о завершении генерации
-        await send_notification(
-            f"Генерация изображений завершена. {len(final_local_paths)} изображений.",
-            str(self.user_id)
-        )
 
     async def generate_images_with_selection(self) -> list[Path]:
         """

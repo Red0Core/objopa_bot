@@ -264,6 +264,7 @@ PIPELINE_BUTTONS_CONFIG = {
     "animation_generation": "✨ Генерация Анимаций",
     "concat_animations": "🔗 Объединить Анимации",
     "delete_image_folder": "🗑️ Очистить папку изображений воркера",
+    "reset_worker_session": "🔄 Сбросить сессию воркера",
 }
 
 @video_router.message(Command("pipeline_menu"))
@@ -282,13 +283,12 @@ async def enqueue_pipeline_task(
     pipeline_type: str, 
     chat_id_for_context: int, 
     message_date: datetime, # Added for created_at
-    specific_data: dict[str, Any] = {}
+    specific_data: dict[str, Any] = {},
+    task_id: str = str(uuid.uuid4()), # Generate a new task ID if not provided
 ):
     """
     Helper function to create and enqueue a task for a specific pipeline.
     """
-    task_id = str(uuid.uuid4())
-    
     # Basic data common to all tasks
     task_data_payload = {
         "user_id": chat_id_for_context, # For notifications from worker
@@ -346,7 +346,7 @@ async def handle_pipeline_button(callback_query: CallbackQuery):
         # The worker's AnimationGenerationPipeline is expected to use WorkerStatusManager
         # to get selected image paths based on its own worker_id.
 
-    # For concat_animations and delete_image_folder, no specific data is fetched by the bot here.
+    # For concat_animations, delete_image_folder, reset_session_worker, no specific data is fetched by the bot here.
     # The worker pipelines will handle their logic (e.g., using WorkerStatusManager).
 
     curr_date = callback_query.message.date
@@ -362,9 +362,21 @@ async def handle_pipeline_button(callback_query: CallbackQuery):
             curr_date, # Pass original message date for created_at
             specific_task_data
         )
+
+        response_message_text = ""
+        if pipeline_type_to_run == "reset_worker_session":
+            response_message_text = (
+                f"✅ Команда на сброс сессии воркера отправлена.\n"
+                f"ID Задачи на сброс: <code>{task_id}</code>\n\n"
+                "Теперь вы можете начать новый процесс генерации с чистого листа, используя кнопки."
+            )
+        else:
+            response_message_text = (
+                f"✅ Запущен пайплайн: <b>{PIPELINE_BUTTONS_CONFIG.get(pipeline_type_to_run, pipeline_type_to_run)}</b>\n"
+                f"ID Задачи: <code>{task_id}</code>"
+            )
         await callback_query.message.answer(
-            f"✅ Запущен пайплайн: <b>{PIPELINE_BUTTONS_CONFIG.get(pipeline_type_to_run, pipeline_type_to_run)}</b>\n"
-            f"ID Задачи: <code>{task_id}</code>",
+            response_message_text,
             parse_mode=ParseMode.HTML
         )
         await callback_query.answer(f"Пайплайн '{PIPELINE_BUTTONS_CONFIG.get(pipeline_type_to_run, pipeline_type_to_run)}' запущен!")
