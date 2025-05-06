@@ -22,7 +22,9 @@ from workers.video_generation_pipeline import VideoGenerationPipeline
 
 WHO_LAUNCHED_WORKER = "Mihuil" # ENGLISH NAME
 CHAT_ID = OBZHORA_CHAT_ID
-NEED_TO_RETURN_TO_QUEUE = False # False для отладки, True для продакшена
+# False для отладки, True для продакшена
+# Используется только для полного процесса, не для клавиатуры!!!
+NEED_TO_RETURN_TO_QUEUE = True
 queue_name = "hailuo_tasks"
 
 # Возможные типы задач и воркеры для них
@@ -79,13 +81,13 @@ class QueueListener:
                         continue
                     await self.process_task(task)
                 except LockAcquireError:
-                    if NEED_TO_RETURN_TO_QUEUE:
+                    if NEED_TO_RETURN_TO_QUEUE and task_data.get("type") != "video_generation":
                         await redis.rpush(self.queue_name, task_data) # type: ignore
                         logger.info("Задача помещена обратно в очередь.")
                     logger.info("Не удалось получить блокировку. Таймаут минута. (Можно выключить софт если не нужно)")
                     await asyncio.sleep(60)
                 except Exception as e:
-                    if NEED_TO_RETURN_TO_QUEUE:
+                    if NEED_TO_RETURN_TO_QUEUE and task_data.get("type") != "video_generation":
                         await redis.rpush(self.queue_name, task_data) # type: ignore
                         logger.info("Задача помещена обратно в очередь.")
                     logger.exception(f"Ошибка при обработке задачи: {e}")

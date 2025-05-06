@@ -4,6 +4,7 @@ from workers.animation_generation_pipeline import AnimationGenerationPipeline
 from workers.base_pipeline import BasePipeline
 from workers.concat_generation_pipeline import ConcatAnimationsPipeline
 from workers.image_generation_pipeline import ImageGenerationPipeline
+from workers.reset_worker_state_pipeline import ResetWorkerStatePipeline
 
 
 class VideoGenerationPipeline(BasePipeline):
@@ -29,7 +30,7 @@ class VideoGenerationPipeline(BasePipeline):
                 "user_id": self.user_id
             }
         ).run()
-        logger.info(f"Image generation completed for task {self.task_id}")
+        logger.success(f"Image generation completed for task {self.task_id}")
         
         await AnimationGenerationPipeline(
             task_id=self.task_id,
@@ -41,7 +42,7 @@ class VideoGenerationPipeline(BasePipeline):
             }
         ).run()
 
-        logger.info(f"Animation generation completed for task {self.task_id}")
+        logger.success(f"Animation generation completed for task {self.task_id}")
 
         await ConcatAnimationsPipeline(
             task_id=self.task_id,
@@ -51,3 +52,16 @@ class VideoGenerationPipeline(BasePipeline):
                 "user_id": self.user_id
             }
         ).run()
+
+        logger.success(f"Concatenation of animations completed for task {self.task_id}")
+
+        await ResetWorkerStatePipeline(
+            task_id=self.task_id,
+            worker_id=self.worker_id,
+            created_at=self.created_at,
+            data={
+                "user_id": self.user_id
+            }
+        ).run()
+        logger.success("Resetting worker state completed")
+        logger.success(f"Video generation completed for task {self.task_id}")
