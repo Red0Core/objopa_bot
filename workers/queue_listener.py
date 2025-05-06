@@ -11,10 +11,15 @@ from core.config import OBZHORA_CHAT_ID
 from core.locks import LockAcquireError
 from core.logger import logger
 from core.redis_client import get_redis
+from workers.animation_generation_pipeline import AnimationGenerationPipeline
 from workers.base_pipeline import BasePipeline
-from workers.video_generation_pipeline import VideoGenerationPipeline, send_notification
+from workers.concat_generation_pipeline import ConcatAnimationsPipeline
+from workers.delete_images_folder_pipeline import DeleteImagesFolderPipeline
+from workers.image_generation_pipeline import ImageGenerationPipeline
+from workers.utils import send_notification
+from workers.video_generation_pipeline import VideoGenerationPipeline
 
-WHO_LAUNCHED_WORKER = "Михуил"
+WHO_LAUNCHED_WORKER = "Mihuil" # ENGLISH NAME
 CHAT_ID = OBZHORA_CHAT_ID
 NEED_TO_RETURN_TO_QUEUE = True # False для отладки, True для продакшена
 queue_name = "hailuo_tasks"
@@ -22,6 +27,10 @@ queue_name = "hailuo_tasks"
 # Возможные типы задач и воркеры для них
 PIPELINE_TYPE_REGISTRY = {
     "video_generation": VideoGenerationPipeline,
+    "image_generation": ImageGenerationPipeline,
+    "animation_generation": AnimationGenerationPipeline,
+    "delete_image_folder": DeleteImagesFolderPipeline,
+    "concat_animations": ConcatAnimationsPipeline,
 }
 
 class QueueListener:
@@ -84,6 +93,7 @@ class QueueListener:
 
     async def process_task(self, task: dict[str, Any]):
         task_type = task.get("type", "")
+        task["worker_id"] = WHO_LAUNCHED_WORKER
         worker_cls = PIPELINE_TYPE_REGISTRY.get(task_type)
 
         if not worker_cls:

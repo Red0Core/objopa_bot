@@ -1,17 +1,38 @@
 import asyncio
+from datetime import datetime, timezone
 import json
 import uuid
-from typing import List
+from typing import Any, List
 
 from aiogram import F, Router
 from aiogram.enums.parse_mode import ParseMode
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery # Added imports
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from core.config import OBZHORA_CHAT_ID
 from core.logger import logger
+from core.locks import force_release_hailuo_lock
 from core.redis_client import get_redis
 
 video_router = Router()
+
+ANIMATION_PROMPTS_PREFIX = "video_gen:anim_prompts:"
+IMAGE_PROMPTS_PREFIX = "image_gen:img_prompts:"
+
+@video_router.message(Command("force_unlock_hailuo"))
+async def handle_unlock_hailuo_account(message: Message):
+    """
+    Ручное удаление блокировки аккаунта Hailuo.
+    """
+    if message.chat.id != OBZHORA_CHAT_ID: # Белый листик нужен только для админов
+        await message.reply("❌ У вас нет прав на выполнение этой команды.")
+        return
+    is_error = await force_release_hailuo_lock()
+    if is_error:
+        await message.reply("❌ Ошибка при разблокировке аккаунта Hailuo.")
+        return
+    await message.reply("✅ Аккаунт Hailuo разблокирован.")
 
 @video_router.message(Command("generate_video"))
 async def handle_generate_video_command(message: Message):
@@ -45,8 +66,8 @@ async def handle_prompt_file(message: Message):
     session_key = f"{chat_id}:{user_id}"
     
     # Создаем ключи Redis для хранения промптов
-    img_prompts_key = f"video_gen:img_prompts:{session_key}"
-    anim_prompts_key = f"video_gen:anim_prompts:{session_key}"
+    img_prompts_key = f"{IMAGE_PROMPTS_PREFIX}{session_key}"
+    anim_prompts_key = f"{ANIMATION_PROMPTS_PREFIX}{session_key}"
     
     # Скачиваем файл
     if message.bot is None:
@@ -153,8 +174,8 @@ async def handle_start_generation(message: Message):
     session_key = f"{chat_id}:{user_id}"
     
     # Создаем ключи Redis для хранения промптов
-    img_prompts_key = f"video_gen:img_prompts:{session_key}"
-    anim_prompts_key = f"video_gen:anim_prompts:{session_key}"
+    img_prompts_key = f"{IMAGE_PROMPTS_PREFIX}{session_key}"
+    anim_prompts_key = f"{ANIMATION_PROMPTS_PREFIX}{session_key}"
     
     # Проверяем наличие обоих типов промптов
     redis = await get_redis()
@@ -203,8 +224,8 @@ async def handle_media_group_with_start_command(message: Message):
         session_key = f"{chat_id}:{user_id}"
         
         # Проверяем, есть ли промпты
-        img_prompts_key = f"video_gen:img_prompts:{session_key}"
-        anim_prompts_key = f"video_gen:anim_prompts:{session_key}"
+        img_prompts_key = f"{IMAGE_PROMPTS_PREFIX}{session_key}"
+        anim_prompts_key = f"{ANIMATION_PROMPTS_PREFIX}{session_key}"
         
         redis = await get_redis()
         has_img_prompts = await redis.exists(img_prompts_key)
@@ -291,5 +312,122 @@ async def start_video_generation(message: Message, img_prompts: List[str], anim_
     logger.info(f"Задача на генерацию видео {task_id} добавлена в очередь")
     
     # Очищаем промпты из Redis
-    await redis.delete(f"video_gen:img_prompts:{session_key}")
-    await redis.delete(f"video_gen:anim_prompts:{session_key}")
+    await redis.delete(f"{IMAGE_PROMPTS_PREFIX}{session_key}")
+    await redis.delete(f"{ANIMATION_PROMPTS_PREFIX}{session_key}")
+
+
+PIPELINE_CALLBACK_PREFIX = "run_pipeline:"
+
+# Define pipeline types and their user-friendly names
+PIPELINE_BUTTONS_CONFIG = {
+    "image_generation": "🖼️ Генерация Изображений",
+    "animation_generation": "✨ Генерация Анимаций",
+    "concat_animations": "🔗 Объединить Анимации",
+    "delete_image_folder": "🗑️ Очистить папку изображений воркера",
+}
+
+@video_router.message(Command("pipeline_menu"))
+async def show_pipeline_menu(message: Message):
+    """
+    Displays a menu with buttons to trigger individual worker pipelines.
+    """
+    builder = InlineKeyboardBuilder()
+    for pipeline_type, text in PIPELINE_BUTTONS_CONFIG.items():
+        builder.button(text=text, callback_data=f"{PIPELINE_CALLBACK_PREFIX}{pipeline_type}")
+    
+    builder.adjust(1) # Display one button per row
+    await message.reply("Выберите пайплайн для запуска:", reply_markup=builder.as_markup())
+
+async def enqueue_pipeline_task(
+    pipeline_type: str, 
+    chat_id_for_context: int, 
+    message_date: datetime, # Added for created_at
+    specific_data: dict[Any, Any] = {}
+):
+    """
+    Helper function to create and enqueue a task for a specific pipeline.
+    """
+    task_id = str(uuid.uuid4())
+    
+    # Basic data common to all tasks
+    task_data_payload = {
+        "user_id": chat_id_for_context, # For notifications from worker
+        # worker_id will be defaulted by the worker if not provided
+    }
+    if specific_data:
+        task_data_payload.update(specific_data)
+
+    task = {
+        "task_id": task_id,
+        "type": pipeline_type,
+        "created_at": message_date.isoformat(), # Use message date
+        "data": task_data_payload
+    }
+    
+    redis = await get_redis()
+    await redis.rpush("hailuo_tasks", json.dumps(task)) # type: ignore
+    logger.info(f"Задача для пайплайна '{pipeline_type}' (ID: {task_id}) добавлена в очередь.")
+    return task_id
+
+@video_router.callback_query(F.data.startswith(PIPELINE_CALLBACK_PREFIX))
+async def handle_pipeline_button(callback_query: CallbackQuery):
+    """
+    Handles button presses from the pipeline menu.
+    """
+    if callback_query.message is None or callback_query.from_user is None or callback_query.data is None:
+        await callback_query.answer("Ошибка: не удалось обработать запрос.", show_alert=True)
+        return
+
+    pipeline_type_to_run = callback_query.data.split(PIPELINE_CALLBACK_PREFIX, 1)[1]
+    
+    chat_id = callback_query.message.chat.id
+    user_id = str(callback_query.from_user.id)
+    session_key = f"{str(chat_id)}:{user_id}" # For fetching prompts if needed
+
+    redis = await get_redis()
+    specific_task_data: dict[Any, Any] = {}
+    
+    # Prepare data based on pipeline type
+    if pipeline_type_to_run == "image_generation":
+        img_prompts_key = f"{IMAGE_PROMPTS_PREFIX}{session_key}"
+        img_prompts_json = await redis.get(img_prompts_key)
+        if not img_prompts_json:
+            await callback_query.answer("Промпты для изображений не найдены. Загрузите их сначала.", show_alert=True)
+            return
+        specific_task_data["image_prompts"] = json.loads(img_prompts_json)
+    
+    elif pipeline_type_to_run == "animation_generation":
+        anim_prompts_key = f"{ANIMATION_PROMPTS_PREFIX}{session_key}"
+        anim_prompts_json = await redis.get(anim_prompts_key)
+        if not anim_prompts_json:
+            await callback_query.answer("Промпты для анимаций не найдены. Загрузите их сначала.", show_alert=True)
+            return
+        specific_task_data["animation_prompts"] = json.loads(anim_prompts_json)
+        # The worker's AnimationGenerationPipeline is expected to use WorkerStatusManager
+        # to get selected image paths based on its own worker_id.
+
+    # For concat_animations and delete_image_folder, no specific data is fetched by the bot here.
+    # The worker pipelines will handle their logic (e.g., using WorkerStatusManager).
+
+    curr_date = callback_query.message.date
+    if not isinstance(curr_date, datetime):
+        curr_date = datetime.now(timezone.utc)
+    else:
+        curr_date.replace(tzinfo=timezone.utc) # Ensure it's timezone-aware
+
+    try:
+        task_id = await enqueue_pipeline_task(
+            pipeline_type_to_run,
+            chat_id, # Pass chat_id for worker notifications
+            curr_date, # Pass original message date for created_at
+            specific_task_data
+        )
+        await callback_query.message.answer(
+            f"✅ Запущен пайплайн: <b>{PIPELINE_BUTTONS_CONFIG.get(pipeline_type_to_run, pipeline_type_to_run)}</b>\n"
+            f"ID Задачи: <code>{task_id}</code>",
+            parse_mode=ParseMode.HTML
+        )
+        await callback_query.answer(f"Пайплайн '{PIPELINE_BUTTONS_CONFIG.get(pipeline_type_to_run, pipeline_type_to_run)}' запущен!")
+    except Exception as e:
+        logger.error(f"Ошибка при запуске пайплайна '{pipeline_type_to_run}': {e}", exc_info=True)
+        await callback_query.answer(f"Ошибка при запуске пайплайна: {e}", show_alert=True)

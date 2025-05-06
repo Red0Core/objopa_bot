@@ -5,6 +5,7 @@ from typing import AsyncIterator
 from redis.asyncio import Redis
 from redis.asyncio.lock import Lock
 
+from core.logger import logger
 from core.redis_client import get_redis  # ваша обёртка с reconnect/backoff
 
 # Настройки
@@ -50,3 +51,24 @@ async def lock_hailuo() -> AsyncIterator[Lock]:
         except Exception:
             # игнорим если уже отпущен или сбой
             pass
+
+async def force_release_hailuo_lock() -> bool:
+    """
+    Принудительно удаляет ключ лока 'hailuo_account' из Redis.
+
+    ВНИМАНИЕ: Использовать с осторожностью! Это может нарушить логику
+    распределенной блокировки, если другой процесс все еще считает,
+    что владеет локом.
+
+    Returns:
+        True, если ключ был удален (или его не существовало), False при ошибке.
+    """
+    redis: Redis = await get_redis()
+    try:
+        logger.warning(f"Принудительное удаление лока: {LOCK_NAME}")
+        await redis.delete(LOCK_NAME) # По факту не волнует возвращаемое значеие
+        logger.info(f"Лок {LOCK_NAME} принудительно удален.")
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка при принудительном удалении лока {LOCK_NAME}: {e}", exc_info=True)
+        return False

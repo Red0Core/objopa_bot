@@ -33,17 +33,33 @@ class ImageGenerator(ABC):
         """
         pass
 
-class VideoGenerator(ABC):
-    """Абстрактный класс для генераторов видео"""
+class AnimationsGenerator(ABC):
+    """Абстрактный класс для генераторов анимаций"""
     
     @abstractmethod
     async def generate(self, images: list[Path], prompts: list[str]) -> Path:
         """
-        Создает видео на основе изображений и промптов.
+        Создает анимаций на основе изображений и промптов.
         
         Args:
             images: Список путей к изображениям
             prompts: Список текстовых промптов для анимации
+            
+        Returns:
+            Путь к созданным видеофайлам(папки)
+        """
+        pass
+
+class VideoGenerator(ABC):
+    """Абстрактный класс для генераторов видео"""
+
+    @abstractmethod
+    async def generate(self, videos: list[Path]) -> Path:
+        """
+        Создает видео на основе списка анимаций.
+        
+        Args:
+            videos: Список путей к анимациям
             
         Returns:
             Путь к созданному видеофайлу
@@ -156,17 +172,23 @@ class DummyImageGenerator(ImageGenerator):
         ]
         return random.choice(colors)
 
+class DemoAnimationsGenerator(AnimationsGenerator):
+    """Демонстрационная реализация генератора анимаций"""
+    
+    async def generate(self, images: list[Path], prompts: list[str]) -> Path:
+        """Возвращает тестовый путь к анимациям"""
+        logger.info("Используется демо-генератор анимаций")
+        logger.info(f"Виртуальное создание анимаций из {len(images)} изображений с {len(prompts)} промптами")
+        
+        return DEMO_STORAGE_DIR
+
 class DemoVideoGenerator(VideoGenerator):
     """Демонстрационная реализация генератора видео"""
     
-    async def generate(self, images: list[Path], prompts: list[str]) -> Path:
+    async def generate(self, videos: list[Path]) -> Path:
         """Возвращает тестовый путь к видео"""
         logger.info("Используется демо-генератор видео")
-        logger.info(f"Виртуальное создание видео из {len(images)} изображений с {len(prompts)} промптами")
-        
-        # Здесь можно было бы добавить реальную генерацию видео из изображений
-        # с использованием библиотеки типа moviepy, но для демо-версии
-        # просто возвращаем фиктивный путь
+        logger.info(f"Виртуальное создание видео из {len(videos)} видеофайлов")
         
         return DEMO_STORAGE_DIR / "demo_video.mp4"
 
@@ -190,6 +212,22 @@ class GeneratorFactory:
             # Если не удалось, используем демо-реализацию с dummyimage.com
             logger.warning("Реальный генератор изображений не найден, используется DummyImageGenerator")
             return DummyImageGenerator()
+    
+    @staticmethod
+    def create_animations_generator() -> AnimationsGenerator:
+        """
+        Создает и возвращает генератор анимаций.
+        Пытается использовать реальную реализацию, если доступна.
+        """
+        try:
+            # Пытаемся импортировать реальную реализацию
+            from workers.private_generators import RealAnimationsGenerator
+            logger.info("Используется реальный генератор анимаций")
+            return RealAnimationsGenerator()
+        except ImportError:
+            # Если не удалось, используем демо-реализацию
+            logger.warning("Реальный генератор анимаций не найден, используется демо-версия")
+            return DemoAnimationsGenerator()
     
     @staticmethod
     def create_video_generator() -> VideoGenerator:
