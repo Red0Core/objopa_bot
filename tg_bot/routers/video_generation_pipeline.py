@@ -19,20 +19,34 @@ video_router = Router()
 
 ANIMATION_PROMPTS_PREFIX = "video_gen:anim_prompts:"
 IMAGE_PROMPTS_PREFIX = "image_gen:img_prompts:"
+QUEUE_NAME = "hailuo_tasks"
 
 @video_router.message(Command("force_unlock_hailuo"))
 async def handle_unlock_hailuo_account(message: Message):
     """
     Ручное удаление блокировки аккаунта Hailuo.
     """
-    if message.chat.id != OBZHORA_CHAT_ID: # Белый листик нужен только для админов
+    if message.chat.id != int(OBZHORA_CHAT_ID): # Белый листик нужен только для админов
         await message.reply("❌ У вас нет прав на выполнение этой команды.")
         return
-    is_error = await force_release_hailuo_lock()
-    if is_error:
+    is_not_error = await force_release_hailuo_lock()
+    if not is_not_error:
         await message.reply("❌ Ошибка при разблокировке аккаунта Hailuo.")
         return
-    await message.reply("✅ Аккаунт Hailuo разблокирован.")
+    
+    try:
+        redis = await get_redis()
+        deleted_count = await redis.delete(QUEUE_NAME)
+        if deleted_count > 0:
+            logger.info(f"Очередь '{QUEUE_NAME}' успешно очищена (ключ удален).")
+        else:
+            logger.info(f"Очередь '{QUEUE_NAME}' уже была пуста или не существовала.")
+    except (ConnectionError, TimeoutError) as err:
+            logger.error(f"Не удалось подключиться к Redis для очистки очереди: {err}")
+    except Exception as e:
+        logger.exception(f"Ошибка при очистке очереди '{QUEUE_NAME}': {e}", exc_info=True)
+    
+    await message.reply("✅ Аккаунт Hailuo разблокирован и очередь очищена.")
 
 @video_router.message(Command("generate_video"))
 async def handle_generate_video_command(message: Message):
@@ -248,7 +262,7 @@ async def start_video_generation(message: Message, img_prompts: List[str], anim_
     
     # Добавляем задачу в очередь Redis
     redis = await get_redis()
-    await redis.rpush("hailuo_tasks", json.dumps(task)) # type: ignore
+    await redis.rpush(QUEUE_NAME, json.dumps(task)) # type: ignore
     logger.info(f"Задача на генерацию видео {task_id} добавлена в очередь")
     
     # Очищаем промпты из Redis
@@ -305,7 +319,7 @@ async def enqueue_pipeline_task(
     }
     
     redis = await get_redis()
-    await redis.rpush("hailuo_tasks", json.dumps(task)) # type: ignore
+    await redis.rpush(QUEUE_NAME, json.dumps(task)) # type: ignore
     logger.info(f"Задача для пайплайна '{pipeline_type}' (ID: {task_id}) добавлена в очередь.")
     return task_id
 
