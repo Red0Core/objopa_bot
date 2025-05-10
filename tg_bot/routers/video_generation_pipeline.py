@@ -173,7 +173,7 @@ async def handle_prompt_file(message: Message):
             else:
                 await message.reply(
                     "✅ <b>Все файлы получены!</b>\n\n"
-                    "Теперь отправьте команду /start_generation для запуска генерации видео.",
+                    "Теперь отправьте команду /start_generation для запуска генерации видео. Или /pipeline_menu для запуска отдельных пайплайнов.",
                     parse_mode=ParseMode.HTML
                 )
 
