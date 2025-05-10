@@ -54,12 +54,13 @@ class VideoGenerator(ABC):
     """Абстрактный класс для генераторов видео"""
 
     @abstractmethod
-    async def generate(self, videos: list[Path]) -> Path:
+    async def generate(self, videos: list[Path], prompts: list[str]) -> Path:
         """
         Создает видео на основе списка анимаций.
         
         Args:
             videos: Список путей к анимациям
+            prompts: Список текстовых промптов для видео
             
         Returns:
             Путь к созданному видеофайлу
@@ -185,7 +186,7 @@ class DemoAnimationsGenerator(AnimationsGenerator):
 class DemoVideoGenerator(VideoGenerator):
     """Демонстрационная реализация генератора видео"""
     
-    async def generate(self, videos: list[Path]) -> Path:
+    async def generate(self, videos: list[Path], prompts: list[str]) -> Path:
         """Возвращает тестовый путь к видео"""
         logger.info("Используется демо-генератор видео")
         logger.info(f"Виртуальное создание видео из {len(videos)} видеофайлов")

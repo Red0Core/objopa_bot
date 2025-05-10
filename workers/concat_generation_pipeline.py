@@ -13,6 +13,7 @@ class ConcatAnimationsPipeline(BasePipeline):
         self.created_at = params.get("created_at")
         data = params.get("data", {})
         self.user_id = data.get("user_id")
+        self.animation_prompts = data.get("animation_prompts", [])
 
         self.video_generator = GeneratorFactory.create_video_generator()
 
@@ -28,7 +29,7 @@ class ConcatAnimationsPipeline(BasePipeline):
             )
             raise ValueError("No animations ready for concatenation.")
 
-        video_path = await self.video_generator.generate([])
+        video_path = await self.video_generator.generate(videos=[], prompts=self.animation_prompts)
         video_server_path = await upload_file_to_backend(video_path, is_video=True)
         video_server_path = f"{BACKEND_ROUTE}/worker/download-video/{video_server_path}"
 

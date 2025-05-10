@@ -350,7 +350,7 @@ async def handle_pipeline_button(callback_query: CallbackQuery):
             return
         specific_task_data["image_prompts"] = json.loads(img_prompts_json)
     
-    elif pipeline_type_to_run == "animation_generation":
+    elif pipeline_type_to_run in ["animation_generation", "concat_animations"]:
         anim_prompts_key = f"{ANIMATION_PROMPTS_PREFIX}{session_key}"
         anim_prompts_json = await redis.get(anim_prompts_key)
         if not anim_prompts_json:
@@ -360,7 +360,7 @@ async def handle_pipeline_button(callback_query: CallbackQuery):
         # The worker's AnimationGenerationPipeline is expected to use WorkerStatusManager
         # to get selected image paths based on its own worker_id.
 
-    # For concat_animations, delete_image_folder, reset_session_worker, no specific data is fetched by the bot here.
+    # For delete_image_folder, reset_session_worker, no specific data is fetched by the bot here.
     # The worker pipelines will handle their logic (e.g., using WorkerStatusManager).
 
     curr_date = callback_query.message.date

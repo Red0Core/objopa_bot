@@ -49,7 +49,8 @@ class VideoGenerationPipeline(BasePipeline):
             worker_id=self.worker_id,
             created_at=self.created_at,
             data={
-                "user_id": self.user_id
+                "user_id": self.user_id,
+                "animation_prompts": self.animation_prompts
             }
         ).run()
 
