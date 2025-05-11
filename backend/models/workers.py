@@ -15,17 +15,14 @@ class VideoGenerationPipelineTaskData(BaseModel):
     animation_prompts: list[str]  = Field(..., min_items=1, example=["cat eat fish", "dog eat sousage"]) # type: ignore
     user_id: int = Field(..., example=123456789) # type: ignore
 
-class ImagePromptItem(BaseModel):
+class VideoGenerationPromptItem(BaseModel):
     prompt: str
-    characters: dict[str, str] = Field(default_factory=dict)
-
-class AnimationPromptItem(BaseModel):
-    prompt: str
+    characters: dict[str, str] | None = None
 
 class ScenarioInput(BaseModel):
     characters: dict[str, str] = Field(default_factory=dict)
-    images: list[ImagePromptItem] = Field(..., min_items=1) # type: ignore
-    animations: list[AnimationPromptItem] = Field(..., min_items=1) # type: ignore
+    images: list[VideoGenerationPromptItem] = Field(..., min_items=1) # type: ignore
+    animations: list[VideoGenerationPromptItem] = Field(..., min_items=1) # type: ignore
     user_id: int = Field(..., example=123456789) # type: ignore
     # Добавьте другие поля, если они нужны, например, task_type или настройки генерации
 

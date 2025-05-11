@@ -12,10 +12,10 @@ from fastapi.responses import FileResponse
 from redis.asyncio import Redis
 
 from backend.models.workers import (
-    AnimationPromptItem,
+    VideoGenerationPromptItem,
     BaseWorkerTask,
     FileUploadResponse,
-    ImagePromptItem,
+    VideoGenerationPromptItem,
     ScenarioInput,
     VideoGenerationPipelineTaskData,
 )
@@ -49,45 +49,67 @@ async def submit_image_task(request: VideoGenerationPipelineTaskData):
 
     return {"task_id": task_id, "status": "queued"}
 
-def generate_image_prompts_from_scenario(
-    images_data: list[ImagePromptItem], 
+def generate_prompts_from_scenario(
+    images_data: list[VideoGenerationPromptItem],
+    animations_data: list[VideoGenerationPromptItem],
     global_characters: dict[str, str]
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     """
-    Генерирует промпты для изображений из данных сценария.
-    Добавляет описания персонажей из глобального словаря или из описания в самом item, 
+    Генерирует промпты для изображений и анимаций из данных сценария.
+    Добавляет описания персонажей из глобального словаря или из описания в самом item,
     если оно предоставлено и не является просто ключом.
     """
-    prompts = []
+    processed_image_prompts = []
     for item in images_data:
         prompt_output = item.prompt
-        # Добавляем описания персонажей, указанных для этого кадра
-        for char_name, char_value in item.characters.items():
-            # 1. Пытаемся найти описание в глобальном словаре по значению из item.characters
-            global_description = global_characters.get(char_value)
+        if item.characters:  # Обрабатываем персонажей, если они есть
+            for char_name, char_value in item.characters.items():
+                # 1. Пытаемся найти описание в глобальном словаре по значению из item.characters
+                global_description = global_characters.get(char_value)
             
-            if global_description:
-                # Нашли в глобальном словаре - используем его
-                prompt_output += f"; {char_name}: {global_description}"
-            elif char_value != char_name and ' ' in char_value:
-                # Не нашли в глобальном, но значение отличается от ключа и содержит пробел
-                # Считаем это локальным описанием
-                prompt_output += f"; {char_name}: {char_value}"
-            else:
-                # Не нашли в глобальном и нет локального описания
-                # Просто добавляем имя персонажа и выводим предупреждение
-                prompt_output += f"; {char_name}" 
-                logger.warning(f"No description found for character key '{char_value}' (used by '{char_name}') in global characters or inline for prompt: '{item.prompt}'")
+                if global_description:
+                    # Нашли в глобальном словаре - используем его
+                    prompt_output += f"; {char_name}: {global_description}"
+                elif char_value != char_name and ' ' in char_value:
+                    # Не нашли в глобальном, но значение отличается от ключа и содержит пробел
+                    # Считаем это локальным описанием
+                    prompt_output += f"; {char_name}: {char_value}"
+                else:
+                    # Не нашли в глобальном и нет локального описания
+                    # Просто добавляем имя персонажа и выводим предупреждение
+                    prompt_output += f"; {char_name}" 
+                    logger.warning(
+                        f"No description found for character key '{char_value}' (used by '{char_name}') "
+                        f"in global characters or inline for image prompt: '{item.prompt}'"
+                    )
+        processed_image_prompts.append(prompt_output)
 
-        prompts.append(prompt_output)
-    return prompts
-
-def generate_animation_prompts_from_scenario(
-    animations_data: list[AnimationPromptItem]
-) -> list[str]:
-    """Генерирует промпты для анимаций из данных сценария."""
-    return [item.prompt for item in animations_data]
-
+    processed_animation_prompts = []
+    for item in animations_data:
+        prompt_output = item.prompt
+        if item.characters:  # Обрабатываем персонажей для анимаций, если они есть
+            for char_name, char_value in item.characters.items():
+                # 1. Пытаемся найти описание в глобальном словаре по значению из item.characters
+                global_description = global_characters.get(char_value)
+            
+                if global_description:
+                    # Нашли в глобальном словаре - используем его
+                    prompt_output += f"; {char_name}: {global_description}"
+                elif char_value != char_name and ' ' in char_value:
+                    # Не нашли в глобальном, но значение отличается от ключа и содержит пробел
+                    # Считаем это локальным описанием
+                    prompt_output += f"; {char_name}: {char_value}"
+                else:
+                    # Не нашли в глобальном и нет локального описания
+                    # Просто добавляем имя персонажа и выводим предупреждение
+                    prompt_output += f"; {char_name}" 
+                    logger.warning(
+                        f"No description found for character key '{char_value}' (used by '{char_name}') "
+                        f"in global characters or inline for animation prompt: '{item.prompt}'"
+                    )
+        processed_animation_prompts.append(prompt_output)
+        
+    return processed_image_prompts, processed_animation_prompts
 
 @router.post("/video-generation-from-scenario", response_model=dict, summary="Submit video generation task from JSON scenario")
 async def submit_scenario_task(scenario: ScenarioInput):
@@ -99,12 +121,10 @@ async def submit_scenario_task(scenario: ScenarioInput):
     
     try:
         # Генерируем промпты
-        image_prompts = generate_image_prompts_from_scenario(
+        image_prompts, animation_prompts = generate_prompts_from_scenario(
             images_data=scenario.images,
+            animations_data=scenario.animations,
             global_characters=scenario.characters
-        )
-        animation_prompts = generate_animation_prompts_from_scenario(
-            animations_data=scenario.animations
         )
 
         # Проверяем, что количество промптов совпадает (опционально, но полезно)
