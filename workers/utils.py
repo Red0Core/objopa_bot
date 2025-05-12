@@ -72,8 +72,9 @@ async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROU
                     response.raise_for_status() 
                     
                     result = response.json()
-                    logger.info(f"Файл {file_name} успешно загружен сек (попытка {attempt + 1}). Путь: {result['filepath']}")
-                    return result['filepath'] if not is_archive else result['download_url'] # Успех - выходим
+                    path_or_url = result['filepath'] if not is_archive else result['download_url']
+                    logger.info(f"Файл {file_name} успешно загружен сек (попытка {attempt + 1}). {path_or_url}")
+                    return path_or_url
                     
         # --- Обработка ошибок, при которых стоит повторить ---
         except (TimeoutException, NetworkError) as e:
