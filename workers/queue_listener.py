@@ -11,7 +11,7 @@ from core.config import OBZHORA_CHAT_ID
 from core.locks import LockAcquireError
 from core.logger import logger
 from core.redis_client import get_redis
-from workers.animation_generation_pipeline import AnimationGenerationPipeline
+from workers.animation_generation_pipeline import AnimationGenerationPipeline, SetAnimationsForcePipeline
 from workers.base_pipeline import BasePipeline
 from workers.concat_generation_pipeline import ConcatAnimationsPipeline
 from workers.delete_images_folder_pipeline import DeleteImagesFolderPipeline
@@ -35,6 +35,7 @@ PIPELINE_TYPE_REGISTRY = {
     "delete_image_folder": DeleteImagesFolderPipeline,
     "concat_animations": ConcatAnimationsPipeline,
     "reset_worker_session": ResetWorkerStatePipeline,
+    "set_animations_force": SetAnimationsForcePipeline,
 }
 
 class QueueListener:
