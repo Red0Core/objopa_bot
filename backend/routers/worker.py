@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from redis.asyncio import Redis
 
 from backend.models.workers import (
+    ArchiveUploadResponse,
     VideoGenerationPromptItem,
     BaseWorkerTask,
     FileUploadResponse,
@@ -19,7 +20,7 @@ from backend.models.workers import (
     ScenarioInput,
     VideoGenerationPipelineTaskData,
 )
-from core.config import UPLOAD_DIR, UPLOAD_VIDEO_DIR
+from core.config import BACKEND_ROUTE, UPLOAD_DIR, UPLOAD_VIDEO_DIR, WORKER_ARCHIVES_DIR
 from core.logger import logger
 from core.redis_client import get_redis
 
@@ -331,3 +332,75 @@ async def manual_cleanup(
         "files_deleted": files_deleted,
         "videos_deleted": videos_deleted
     }
+
+@router.post("/upload-archive", response_model=ArchiveUploadResponse, summary="Upload an archive from a worker")
+async def upload_worker_archive(
+    file: UploadFile = File(...), # noqa: B008
+):
+    """
+    Allows a worker to upload an archive file.
+    The file is saved to a dedicated worker archives directory.
+    Returns a direct download URL for the archive.
+    """
+    if not file or not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File not provided or filename missing")
+
+    start_time = time.time()
+    original_filename = file.filename
+    file_extension = Path(original_filename).suffix
+    
+    # Generate a unique filename for storing on the server to prevent conflicts
+    saved_filename = f"{uuid4().hex}{file_extension}"
+    archive_save_path = WORKER_ARCHIVES_DIR / saved_filename
+    
+    # Ensure the target directory exists (it should be created by config.py, but good to be safe)
+    WORKER_ARCHIVES_DIR.mkdir(parents=True, exist_ok=True)
+
+    file_size = 0
+    try:
+        async with aiofiles.open(archive_save_path, "wb") as out_file:
+            while chunk := await file.read(4 * 1024 * 1024): # Read and write in 4MB chunks
+                await out_file.write(chunk)
+                file_size += len(chunk)
+    except Exception as e:
+        logger.error(f"Error saving worker archive '{original_filename}' to '{archive_save_path}': {e}")
+        # Attempt to clean up partially written file if an error occurs
+        if archive_save_path.exists():
+            try:
+                os.unlink(archive_save_path)
+            except Exception as unlink_e:
+                logger.error(f"Error cleaning up partial archive '{archive_save_path}' during save error: {unlink_e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not save archive file.")
+
+    # Construct the full download URL
+    # router.prefix will be "/worker"
+    download_url = f"{BACKEND_ROUTE.rstrip('/')}{router.prefix}/download-archive/{saved_filename}"
+    
+    logger.info(f"Worker archive '{original_filename}' uploaded as '{saved_filename}' to '{archive_save_path}'. Size: {file_size}. Took {time.time() - start_time:.2f}s.")
+    
+    return ArchiveUploadResponse(
+        filename=original_filename,
+        saved_filename=saved_filename,
+        download_url=download_url,
+        size=file_size,
+        content_type=file.content_type
+    )
+
+@router.get("/download-archive/{filename}", summary="Download a worker-uploaded archive")
+async def download_worker_archive(filename: str):
+    """
+    Allows downloading of an archive previously uploaded by a worker.
+    """
+    file_path = WORKER_ARCHIVES_DIR / filename
+    
+    if not file_path.is_file(): # Check if the file exists and is a file
+        logger.warning(f"Worker archive not found for download: '{filename}' at expected path '{file_path}'")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found.")
+    
+    # For archives, 'application/octet-stream' is a safe default.
+    # You could try to guess based on extension if needed for specific archive types.
+    return FileResponse(
+        path=file_path,
+        filename=filename, # This name will be suggested to the user when downloading
+        media_type='application/octet-stream' 
+    )

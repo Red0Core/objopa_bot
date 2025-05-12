@@ -26,7 +26,7 @@ async def send_notification(text: str, send_to: str) -> None:
     except Exception as e:
         logger.error(f"Ошибка при отправке уведомления: {e}")
 
-async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROUTE, is_video=False) -> str:
+async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROUTE, is_video=False, is_archive=False) -> str:
     """
     Загружает файл на сервер с повторными попытками и возвращает путь к нему.
     
@@ -34,9 +34,10 @@ async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROU
         file_path: Путь к локальному файлу для загрузки
         backend_url: Базовый URL бэкенда
         is_video: Флаг, указывающий, является ли файл видео
+        is_archive: Флаг, указывающий, является ли файл архивом
         
     Returns:
-        Путь к файлу на сервере
+        Путь к файлу на сервере или URL для скачивания (если это архив).
         
     Raises:
         FileNotFoundError: Если исходный файл не найден.
@@ -63,7 +64,7 @@ async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROU
                 async with AsyncClient(timeout=60.0) as client:
                     logger.debug(f"Попытка {attempt + 1}/{max_retries}: Загрузка файла {file_name}...")
                     response = await client.post(
-                        f"{backend_url}/worker/upload{'-video' if is_video else ''}",
+                        f"{backend_url}/worker/upload{'-video' if is_video else ''}{'-archive' if is_archive else ''}",
                         files=files
                     )
                     
@@ -72,7 +73,7 @@ async def upload_file_to_backend(file_path: Path, backend_url: str = BACKEND_ROU
                     
                     result = response.json()
                     logger.info(f"Файл {file_name} успешно загружен сек (попытка {attempt + 1}). Путь: {result['filepath']}")
-                    return result['filepath'] # Успех - выходим
+                    return result['filepath'] if not is_archive else result['download_url'] # Успех - выходим
                     
         # --- Обработка ошибок, при которых стоит повторить ---
         except (TimeoutException, NetworkError) as e:

@@ -36,3 +36,10 @@ class FileUploadResponse(BaseModel):
     size: int
     content_type: str
     status: str = "uploaded"
+
+class ArchiveUploadResponse(BaseModel):
+    filename: str               # Original filename from upload
+    saved_filename: str         # Unique filename stored on the server
+    download_url: str           # Full URL to download the archive
+    size: int
+    content_type: str | None = None

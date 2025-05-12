@@ -30,6 +30,8 @@ UPLOAD_DIR = STORAGE_PATH / "image_generation_uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_VIDEO_DIR = STORAGE_PATH / "video_generation_uploads"
 UPLOAD_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+WORKER_ARCHIVES_DIR = UPLOAD_DIR / "worker_archives"
+WORKER_ARCHIVES_DIR.mkdir(parents=True, exist_ok=True)
 
 TOKEN_BOT = get_required_env("TOKEN_BOT")
 OBZHORA_CHAT_ID = get_required_env("OBZHORA_CHAT_ID")  # Используется в личных целях
