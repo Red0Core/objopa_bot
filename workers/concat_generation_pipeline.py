@@ -97,6 +97,7 @@ class ConcatAnimationsPipeline(BasePipeline):
         else:
             logger.info(f"ZIP-архив успешно создан: {archive_path}")
             archive_server_path = await upload_file_to_backend(archive_path, is_archive=True)
+            archive_server_path = f"{BACKEND_ROUTE}/worker/download-archive/{archive_server_path}"
             logger.info(f"Ссылка на архив: {archive_server_path}")
             output += f"Ссылка на архив: {archive_server_path}\n"
 

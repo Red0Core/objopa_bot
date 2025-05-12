@@ -12,7 +12,6 @@ from fastapi.responses import FileResponse
 from redis.asyncio import Redis
 
 from backend.models.workers import (
-    ArchiveUploadResponse,
     VideoGenerationPromptItem,
     BaseWorkerTask,
     FileUploadResponse,
@@ -333,7 +332,7 @@ async def manual_cleanup(
         "videos_deleted": videos_deleted
     }
 
-@router.post("/upload-archive", response_model=ArchiveUploadResponse, summary="Upload an archive from a worker")
+@router.post("/upload-archive", response_model=FileUploadResponse, summary="Upload an archive from a worker")
 async def upload_worker_archive(
     file: UploadFile = File(...), # noqa: B008
 ):
@@ -372,18 +371,13 @@ async def upload_worker_archive(
                 logger.error(f"Error cleaning up partial archive '{archive_save_path}' during save error: {unlink_e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not save archive file.")
 
-    # Construct the full download URL
-    # router.prefix will be "/worker"
-    download_url = f"{BACKEND_ROUTE.rstrip('/')}{router.prefix}/download-archive/{saved_filename}"
-    
     logger.info(f"Worker archive '{original_filename}' uploaded as '{saved_filename}' to '{archive_save_path}'. Size: {file_size}. Took {time.time() - start_time:.2f}s.")
     
-    return ArchiveUploadResponse(
+    return FileUploadResponse(
         filename=original_filename,
-        saved_filename=saved_filename,
-        download_url=download_url,
+        filepath=saved_filename,
         size=file_size,
-        content_type=file.content_type
+        content_type=file.content_type or "application/octet-stream",
     )
 
 @router.get("/download-archive/{filename}", summary="Download a worker-uploaded archive")

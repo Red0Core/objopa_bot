@@ -31,15 +31,7 @@ class ImageSelectionTaskData(BaseModel):
     user_id: int
 
 class FileUploadResponse(BaseModel):
-    filename: str
-    filepath: str
+    filename: str = Field(..., example="example.jpg", description="Оригинальное имя") # type: ignore
+    filepath: str = Field(..., example="backend_filename_to_router.jpg", description="Путь к файлу на сервере для эндпойнта") # type: ignore
     size: int
     content_type: str
-    status: str = "uploaded"
-
-class ArchiveUploadResponse(BaseModel):
-    filename: str               # Original filename from upload
-    saved_filename: str         # Unique filename stored on the server
-    download_url: str           # Full URL to download the archive
-    size: int
-    content_type: str | None = None
