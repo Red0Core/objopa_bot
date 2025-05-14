@@ -12,71 +12,11 @@ from tg_bot.services.gpt import (
     QuotaExceededError,
     RateLimitError,
     UnexpectedResponseError,
+    get_gpt_formatted_chunks,
 )
 
 router = Router()
 AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY)
-
-
-def split_message_by_paragraphs(text: str, max_length: int = 4096) -> list[str]:
-    """
-    Разбивает текст на части, где каждая часть — это один или несколько абзацев,
-    чтобы длина сообщения не превышала max_length.
-    """
-    paragraphs = text.split("\n\n")  # Разделяем текст на абзацы
-    chunks = []
-    current_chunk = ""
-
-    for paragraph in paragraphs:
-        # Проверяем, влезает ли абзац в текущий чанк
-        if len(current_chunk) + len(paragraph) + 2 <= max_length:  # +2 для добавления '\n\n'
-            current_chunk += paragraph + "\n\n"
-        else:
-            chunks.append(current_chunk.strip())  # Убираем лишние пробелы и добавляем чанк
-            current_chunk = paragraph + "\n\n"
-
-    if current_chunk:  # Добавляем оставшуюся часть
-        chunks.append(current_chunk.strip())
-
-    return chunks
-
-
-def markdown_to_telegram_html(text: str) -> str:
-    """
-    Преобразует текст из Markdown в HTML для использования в Telegram, строго соответствуя поддерживаемым тегам.
-    """
-    # 1. Экранирование спецсимволов
-    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-    # 2. Жирный текст (**text** -> <b>text</b>)
-    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
-
-    # 3. Курсив (*text* -> <i>text</i>)
-    text = re.sub(r"\*(.+?)\*", r"<i>\1</i>", text)
-
-    # 4. Зачёркнутый текст (~~text~~ -> <s>text</s>)
-    text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
-
-    # 5. Подчёркнутый текст (__text__ -> <u>text</u>)
-    text = re.sub(r"__(.+?)__", r"<u>\1</u>", text)
-
-    # 6. Ссылки ([text](url) -> <a href="url">text</a>)
-    text = re.sub(r"\[(.+?)\]\((.+?)\)", r'<a href="\2">\1</a>', text)
-
-    # 7. Блоки кода (```code``` -> <pre>code</pre>)
-    text = re.sub(r"```(.+?)```", r"<pre>\1</pre>", text, flags=re.DOTALL)
-
-    # 8. Inline-код (`code` -> <code>code</code>)
-    text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
-
-    # 9. Спойлеры (||text|| -> <tg-spoiler>text</tg-spoiler>)
-    text = re.sub(r"\|\|(.+?)\|\|", r"<tg-spoiler>\1</tg-spoiler>", text)
-
-    # 10. Обработка лишних пробелов вокруг HTML-тегов
-    text = re.sub(r">\s+<", "><", text)
-
-    return text
-
 
 @router.message(Command("dice"))
 async def handle_mention(message: Message, bot: Bot):
@@ -108,9 +48,8 @@ async def handle_mention(message: Message, bot: Bot):
     try:
         # Генерируем объяснение через OpenAI API
         text = await AI_CLIENT.get_response(action_prompt, system_prompt)
-        cleaned_text = markdown_to_telegram_html(text)
-
-        await message.reply(cleaned_text, parse_mode="HTML")
+        for chunk in get_gpt_formatted_chunks(text):
+            await message.reply(chunk, parse_mode="MarkdownV2")
     except APIKeyError:
         await message.reply("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
     except RateLimitError:

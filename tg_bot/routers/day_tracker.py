@@ -9,8 +9,9 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from core.config import STORAGE_PATH
+from tg_bot.services.gpt import get_gpt_formatted_chunks
 
-from .mention_dice import AI_CLIENT, markdown_to_telegram_html, split_message_by_paragraphs
+from .mention_dice import AI_CLIENT
 
 track_router = Router()
 TRACK_FILE = STORAGE_PATH / "trackers.json"
@@ -140,11 +141,9 @@ async def handle_tracking(message: Message):
         )
         try:
             gpt_response = await AI_CLIENT.get_response(prompt)
-            cleaned = markdown_to_telegram_html(gpt_response)
             mention = f'<a href="tg://user?id={user_id}">{html.escape(user_name)}</a>'
-            cleaned = f"{mention}, {cleaned}"
-            for i in split_message_by_paragraphs(cleaned):
-                await message.answer(i, parse_mode="HTML")
+            for i in get_gpt_formatted_chunks(f"{mention}, {gpt_response}"):
+                await message.answer(i, parse_mode="MarkdownV2")
         except Exception as e:
             print(f"[GPT STOP] Ошибка: {e}")
         await message.reply(
@@ -225,10 +224,8 @@ async def send_daily_message(bot):
 
             try:
                 gpt_response = await AI_CLIENT.get_response(prompt)
-                cleaned = markdown_to_telegram_html(gpt_response)
                 mention = f'<a href="tg://user?id={user_id}">{html.escape(user_name)}</a>'
-                cleaned = f"{mention}, {cleaned}"
-                for i in split_message_by_paragraphs(cleaned):
-                    await bot.send_message(chat_id, i, parse_mode="HTML")
+                for i in get_gpt_formatted_chunks(f"{mention}, {gpt_response}"):
+                    await bot.send_message(chat_id, i, parse_mode="MarkdownV2")
             except Exception as e:
                 print(f"[DAILY GPT] Ошибка: {e}")

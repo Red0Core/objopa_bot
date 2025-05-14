@@ -12,11 +12,12 @@ from tg_bot.services.gpt import (
     QuotaExceededError,
     RateLimitError,
     UnexpectedResponseError,
+    get_gpt_formatted_chunks,
 )
 from tg_bot.services.gptchat_manager import ChatSessionManager
 from tg_bot.services.pastebin import upload_to_pastebin
 
-from .mention_dice import AI_CLIENT, markdown_to_telegram_html, split_message_by_paragraphs
+from .mention_dice import AI_CLIENT
 
 router = Router()
 
@@ -51,10 +52,8 @@ async def handle_ask_gpt(message: Message):
             text = await AI_CLIENT.get_response(
                 text_input[1],
             )
-            cleaned_text = markdown_to_telegram_html(text)
-            messages = split_message_by_paragraphs(cleaned_text)
-            for i in messages:
-                await message.answer(i, parse_mode="HTML")
+            for i in get_gpt_formatted_chunks(text):
+                await message.answer(i, parse_mode="MarkdownV2")
     except APIKeyError:
         await message.answer("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
     except RateLimitError:
@@ -138,10 +137,8 @@ async def handle_gpt_chat(message: Message):
             paste_link = await upload_to_pastebin(response)
             await message.answer(f"Ответ загружен: {paste_link}")
         else:
-            cleaned = markdown_to_telegram_html(response)
-            messages = split_message_by_paragraphs(cleaned)
-            for chunk in messages:
-                await message.answer(chunk, parse_mode="HTML")
+            for chunk in get_gpt_formatted_chunks(response):
+                await message.answer(chunk, parse_mode="MarkdownV2")
 
     except Exception:
         logger.exception("Ошибка при отправке в GPT:")

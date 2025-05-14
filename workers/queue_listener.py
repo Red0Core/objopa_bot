@@ -80,6 +80,7 @@ class QueueListener:
                     if datetime.now(timezone.utc) - datetime.fromisoformat(task['created_at']) > timedelta(hours=3):
                         logger.info(f"Задача {task['task_id']} устарела (> 3 часа). Пропускаю.")
                         continue
+                    await send_notification(f"Получена задача {task['type']}: {task['task_id']}", str(task['data']['user_id']))
                     await self.process_task(task)
                 except LockAcquireError:
                     if NEED_TO_RETURN_TO_QUEUE and task_data.get("type") != "video_generation":
@@ -94,7 +95,8 @@ class QueueListener:
                     logger.exception(f"Ошибка при обработке задачи: {e}")
                     await asyncio.sleep(60)
             else:
-                await asyncio.sleep(1)
+                logger.info("Задач нет сплим 2 секунды...")
+                await asyncio.sleep(2)
 
     async def process_task(self, task: dict[str, Any]):
         task_type = task.get("type", "")

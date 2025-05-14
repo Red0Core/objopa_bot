@@ -4,9 +4,43 @@ import openai
 from google import genai
 from google.genai import types
 from google.genai.types import GenerateContentConfig, GoogleSearch, Tool
+import telegramify_markdown
 
 from core.logger import logger
 
+def split_message_by_paragraphs(text: str, max_length: int = 4096) -> list[str]:
+    """
+    Разбивает текст на части, где каждая часть — это один или несколько абзацев,
+    чтобы длина сообщения не превышала max_length.
+    """
+    paragraphs = text.split("\n\n")  # Разделяем текст на абзацы
+    chunks = []
+    current_chunk = ""
+
+    for paragraph in paragraphs:
+        # Проверяем, влезает ли абзац в текущий чанк
+        if len(current_chunk) + len(paragraph) + 2 <= max_length:  # +2 для добавления '\n\n'
+            current_chunk += paragraph + "\n\n"
+        else:
+            chunks.append(current_chunk.strip())  # Убираем лишние пробелы и добавляем чанк
+            current_chunk = paragraph + "\n\n"
+
+    if current_chunk:  # Добавляем оставшуюся часть
+        chunks.append(current_chunk.strip())
+
+    return chunks
+
+def get_gpt_formatted_chunks(text: str) -> list[str]:
+    """
+    Форматирует текст из ГПТ и разбивает на части, где каждая часть — это один или несколько абзацев,
+    чтобы длина сообщения не превышала 4096 символов.
+    """
+    # Применяем форматирование
+    formatted_text = telegramify_markdown.markdownify(text)
+    # Разбиваем текст на части
+    chunks = split_message_by_paragraphs(formatted_text, max_length=4096)
+    return chunks
+    
 
 class AIModelError(Exception):
     """Базовый класс для ошибок модели."""
