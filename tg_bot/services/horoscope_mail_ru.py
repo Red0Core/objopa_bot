@@ -1,13 +1,13 @@
 from http import HTTPStatus
 
 from httpx import AsyncClient, HTTPStatusError
-
+from core.config import BACKEND_ROUTE
 
 async def get_horoscope_mail_ru(zodiac_eng: str) -> dict[str, str]:
     """
     Получает гороскоп с сайта mail.ru по заданному знаку зодиака.
     """
-    url = f"http://localhost:8000/horoscope/{zodiac_eng}"
+    url = f"{BACKEND_ROUTE}/horoscope/{zodiac_eng}"
     async with AsyncClient() as client:
         try:
             response = await client.get(url)

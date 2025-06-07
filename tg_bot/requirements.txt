@@ -17,14 +17,14 @@ dotenv==0.9.9
 frozenlist==1.5.0
 google-auth==2.38.0
 google-genai==1.9.0
-h11==0.14.0
-httpcore==1.0.7
+h11>=0.16.0
+httpcore>=1.0.7
 httpx==0.28.1
 idna==3.10
 instaloader==4.14.1
 jaraco-context==6.0.1
 jiter==0.9.0
-loguru==0.7.3
+logur>=0.7.3
 lxml==5.3.1
 magic-filter==1.0.12
 more-itertools==10.6.0
