@@ -17,6 +17,7 @@ from aiogram.types import (
 
 from core.config import GIFS_ID, WOLFRAMALPHA_TOKEN
 from core.logger import logger
+from tg_bot.services.gpt import split_message_by_paragraphs
 from tg_bot.services.horoscope_mail_ru import format_horoscope, get_horoscope_mail_ru
 from tg_bot.services.instagram_loader import INSTAGRAM_REGEX, download_instagram_media
 
@@ -144,10 +145,15 @@ async def instagram_handler(message: Message, command: CommandObject):
             for video in videos:
                 await message.reply_video(FSInputFile(video), caption=caption)
 
+        caption_arr = split_message_by_paragraphs(caption or "")
         if len(images) > 1:
-            await send_images_in_chunks(message, images, caption)
+            await send_images_in_chunks(message, images, caption_arr[0])
+            for part in caption_arr[1:]:
+                await message.reply(part)
         elif len(images) == 1:
-            await message.reply_photo(FSInputFile(images[0]), caption=caption)
+            replied_photo = await message.reply_photo(FSInputFile(images[0]), caption=caption_arr[0])
+            for part in caption_arr[1:]:
+                await replied_photo.reply(part)
 
         await status_message.delete()
     else:
@@ -158,7 +164,7 @@ async def instagram_handler(message: Message, command: CommandObject):
 def games_menu():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🎲 Блэкджек", callback_data="start_blackjack")],
+            [InlineKeyboardButton(text="🃏 Блэкджек", callback_data="start_blackjack")],
             [InlineKeyboardButton(text="Закрыть", callback_data="close_menu")],
         ]
     )

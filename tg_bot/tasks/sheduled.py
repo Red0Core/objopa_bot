@@ -61,11 +61,14 @@ async def send_daily_cbr_rates(bot, chat_id):
 async def send_daily_horoscope_for_brothers(bot):
     zodiac_map = {"taurus": "телец", "pisces": "рыбы", "libra": "весы"}
     # Для каждого знака получаем ежедневный гороскоп и рейтинг финансов из страницы prediction
-    for zodiac_eng, zodiac_ru in zodiac_map.items():
-        message = await get_horoscope_mail_ru(zodiac_eng)
-        await bot.send_message(OBZHORA_CHAT_ID, message)
-        logger.info(f"Отправляем еждедневные гороскопы в чат {OBZHORA_CHAT_ID} для {zodiac_ru}")
-        await asyncio.sleep(2)
+    try:
+        for zodiac_eng, zodiac_ru in zodiac_map.items():
+            message = await get_horoscope_mail_ru(zodiac_eng)
+            await bot.send_message(OBZHORA_CHAT_ID, message)
+            logger.info(f"Отправляем еждедневные гороскопы в чат {OBZHORA_CHAT_ID} для {zodiac_ru}")
+            await asyncio.sleep(2)
+    except Exception as e:
+        logger.error(f"Ошибка при отправке ежедневного гороскопа в чат {OBZHORA_CHAT_ID}: {e}")
 
 
 @daily_schedule(hour=8, minute=0)

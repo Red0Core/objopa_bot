@@ -47,13 +47,10 @@ def end_game_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-@router.callback_query(lambda c: c.data == "start_blackjack")
+@router.callback_query(lambda c: c.data.startswith("start_blackjack"))
 @MessageQueue.rate_limit()
 async def start_blackjack(callback: CallbackQuery) -> dict[str, Any] | None:
     """Запускает игру в блэкджек."""
-    if not await validate_game_owner_and_msg(callback):
-        return None
-
     user_id = callback.from_user.id
     game.start_game(user_id)
     state = game.get_game_state(user_id)
