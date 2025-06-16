@@ -13,18 +13,18 @@ all: install
 
 install:
 	@echo "📦 Creating venv and installing dependencies..."
-$(UV) venv $(VENV_DIR) --python=3.13.5
+	$(UV) venv $(VENV_DIR) --python=3.13.5
 	$(UV) pip install -r tg_bot/requirements.txt -p $(VENV_DIR)
 	$(UV) pip install -r backend/requirements.txt -p $(VENV_DIR)
 	$(UV) pip install uvloop -p $(VENV_DIR)
 
 run-bot:
 	@echo "🤖 Running Telegram Bot in tmux: $(BOT_SESSION)"
-	tmux new-session -d -s $(BOT_SESSION) '$(PYTHON) -m tg_bot.main'
+	tmux new-session -d -s $(BOT_SESSION) 'source $(VENV_DIR)/bin/activate;$(PYTHON) -m tg_bot.main'
 
 run-api:
 	@echo "🚀 Running FastAPI in tmux: $(API_SESSION)"
-	tmux new-session -d -s $(API_SESSION) '$(PYTHON) -m uvicorn backend.main:app --host 127.0.0.1 --port 8888'
+	tmux new-session -d -s $(API_SESSION) 'source $(VENV_DIR)/bin/activate;$(PYTHON) -m uvicorn backend.main:app --host 127.0.0.1 --port 8888'
 
 restart-bot:
 	@echo "♻️ Restarting Telegram Bot..."

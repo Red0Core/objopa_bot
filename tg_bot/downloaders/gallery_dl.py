@@ -26,9 +26,8 @@ async def download_with_gallery_dl(
         nonlocal title
         cmd = [
             "gallery-dl",
-            "--path",
+            "-D",
             str(tmp),
-            "--quiet",
             url,
         ]
         subprocess.run(cmd, check=False)

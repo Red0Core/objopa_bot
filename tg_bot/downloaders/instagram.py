@@ -78,13 +78,10 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
         if not shortcode:
             return None, "❌ Ошибка: Не удалось извлечь shortcode из ссылки."
 
-        download_path = str(DOWNLOADS_PATH)
-        DOWNLOADS_PATH.mkdir(exist_ok=True)
-
         post = await asyncio.to_thread(
             instaloader.Post.from_shortcode, bot_loader.context, shortcode
         )
-        await asyncio.to_thread(bot_loader.download_post, post, download_path)
+        await asyncio.to_thread(bot_loader.download_post, post, DOWNLOADS_PATH)
 
         return shortcode, None
 

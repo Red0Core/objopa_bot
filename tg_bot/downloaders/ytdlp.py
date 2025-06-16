@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 from typing import List, Tuple
+import traceback
 
 from yt_dlp import YoutubeDL
 
@@ -12,11 +13,11 @@ async def download_with_ytdlp(
     url: str, download_path: Path = DOWNLOADS_PATH
 ) -> Tuple[List[Path], str | None, str | None]:
     """Download media using yt-dlp and return downloaded file paths, title and error."""
-    download_path.mkdir(exist_ok=True)
     ydl_opts = {
         "outtmpl": str(download_path / "%(id)s.%(ext)s"),
         "noplaylist": True,
         "quiet": True,
+        "impersonate": ""
     }
 
     files: List[Path] = []
@@ -27,6 +28,10 @@ async def download_with_ytdlp(
         nonlocal files, title
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
+<<<<<<< HEAD
+=======
+            logger.info(info)
+>>>>>>> 6c585ab (Integration with Twitter Auth, yt-dlp, gallery-dl)
             formats = info.get("formats", [])
             limit = 2 * 1024 * 1024 * 1024
 
@@ -59,7 +64,11 @@ async def download_with_ytdlp(
     try:
         await asyncio.to_thread(_download)
     except Exception as e:  # noqa: BLE001
+<<<<<<< HEAD
         logger.error(f"yt-dlp download error: {e}")
+=======
+        logger.error(f"yt-dlp download error: {traceback.format_exc()}")
+>>>>>>> 6c585ab (Integration with Twitter Auth, yt-dlp, gallery-dl)
         error = str(e)
 
     return files, title, error
