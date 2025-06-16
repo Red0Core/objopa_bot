@@ -36,8 +36,8 @@ async def get_cbr_rates_handler(message: Message):
                 if message.text and float(message.text.split()[1]):
                     # Если указано значение, то конвертируем
                     value = float(message.text.split()[1])
-                    eur_value = value / data["rates"]["EUR"]['rate']
-                    usd_value = value / data["rates"]["USD"]['rate']
+                    eur_value = value / data["rates"]["EUR"]["rate"]
+                    usd_value = value / data["rates"]["USD"]["rate"]
                     output += (
                         f"\n\n💵 <b>Конвертация:</b>\n"
                         f"<code>{value:.2f}</code> <b>₽</b> = "
@@ -68,8 +68,8 @@ async def get_forex_rub_rates_handler(message: Message):
             data = response.json()
             output = data["html_output"]
 
-            usd_rate = data["rates"]["USD"]['rate']
-            eur_rate = data["rates"]["EUR"]['rate']
+            usd_rate = data["rates"]["USD"]["rate"]
+            eur_rate = data["rates"]["EUR"]["rate"]
 
             async def fetch_currency_data(from_symbol: str, to_symbol: str) -> dict[str, Any]:
                 response = await session.get(

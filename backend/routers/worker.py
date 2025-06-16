@@ -15,31 +15,31 @@ from fastapi import (
     HTTPException,
     UploadFile,
     status,
-    Header,
 )
 from fastapi.responses import FileResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel
 from redis.asyncio import Redis
 
 from backend.models.workers import (
-    VideoGenerationPromptItem,
     BaseWorkerTask,
     FileUploadResponse,
     ScenarioInput,
     VideoGenerationPipelineTaskData,
+    VideoGenerationPromptItem,
 )
 from core.config import (
+    DOWNLOADS_PATH,
+    TWITTER_COOKIES_TOKEN,
     UPLOAD_DIR,
     UPLOAD_VIDEO_DIR,
     WORKER_ARCHIVES_DIR,
-    DOWNLOADS_PATH,
 )
 from core.logger import logger
 from core.redis_client import get_redis
-from pydantic import BaseModel
-from core.config import TWITTER_COOKIES_TOKEN
 
 router = APIRouter(prefix="/worker", tags=["worker"])
+security = HTTPBearer()
 
 
 @router.post("/video-generation-pipeline", response_model=dict)
@@ -185,9 +185,7 @@ async def submit_scenario_task(scenario: ScenarioInput):
         )
 
     except Exception as e:
-        logger.exception(
-            f"Error processing scenario task {task_id}: {e}"
-        )  # Логируем с traceback
+        logger.exception(f"Error processing scenario task {task_id}: {e}")  # Логируем с traceback
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process scenario and queue task: {str(e)}",
@@ -242,9 +240,7 @@ async def upload_file(
     if existing:
         # дубликат
         background_tasks.add_task(os.unlink, temp_path)
-        asyncio.create_task(
-            _update_stats(redis, key, f"{FILE_STATS_KEY_PREFIX}{file_hash}_{size}")
-        )
+        asyncio.create_task(_update_stats(redis, key, f"{FILE_STATS_KEY_PREFIX}{file_hash}_{size}"))
         logger.info(f"Duplicate upload ({time.time() - start:.2f}s)")
         return FileUploadResponse(
             filename=file.filename or "unknown",
@@ -326,9 +322,7 @@ async def upload_video(
     expiry_seconds = int(VIDEO_EXPIRY.total_seconds())
     await redis.zadd(VIDEO_EXPIRY_SET, {unique: time.time() + expiry_seconds})
 
-    logger.info(
-        f"Video upload done in {time.time() - start:.2f}s size={dst.stat().st_size}"
-    )
+    logger.info(f"Video upload done in {time.time() - start:.2f}s size={dst.stat().st_size}")
     return FileUploadResponse(
         filename=file.filename or "unknown",
         filepath=unique,
@@ -415,9 +409,7 @@ async def upload_worker_archive(
     file_size = 0
     try:
         async with aiofiles.open(archive_save_path, "wb") as out_file:
-            while chunk := await file.read(
-                4 * 1024 * 1024
-            ):  # Read and write in 4MB chunks
+            while chunk := await file.read(4 * 1024 * 1024):  # Read and write in 4MB chunks
                 await out_file.write(chunk)
                 file_size += len(chunk)
     except Exception as e:
@@ -435,7 +427,7 @@ async def upload_worker_archive(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not save archive file.",
-        )
+        ) from e
 
     logger.info(
         f"Worker archive '{original_filename}' uploaded as '{saved_filename}' to '{archive_save_path}'. Size: {file_size}. Took {time.time() - start_time:.2f}s."
@@ -449,9 +441,7 @@ async def upload_worker_archive(
     )
 
 
-@router.get(
-    "/download-archive/{filename}", summary="Download a worker-uploaded archive"
-)
+@router.get("/download-archive/{filename}", summary="Download a worker-uploaded archive")
 async def download_worker_archive(filename: str):
     """
     Allows downloading of an archive previously uploaded by a worker.
@@ -462,9 +452,7 @@ async def download_worker_archive(filename: str):
         logger.warning(
             f"Worker archive not found for download: '{filename}' at expected path '{file_path}'"
         )
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found."
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found.")
 
     # For archives, 'application/octet-stream' is a safe default.
     # You could try to guess based on extension if needed for specific archive types.
@@ -479,20 +467,17 @@ class TwitterCookies(BaseModel):
     auth_token: str
     ct0: str
 
-security = HTTPBearer()
 
 @router.post("/set-twitter-cookies", summary="Update Twitter auth cookies")
 async def set_twitter_cookies(
     data: TwitterCookies,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials = Depends(security),  # noqa: B008
 ):
     """
     Update Twitter authentication cookies. Requires a valid Bearer token.
     """
     if credentials.scheme.lower() != "bearer" or credentials.credentials != TWITTER_COOKIES_TOKEN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     redis: Redis = await get_redis()
     await redis.mset({"twitter_auth_token": data.auth_token, "twitter_ct0": data.ct0})
     return {"status": "success", "message": "Twitter cookies updated successfully"}

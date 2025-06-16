@@ -24,9 +24,7 @@ async def handle_mention(message: Message, bot: Bot):
 
     # Бросаем кубик
     dice_message = await bot.send_dice(message.chat.id)
-    dice_value = (
-        dice_message.dice.value
-    )  # Значение кубика (1-6) # type: ignore[union-attr]
+    dice_value = dice_message.dice.value  # Значение кубика (1-6) # type: ignore[union-attr]
     text = message.text.split(maxsplit=1)[1] if message.text else ""
 
     system_prompt = """

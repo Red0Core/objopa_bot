@@ -1,17 +1,17 @@
-from datetime import datetime, timezone
 import json
 import uuid
+from datetime import datetime, timezone
 from typing import Any, List
 
 from aiogram import F, Router
 from aiogram.enums.parse_mode import ParseMode
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from core.config import OBZHORA_CHAT_ID
-from core.logger import logger
 from core.locks import force_release_hailuo_lock
+from core.logger import logger
 from core.redis_client import get_redis
 
 video_router = Router()
@@ -44,9 +44,7 @@ async def handle_unlock_hailuo_account(message: Message):
     except (ConnectionError, TimeoutError) as err:
         logger.error(f"Не удалось подключиться к Redis для очистки очереди: {err}")
     except Exception as e:
-        logger.exception(
-            f"Ошибка при очистке очереди '{QUEUE_NAME}': {e}", exc_info=True
-        )
+        logger.exception(f"Ошибка при очистке очереди '{QUEUE_NAME}': {e}", exc_info=True)
 
     await message.reply("✅ Аккаунт Hailuo разблокирован и очередь очищена.")
 
@@ -240,9 +238,7 @@ async def handle_start_generation(message: Message):
     await start_video_generation(message, img_prompts, anim_prompts)
 
 
-async def start_video_generation(
-    message: Message, img_prompts: List[str], anim_prompts: List[str]
-):
+async def start_video_generation(message: Message, img_prompts: List[str], anim_prompts: List[str]):
     """
     Запускает процесс генерации видео.
 
@@ -310,27 +306,25 @@ async def show_pipeline_menu(message: Message):
     """
     builder = InlineKeyboardBuilder()
     for pipeline_type, text in PIPELINE_BUTTONS_CONFIG.items():
-        builder.button(
-            text=text, callback_data=f"{PIPELINE_CALLBACK_PREFIX}{pipeline_type}"
-        )
+        builder.button(text=text, callback_data=f"{PIPELINE_CALLBACK_PREFIX}{pipeline_type}")
 
     builder.adjust(1)  # Display one button per row
-    await message.reply(
-        "Выберите пайплайн для запуска:", reply_markup=builder.as_markup()
-    )
+    await message.reply("Выберите пайплайн для запуска:", reply_markup=builder.as_markup())
 
 
 async def enqueue_pipeline_task(
     pipeline_type: str,
     chat_id_for_context: int,
     message_date: datetime,  # Added for created_at
-    specific_data: dict[str, Any] = {},
+    specific_data: dict[str, Any] | None = None,
     task_id: str = str(uuid.uuid4()),  # Generate a new task ID if not provided
 ):
     """
     Helper function to create and enqueue a task for a specific pipeline.
     """
     # Basic data common to all tasks
+    if specific_data is None:
+        specific_data = dict()
     task_data_payload = {
         "user_id": chat_id_for_context,  # For notifications from worker
         # worker_id will be defaulted by the worker if not provided
@@ -347,9 +341,7 @@ async def enqueue_pipeline_task(
 
     redis = await get_redis()
     await redis.rpush(QUEUE_NAME, json.dumps(task))  # type: ignore
-    logger.info(
-        f"Задача для пайплайна '{pipeline_type}' (ID: {task_id}) добавлена в очередь."
-    )
+    logger.info(f"Задача для пайплайна '{pipeline_type}' (ID: {task_id}) добавлена в очередь.")
     return task_id
 
 
@@ -363,9 +355,7 @@ async def handle_pipeline_button(callback_query: CallbackQuery):
         or callback_query.from_user is None
         or callback_query.data is None
     ):
-        await callback_query.answer(
-            "Ошибка: не удалось обработать запрос.", show_alert=True
-        )
+        await callback_query.answer("Ошибка: не удалось обработать запрос.", show_alert=True)
         return
 
     pipeline_type_to_run = callback_query.data.split(PIPELINE_CALLBACK_PREFIX, 1)[1]
@@ -437,16 +427,10 @@ async def handle_pipeline_button(callback_query: CallbackQuery):
                 f"✅ Запущен пайплайн: <b>{PIPELINE_BUTTONS_CONFIG.get(pipeline_type_to_run, pipeline_type_to_run)}</b>\n"
                 f"ID Задачи: <code>{task_id}</code>"
             )
-        await callback_query.message.answer(
-            response_message_text, parse_mode=ParseMode.HTML
-        )
+        await callback_query.message.answer(response_message_text, parse_mode=ParseMode.HTML)
         await callback_query.answer(
             f"Пайплайн '{PIPELINE_BUTTONS_CONFIG.get(pipeline_type_to_run, pipeline_type_to_run)}' запущен!"
         )
     except Exception as e:
-        logger.error(
-            f"Ошибка при запуске пайплайна '{pipeline_type_to_run}': {e}", exc_info=True
-        )
-        await callback_query.answer(
-            f"Ошибка при запуске пайплайна: {e}", show_alert=True
-        )
+        logger.error(f"Ошибка при запуске пайплайна '{pipeline_type_to_run}': {e}", exc_info=True)
+        await callback_query.answer(f"Ошибка при запуске пайплайна: {e}", show_alert=True)

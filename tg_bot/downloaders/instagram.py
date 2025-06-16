@@ -6,7 +6,8 @@ from pathlib import Path
 import instaloader
 from curl_cffi.requests import AsyncSession
 
-from core.config import STORAGE_PATH as STORAGE_DIR, DOWNLOADS_PATH
+from core.config import DOWNLOADS_PATH
+from core.config import STORAGE_PATH as STORAGE_DIR
 from core.logger import logger
 
 INSTAGRAM_REGEX = re.compile(
@@ -20,9 +21,7 @@ async def get_instagram_shortcode(url: str) -> str | None:
     """
     async with AsyncSession() as session:
         try:
-            response = await session.get(
-                url, allow_redirects=True, impersonate="chrome"
-            )  # type: ignore
+            response = await session.get(url, allow_redirects=True, impersonate="chrome")  # type: ignore
             final_url = response.url  # Итоговый URL
             match = re.search(r"/(p|reel|tv)/([\w-]+)", final_url)
             if match:
@@ -50,11 +49,7 @@ def init_instaloader():
         if INSTAGRAM_USERNAME:
             bot_loader.load_session_from_file(
                 INSTAGRAM_USERNAME,
-                str(
-                    (
-                        STORAGE_DIR / "session" / f"session-{INSTAGRAM_USERNAME}"
-                    ).absolute()
-                ),
+                str((STORAGE_DIR / "session" / f"session-{INSTAGRAM_USERNAME}").absolute()),
             )
             logger.success("✅ Успешная авторизация в Instagram.")
         else:

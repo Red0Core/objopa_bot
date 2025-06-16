@@ -4,11 +4,12 @@ import re
 from pathlib import Path
 from typing import List, Tuple
 
-from curl_cffi.requests import AsyncSession
 import telegramify_markdown
+from curl_cffi.requests import AsyncSession
 from redis.asyncio import Redis
-from core.logger import logger
+
 from core.config import DOWNLOADS_PATH
+from core.logger import logger
 from core.redis_client import get_redis
 
 AUTH_TOKEN = os.getenv("TWITTER_AUTH_TOKEN")
@@ -44,9 +45,7 @@ def set_csrf_token(token: str | None) -> None:
     CSRF_TOKEN = token
 
 
-TWITTER_REGEX = re.compile(
-    r"https?://(?:www\.)?(?:x|twitter)\.com/[^/]+/status/(?P<id>\d+)"
-)
+TWITTER_REGEX = re.compile(r"https?://(?:www\.)?(?:x|twitter)\.com/[^/]+/status/(?P<id>\d+)")
 
 BEARER_TOKEN = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
 
@@ -242,9 +241,7 @@ async def login_and_get_tokens(username: str, password: str) -> tuple[str, str] 
                                 "setting_responses": [
                                     {
                                         "key": "user_identifier",
-                                        "response_data": {
-                                            "text_data": {"result": username}
-                                        },
+                                        "response_data": {"text_data": {"result": username}},
                                     }
                                 ],
                                 "link": "next_link",
@@ -275,9 +272,7 @@ async def login_and_get_tokens(username: str, password: str) -> tuple[str, str] 
                     [
                         {
                             "subtask_id": subtask,
-                            "check_logged_in_account": {
-                                "link": "AccountDuplicationCheck_false"
-                            },
+                            "check_logged_in_account": {"link": "AccountDuplicationCheck_false"},
                         }
                     ],
                 )
@@ -347,9 +342,7 @@ async def download_twitter_media(
             logger.error(f"Twitter JS fetch error: {e}")
             return [], [], None, "Не удалось получить скрипт"
 
-        qid_match = re.search(
-            r'queryId:"(?P<id>[^"]+)",operationName:"TweetResultByRestId"', js
-        )
+        qid_match = re.search(r'queryId:"(?P<id>[^"]+)",operationName:"TweetResultByRestId"', js)
         if not qid_match:
             return [], [], None, "Не удалось найти queryId"
         query_id = qid_match.group("id")
@@ -444,9 +437,7 @@ async def download_twitter_media(
     )
     full_text = result.get("legacy", {}).get("full_text", "")
     caption_text = (
-        f"{full_text}\n[{screen_name}](https://x.com/{screen_name})"
-        if screen_name
-        else full_text
+        f"{full_text}\n[{screen_name}](https://x.com/{screen_name})" if screen_name else full_text
     )
     caption = telegramify_markdown.markdownify(caption_text)
 

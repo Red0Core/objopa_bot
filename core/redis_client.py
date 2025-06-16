@@ -18,10 +18,7 @@ def _make_redis() -> Redis:
         port=REDIS_PORT,
         password=REDIS_PASSWORD,
         decode_responses=True,
-        retry=Retry(
-            backoff=ExponentialBackoff(),
-            retries=5
-        ),
+        retry=Retry(backoff=ExponentialBackoff(), retries=5),
         retry_on_error=[ConnectionError, TimeoutError, BusyLoadingError],
         ssl=REDIS_SSL,
     )

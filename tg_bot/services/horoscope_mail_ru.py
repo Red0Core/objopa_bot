@@ -1,7 +1,9 @@
 from http import HTTPStatus
 
 from httpx import AsyncClient, HTTPStatusError
+
 from core.config import BACKEND_ROUTE
+
 
 async def get_horoscope_mail_ru(zodiac_eng: str) -> dict[str, str]:
     """

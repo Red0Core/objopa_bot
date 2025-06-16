@@ -10,12 +10,15 @@ from core.redis_client import get_redis  # ваша обёртка с reconnect/
 
 # Настройки
 LOCK_NAME = "hailuo_account"
-LOCK_TIMEOUT = 30 * 60        # сек, автоматически отпустится через полчаса
-BLOCKING_TIMEOUT = 1.0        # сек, сколько ждём acquire
+LOCK_TIMEOUT = 30 * 60  # сек, автоматически отпустится через полчаса
+BLOCKING_TIMEOUT = 1.0  # сек, сколько ждём acquire
+
 
 class LockAcquireError(Exception):
     """Не удалось захватить распределённый лок."""
+
     pass
+
 
 @asynccontextmanager
 async def lock_hailuo() -> AsyncIterator[Lock]:
@@ -52,6 +55,7 @@ async def lock_hailuo() -> AsyncIterator[Lock]:
             # игнорим если уже отпущен или сбой
             pass
 
+
 async def force_release_hailuo_lock() -> bool:
     """
     Принудительно удаляет ключ лока 'hailuo_account' из Redis.
@@ -66,7 +70,7 @@ async def force_release_hailuo_lock() -> bool:
     redis: Redis = await get_redis()
     try:
         logger.warning(f"Принудительное удаление лока: {LOCK_NAME}")
-        await redis.delete(LOCK_NAME) # По факту не волнует возвращаемое значеие
+        await redis.delete(LOCK_NAME)  # По факту не волнует возвращаемое значеие
         logger.info(f"Лок {LOCK_NAME} принудительно удален.")
         return True
     except Exception as e:

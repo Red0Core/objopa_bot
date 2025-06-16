@@ -1,17 +1,20 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+
 from core.logger import logger
 from core.redis_client import get_redis
-from datetime import datetime, timezone
 
-# Время памяти воркера 
+# Время памяти воркера
 WORKER_MEMORY_TTL_SECONDS = 8 * 60 * 60
+
 
 class WorkerStatusManager:
     """
     Менеджер статусов воркеров и промежуточных результатов задач,
     выполняемых на конкретном воркере.
     """
+
     def __init__(self, worker_id: str):
         self._worker_id = worker_id
 
@@ -28,8 +31,10 @@ class WorkerStatusManager:
         """
         redis = await get_redis()
         worker_state_key = f"worker_state:{self._worker_id}"
-        await redis.hset(worker_state_key, f"{pipeline_type}_phase", phase_status) # type: ignore
-        await redis.hset(worker_state_key, "last_status_update", datetime.now(timezone.utc).isoformat()) # type: ignore
+        await redis.hset(worker_state_key, f"{pipeline_type}_phase", phase_status)  # type: ignore
+        await redis.hset(
+            worker_state_key, "last_status_update", datetime.now(timezone.utc).isoformat()
+        )  # type: ignore
         logger.info(f"Worker {self._worker_id} {pipeline_type} phase status set to {phase_status}.")
 
     async def get_worker_phase_status(self, pipeline_type: str) -> str | None:
@@ -38,7 +43,7 @@ class WorkerStatusManager:
         """
         redis = await get_redis()
         worker_state_key = f"worker_state:{self._worker_id}"
-        status = await redis.hget(worker_state_key, f"{pipeline_type}_phase") # type: ignore
+        status = await redis.hget(worker_state_key, f"{pipeline_type}_phase")  # type: ignore
         return status
 
     # --- Статические методы для управления "памятью" выбранных изображений НА КОНКРЕТНОМ ВОРКЕРЕ ---
@@ -61,9 +66,14 @@ class WorkerStatusManager:
             # Преобразуем пути к изображениям в строки для хранения в Redis
             image_paths_str = [str(path) for path in image_paths]
             await redis.set(key, json.dumps(image_paths_str), ex=WORKER_MEMORY_TTL_SECONDS)
-            logger.info(f"Сохранены выбранные пути изображений для worker '{worker_id}'. Ключ: {key}")
+            logger.info(
+                f"Сохранены выбранные пути изображений для worker '{worker_id}'. Ключ: {key}"
+            )
         except Exception as e:
-            logger.error(f"Ошибка сохранения выбранных изображений для worker '{worker_id}': {e}", exc_info=True)
+            logger.error(
+                f"Ошибка сохранения выбранных изображений для worker '{worker_id}': {e}",
+                exc_info=True,
+            )
             raise
 
     @staticmethod
@@ -78,15 +88,22 @@ class WorkerStatusManager:
             paths_json = await redis.get(key)
             if paths_json:
                 image_paths = json.loads(paths_json)
-                logger.info(f"Извлечены выбранные пути изображений для worker '{worker_id}'. Ключ: {key}")
+                logger.info(
+                    f"Извлечены выбранные пути изображений для worker '{worker_id}'. Ключ: {key}"
+                )
                 for i in range(len(image_paths)):
                     image_paths[i] = Path(image_paths[i])
                 return image_paths
             else:
-                logger.info(f"Не найдены выбранные изображения для worker '{worker_id}'. Ключ: {key}")
+                logger.info(
+                    f"Не найдены выбранные изображения для worker '{worker_id}'. Ключ: {key}"
+                )
                 return None
         except Exception as e:
-            logger.error(f"Ошибка извлечения выбранных изображений для worker '{worker_id}': {e}", exc_info=True)
+            logger.error(
+                f"Ошибка извлечения выбранных изображений для worker '{worker_id}': {e}",
+                exc_info=True,
+            )
             return None
 
     @staticmethod
@@ -100,9 +117,12 @@ class WorkerStatusManager:
             await redis.delete(key)
             logger.info(f"Удалены выбранные изображения для worker '{worker_id}'. Ключ: {key}")
         except Exception as e:
-            logger.error(f"Ошибка удаления выбранных изображений для worker '{worker_id}': {e}", exc_info=True)
+            logger.error(
+                f"Ошибка удаления выбранных изображений для worker '{worker_id}': {e}",
+                exc_info=True,
+            )
             raise
-    
+
     # --- Статические методы для управления флагом готовности АНИМАЦИЙ НА КОНКРЕТНОМ ВОРКЕРЕ ---
     @staticmethod
     def _get_worker_animations_ready_flag_key(worker_id: str) -> str:
@@ -120,15 +140,22 @@ class WorkerStatusManager:
             if are_ready:
                 # Устанавливаем ключ со значением "1" и TTL
                 await redis.set(key, "1", ex=WORKER_MEMORY_TTL_SECONDS)
-                logger.info(f"Установлен флаг готовности анимаций для worker '{worker_id}'. Ключ: {key}")
+                logger.info(
+                    f"Установлен флаг готовности анимаций для worker '{worker_id}'. Ключ: {key}"
+                )
             else:
                 # Если не готовы, просто удаляем ключ
                 await redis.delete(key)
-                logger.info(f"Сброшен (удален) флаг готовности анимаций для worker '{worker_id}'. Ключ: {key}")
+                logger.info(
+                    f"Сброшен (удален) флаг готовности анимаций для worker '{worker_id}'. Ключ: {key}"
+                )
         except Exception as e:
-            logger.error(f"Ошибка установки/сброса флага готовности анимаций для worker '{worker_id}': {e}", exc_info=True)
+            logger.error(
+                f"Ошибка установки/сброса флага готовности анимаций для worker '{worker_id}': {e}",
+                exc_info=True,
+            )
             raise
-    
+
     @staticmethod
     async def check_worker_animations_ready_flag(worker_id: str) -> bool:
         """
@@ -140,11 +167,18 @@ class WorkerStatusManager:
         try:
             exists = await redis.exists(key)
             if exists:
-                logger.info(f"Проверка флага: Анимации готовы для worker '{worker_id}'. Ключ: {key}")
+                logger.info(
+                    f"Проверка флага: Анимации готовы для worker '{worker_id}'. Ключ: {key}"
+                )
                 return True
             else:
-                logger.info(f"Проверка флага: Анимации НЕ готовы для worker '{worker_id}'. Ключ: {key}")
+                logger.info(
+                    f"Проверка флага: Анимации НЕ готовы для worker '{worker_id}'. Ключ: {key}"
+                )
                 return False
         except Exception as e:
-            logger.error(f"Ошибка проверки флага готовности анимаций для worker '{worker_id}': {e}", exc_info=True)
-            return False # В случае ошибки считаем, что не готовы, для безопасности
+            logger.error(
+                f"Ошибка проверки флага готовности анимаций для worker '{worker_id}': {e}",
+                exc_info=True,
+            )
+            return False  # В случае ошибки считаем, что не готовы, для безопасности

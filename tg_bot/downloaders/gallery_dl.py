@@ -1,12 +1,12 @@
 import asyncio
-import subprocess
 import secrets
 import shutil
+import subprocess
 from pathlib import Path
 from typing import List, Tuple
 
-from core.logger import logger
 from core.config import DOWNLOADS_PATH
+from core.logger import logger
 
 
 async def download_with_gallery_dl(

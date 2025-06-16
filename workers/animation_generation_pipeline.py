@@ -8,9 +8,7 @@ from workers.worker_status_manager import WorkerStatusManager
 class AnimationGenerationPipeline(BasePipeline):
     def __init__(self, task_id: str, **params):
         self.task_id = task_id
-        self.worker_status_manager = WorkerStatusManager(
-            params.get("worker_id", "default_id")
-        )
+        self.worker_status_manager = WorkerStatusManager(params.get("worker_id", "default_id"))
         self.created_at = params.get("created_at")
         data = params.get("data", {})
         self.animation_prompts = data.get("animation_prompts", [])
@@ -46,9 +44,7 @@ class AnimationGenerationPipeline(BasePipeline):
 class SetAnimationsForcePipeline(BasePipeline):
     def __init__(self, task_id: str, **params):
         self.task_id = task_id
-        self.worker_status_manager = WorkerStatusManager(
-            params.get("worker_id", "default_id")
-        )
+        self.worker_status_manager = WorkerStatusManager(params.get("worker_id", "default_id"))
         self.created_at = params.get("created_at")
         data = params.get("data", {})
         self.user_id = data.get("user_id")

@@ -1,4 +1,3 @@
-from core.config import BACKEND_ROUTE
 from core.logger import logger
 from workers.animation_generation_pipeline import AnimationGenerationPipeline
 from workers.base_pipeline import BasePipeline
@@ -19,27 +18,23 @@ class VideoGenerationPipeline(BasePipeline):
 
     async def run(self) -> None:
         # Пример обработки задачи генерации изображений
-        logger.info(f"VideoGenerationPipeline: {self.task_id}; User ID: {self.user_id}; Image Prompts: {self.image_prompts}; Animations Prompts: {self.animation_prompts}")
+        logger.info(
+            f"VideoGenerationPipeline: {self.task_id}; User ID: {self.user_id}; Image Prompts: {self.image_prompts}; Animations Prompts: {self.animation_prompts}"
+        )
 
         await ImageGenerationPipeline(
             task_id=self.task_id,
             worker_id=self.worker_id,
             created_at=self.created_at,
-            data={
-                "image_prompts": self.image_prompts,
-                "user_id": self.user_id
-            }
+            data={"image_prompts": self.image_prompts, "user_id": self.user_id},
         ).run()
         logger.success(f"Image generation completed for task {self.task_id}")
-        
+
         await AnimationGenerationPipeline(
             task_id=self.task_id,
             worker_id=self.worker_id,
             created_at=self.created_at,
-            data={
-                "animation_prompts": self.animation_prompts,
-                "user_id": self.user_id
-            }
+            data={"animation_prompts": self.animation_prompts, "user_id": self.user_id},
         ).run()
 
         logger.success(f"Animation generation completed for task {self.task_id}")
@@ -48,10 +43,7 @@ class VideoGenerationPipeline(BasePipeline):
             task_id=self.task_id,
             worker_id=self.worker_id,
             created_at=self.created_at,
-            data={
-                "user_id": self.user_id,
-                "animation_prompts": self.animation_prompts
-            }
+            data={"user_id": self.user_id, "animation_prompts": self.animation_prompts},
         ).run()
 
         logger.success(f"Concatenation of animations completed for task {self.task_id}")
@@ -60,9 +52,7 @@ class VideoGenerationPipeline(BasePipeline):
             task_id=self.task_id,
             worker_id=self.worker_id,
             created_at=self.created_at,
-            data={
-                "user_id": self.user_id
-            }
+            data={"user_id": self.user_id},
         ).run()
         logger.success("Resetting worker state completed")
         logger.success(f"Video generation completed for task {self.task_id}")

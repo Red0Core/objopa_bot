@@ -7,3 +7,4 @@ storage/
 logs/
 **/__pycache__/
 workers/private_generators.py
+downloads/

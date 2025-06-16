@@ -174,14 +174,14 @@ async def handle_tracking(message: Message):
                 # Преобразуем временные метки в объекты datetime
                 start_time: datetime = datetime.fromtimestamp(attempt["start"])
                 end_time: datetime = datetime.fromtimestamp(attempt["end"])
-                
+
                 # Вычисляем разницу, которая будет объектом timedelta
                 duration_attempt: timedelta = end_time - start_time
-                
+
                 # Теперь можно обращаться к атрибутам timedelta
                 days = duration_attempt.days
                 hours = duration_attempt.seconds // 3600
-                
+
                 reply.append(
                     f"  {history_iter}) {days} д. {hours} ч. (с {start_time:%d.%m %H:%M} по {end_time:%d.%m %H:%M})"
                 )

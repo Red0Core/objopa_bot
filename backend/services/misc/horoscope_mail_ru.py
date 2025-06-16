@@ -36,7 +36,7 @@ ZODIAC_EMOJI = {
 
 async def fetch_html(url: str) -> str:
     async with AsyncSession() as session:
-        return (await session.get(url)).text # type: ignore
+        return (await session.get(url)).text  # type: ignore
 
 
 async def get_daily_horoscope_with_rating(zodiac_english: str) -> str:

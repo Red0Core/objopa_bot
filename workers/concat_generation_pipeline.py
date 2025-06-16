@@ -1,11 +1,13 @@
-from pathlib import Path
 import zipfile
+from pathlib import Path
+
 from core.config import BACKEND_ROUTE, BASE_DIR
 from core.logger import logger
 from workers.base_pipeline import BasePipeline
 from workers.generator_factory import GeneratorFactory
 from workers.utils import send_notification, upload_file_to_backend
 from workers.worker_status_manager import WorkerStatusManager
+
 
 def create_zip_archive(files_to_archive: list[Path], output_zip_path: Path) -> bool:
     """
@@ -22,10 +24,12 @@ def create_zip_archive(files_to_archive: list[Path], output_zip_path: Path) -> b
         # Убедимся, что родительская директория для выходного архива существует
         output_zip_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(output_zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             for item_path in files_to_archive:
                 if not item_path.exists():
-                    logger.warning(f"Предупреждение: Путь не существует и будет пропущен: {item_path}")
+                    logger.warning(
+                        f"Предупреждение: Путь не существует и будет пропущен: {item_path}"
+                    )
                     continue
 
                 if item_path.is_file():
@@ -36,7 +40,9 @@ def create_zip_archive(files_to_archive: list[Path], output_zip_path: Path) -> b
                 elif item_path.is_dir():
                     # Добавляем содержимое директории рекурсивно
                     logger.info(f"Добавление директории: {item_path}")
-                    for file_in_dir in item_path.rglob('*'): # rglob('*') находит все файлы и поддиректории
+                    for file_in_dir in item_path.rglob(
+                        "*"
+                    ):  # rglob('*') находит все файлы и поддиректории
                         if file_in_dir.is_file():
                             # arcname здесь важен для сохранения структуры директорий внутри архива.
                             # file_in_dir.relative_to(item_path.parent) создаст относительный путь
@@ -45,7 +51,9 @@ def create_zip_archive(files_to_archive: list[Path], output_zip_path: Path) -> b
                             # используйте file_in_dir.relative_to(item_path)
                             archive_path = file_in_dir.relative_to(item_path.parent)
                             zipf.write(file_in_dir, arcname=archive_path)
-                            logger.info(f"  Добавлен файл из директории: {file_in_dir} как {archive_path}")
+                            logger.info(
+                                f"  Добавлен файл из директории: {file_in_dir} как {archive_path}"
+                            )
                         # Можно добавить обработку пустых директорий, если это необходимо,
                         # но обычно zipfile не добавляет пустые директории явно,
                         # они создаются при добавлении файлов в них.
@@ -57,6 +65,7 @@ def create_zip_archive(files_to_archive: list[Path], output_zip_path: Path) -> b
     except Exception as e:
         logger.error(f"Произошла ошибка при создании архива {output_zip_path}: {e}")
         return False
+
 
 class ConcatAnimationsPipeline(BasePipeline):
     def __init__(self, task_id: str, **params):
@@ -73,12 +82,11 @@ class ConcatAnimationsPipeline(BasePipeline):
         """
         Запуск пайплайна конкатенации анимаций.
         """
-        if not await self.worker_status_manager.check_worker_animations_ready_flag(self.worker_status_manager.worker_id):
+        if not await self.worker_status_manager.check_worker_animations_ready_flag(
+            self.worker_status_manager.worker_id
+        ):
             logger.error("No animations ready for concatenation.")
-            await send_notification(
-                f"Нет готовых анимаций для конкатенации.",
-                str(self.user_id)
-            )
+            await send_notification("Нет готовых анимаций для конкатенации.", str(self.user_id))
             raise ValueError("No animations ready for concatenation.")
 
         video_path = await self.video_generator.generate(videos=[], prompts=self.animation_prompts)
@@ -102,11 +110,8 @@ class ConcatAnimationsPipeline(BasePipeline):
             output += f"Ссылка на архив: {archive_server_path}\n"
 
         # Отправляем уведомление пользователю
-        await send_notification(
-            f"Конкатенация анимаций завершена.\n{output}",
-            str(self.user_id)
-        )
-    
+        await send_notification(f"Конкатенация анимаций завершена.\n{output}", str(self.user_id))
+
     def get_paths_to_archive(self) -> list[Path]:
         """
         Получить пути к файлам и директориям для архивации.

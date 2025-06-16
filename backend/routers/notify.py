@@ -9,9 +9,11 @@ from core.redis_client import get_redis
 
 router = APIRouter(prefix="/notify", tags=["notifiers"])
 
+
 class Notification(BaseModel):
     text: str
     send_to: str | None = None
+
 
 @router.post("")
 async def push_notification(notifier: Notification):
@@ -20,7 +22,7 @@ async def push_notification(notifier: Notification):
     return {
         "status": "queued",
         "message": "Notification queued for sending.",
-        "data": notifier.model_dump_json()
+        "data": notifier.model_dump_json(),
     }
 
 
@@ -39,10 +41,10 @@ async def notify_image_selection(data: ImageSelectionRequest):
         type="image_selection",
         task_id=data.task_id,
         created_at=datetime.now(timezone.utc),
-        data= ImageSelectionTaskData(
+        data=ImageSelectionTaskData(
             user_id=data.user_id,
             relative_paths=data.relative_paths,
-        )
+        ),
     )
 
     logger.info(f"Pushing image selection task to Redis: {payload}")

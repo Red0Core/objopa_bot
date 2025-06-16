@@ -22,7 +22,7 @@ async def fetch_currency_data(symbol: str, market: str = "RUB") -> dict[str, Any
     }
 
     async with AsyncSession() as session:  # type: ignore
-        response: Response = await session.get(url, params=params) # type: ignore
+        response: Response = await session.get(url, params=params)  # type: ignore
         response.raise_for_status()
         return response.json()  # type: ignore
 

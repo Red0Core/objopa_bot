@@ -98,7 +98,7 @@ async def handle_gpt_chat(message: Message):
     # Пропускаем команды
     if not text or text.startswith("/") or not from_user:
         return
-    
+
     # Разрешить только ответы на сообщения от бота
     if (
         message.reply_to_message
@@ -123,9 +123,7 @@ async def handle_gpt_chat(message: Message):
         f"{from_user.first_name} {from_user.last_name or ''}",
     )
 
-    logger.info(
-        f"GPT ответ для {user_name} в чате {chat_id} ({from_user.username})"
-    )
+    logger.info(f"GPT ответ для {user_name} в чате {chat_id} ({from_user.username})")
 
     is_pastebin = text.strip().endswith("pastebin")
     prompt_text = text.replace("pastebin", "").strip()
@@ -143,6 +141,7 @@ async def handle_gpt_chat(message: Message):
     except Exception:
         logger.exception("Ошибка при отправке в GPT:")
         await message.answer("Произошла ошибка. Попробуйте позже.")
+
 
 @router.message(Command("add_me_as"))
 async def add_user_to_whitelist(message: Message):

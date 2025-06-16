@@ -1,12 +1,15 @@
 import asyncio
+import traceback
 from pathlib import Path
 from typing import List, Tuple
-import traceback
 
 from yt_dlp import YoutubeDL
 
-from core.logger import logger
 from core.config import DOWNLOADS_PATH
+from core.logger import logger
+
+MAX_SIZE_MB = 50
+MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 
 
 async def download_with_ytdlp(
@@ -17,7 +20,7 @@ async def download_with_ytdlp(
         "outtmpl": str(download_path / "%(id)s.%(ext)s"),
         "noplaylist": True,
         "quiet": True,
-        "impersonate": ""
+        "extractor_args": {"generic": ["impersonate=chrome"]},
     }
 
     files: List[Path] = []
@@ -25,50 +28,65 @@ async def download_with_ytdlp(
     error: str | None = None
 
     def _download() -> None:
-        nonlocal files, title
+        nonlocal files, title, error, url
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-<<<<<<< HEAD
-=======
             logger.info(info)
->>>>>>> 6c585ab (Integration with Twitter Auth, yt-dlp, gallery-dl)
+
+            duration = info.get("duration") or 0
             formats = info.get("formats", [])
-            limit = 2 * 1024 * 1024 * 1024
 
-            def select_height(max_h: int) -> str:
-                candidates = [
-                    f
-                    for f in formats
-                    if f.get("height")
-                    and f.get("ext") == "mp4"
-                    and f["height"] <= max_h
-                ]
-                if not candidates:
-                    return "best"
-                best = max(candidates, key=lambda f: f.get("height", 0))
-                size = best.get("filesize") or best.get("filesize_approx") or 0
-                if size and size > limit and max_h > 480:
-                    return select_height(720)
-                return (
-                    f"bestvideo[height<={max_h}][ext=mp4]+bestaudio/best"
-                    f"/best[height<={max_h}]"
+            def estimate_size(fmt: dict) -> int:
+                if "filesize" in fmt and fmt["filesize"]:
+                    return fmt["filesize"]
+                if "filesize_approx" in fmt and fmt["filesize_approx"]:
+                    return fmt["filesize_approx"]
+                if "tbr" in fmt and fmt["tbr"] is not None and duration:
+                    return int((fmt["tbr"] * 1000 / 8) * duration)
+                return 0
+
+            candidates = [fmt for fmt in formats if fmt.get("ext") == "mp4" and fmt.get("height")]
+
+            # Сортируем по убыванию качества
+            candidates.sort(key=lambda f: f.get("height", 0), reverse=True)
+
+            for fmt in candidates:
+                size = estimate_size(fmt)
+                logger.info(f"Format: {fmt}, Estimated size: {size} bytes")
+                if 0 < size <= MAX_SIZE_BYTES and fmt.get("height") >= 720:
+                    format_selector = f"bestvideo[height={fmt['height']}][ext=mp4]+bestaudio/best"
+                    ydl.params["format"] = format_selector
+                    downloaded = ydl.extract_info(url, download=True)
+                    title = downloaded.get("title")
+                    entries = downloaded["entries"] if "entries" in downloaded else [downloaded]
+                    for entry in entries:
+                        files.append(Path(ydl.prepare_filename(entry)))
+                    return
+
+            # Если ни один формат не прошел по весу
+            title = info.get("title", "Video")
+            lines = ["*❌ File too large to download\\. Available formats:*\n"]
+            for f in candidates:
+                format_id = f.get("format_id", "")
+                resolution = f.get("resolution", f.get("height", "Unknown"))
+                url = f.get("url", "")
+                size_est = estimate_size(f)
+                size_mb = round(size_est / (1024 * 1024), 2) if size_est else "?"
+                safe_url = (
+                    url.replace(".", "\\.")
+                    .replace("-", "\\-")
+                    .replace("?", "\\?")
+                    .replace("&", "\\&")
+                    .replace("=", "\\=")
                 )
+                lines.append(f"{format_id} - {resolution} \\(~{size_mb} MB\\): [Link]({safe_url})")
 
-            ydl.params["format"] = select_height(1080)
-            info = ydl.extract_info(url, download=True)
-            title = info.get("title")
-            entries = info["entries"] if "entries" in info else [info]
-            for entry in entries:
-                files.append(Path(ydl.prepare_filename(entry)))
+            error = "\n".join(lines)
 
     try:
         await asyncio.to_thread(_download)
     except Exception as e:  # noqa: BLE001
-<<<<<<< HEAD
-        logger.error(f"yt-dlp download error: {e}")
-=======
         logger.error(f"yt-dlp download error: {traceback.format_exc()}")
->>>>>>> 6c585ab (Integration with Twitter Auth, yt-dlp, gallery-dl)
         error = str(e)
 
     return files, title, error

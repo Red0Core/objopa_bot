@@ -48,7 +48,7 @@ async def get_mexc_token_airdrop():
             "https://www.mexc.com/api/operateactivity/eftd/list",
             headers=headers,
             impersonate="chrome",
-        )   # type: ignore
+        )  # type: ignore
 
     return response
 
