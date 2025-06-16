@@ -18,6 +18,7 @@ from fastapi import (
     Header,
 )
 from fastapi.responses import FileResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from redis.asyncio import Redis
 
 from backend.models.workers import (
@@ -478,21 +479,20 @@ class TwitterCookies(BaseModel):
     auth_token: str
     ct0: str
 
+security = HTTPBearer()
 
 @router.post("/set-twitter-cookies", summary="Update Twitter auth cookies")
 async def set_twitter_cookies(
     data: TwitterCookies,
-    authorization: str | None = Header(None, alias="Authorization"),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-        )
-    token = authorization.removeprefix("Bearer ")
-    if token != TWITTER_COOKIES_TOKEN:
+    """
+    Update Twitter authentication cookies. Requires a valid Bearer token.
+    """
+    if credentials.scheme.lower() != "bearer" or credentials.credentials != TWITTER_COOKIES_TOKEN:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
     redis: Redis = await get_redis()
     await redis.mset({"twitter_auth_token": data.auth_token, "twitter_ct0": data.ct0})
-    return {"status": "ok"}
+    return {"status": "success", "message": "Twitter cookies updated successfully"}
