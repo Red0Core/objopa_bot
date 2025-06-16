@@ -3,6 +3,7 @@ import traceback
 from pathlib import Path
 from typing import List, Tuple
 
+import telegramify_markdown
 from yt_dlp import YoutubeDL
 
 from core.config import DOWNLOADS_PATH
@@ -65,23 +66,16 @@ async def download_with_ytdlp(
 
             # Если ни один формат не прошел по весу
             title = info.get("title", "Video")
-            lines = ["*❌ File too large to download\\. Available formats:*\n"]
+            lines = [f"*❌ File too large to download\\. Available formats:*\n{title}\n"]
             for f in candidates:
                 format_id = f.get("format_id", "")
                 resolution = f.get("resolution", f.get("height", "Unknown"))
                 url = f.get("url", "")
                 size_est = estimate_size(f)
                 size_mb = round(size_est / (1024 * 1024), 2) if size_est else "?"
-                safe_url = (
-                    url.replace(".", "\\.")
-                    .replace("-", "\\-")
-                    .replace("?", "\\?")
-                    .replace("&", "\\&")
-                    .replace("=", "\\=")
-                )
-                lines.append(f"{format_id} - {resolution} \\(~{size_mb} MB\\): [Link]({safe_url})")
+                lines.append(f"{format_id} - {resolution} (~{size_mb} MB): [Link]({url})")
 
-            error = "\n".join(lines)
+            error = telegramify_markdown.markdownify("\n".join(lines))
 
     try:
         await asyncio.to_thread(_download)
