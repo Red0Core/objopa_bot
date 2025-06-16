@@ -7,7 +7,16 @@ from uuid import uuid4
 
 import aiofiles
 import xxhash
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    UploadFile,
+    status,
+    Header,
+)
 from fastapi.responses import FileResponse
 from redis.asyncio import Redis
 
@@ -15,15 +24,22 @@ from backend.models.workers import (
     VideoGenerationPromptItem,
     BaseWorkerTask,
     FileUploadResponse,
-    VideoGenerationPromptItem,
     ScenarioInput,
     VideoGenerationPipelineTaskData,
 )
-from core.config import BACKEND_ROUTE, UPLOAD_DIR, UPLOAD_VIDEO_DIR, WORKER_ARCHIVES_DIR
+from core.config import (
+    UPLOAD_DIR,
+    UPLOAD_VIDEO_DIR,
+    WORKER_ARCHIVES_DIR,
+    DOWNLOADS_PATH,
+)
 from core.logger import logger
 from core.redis_client import get_redis
+from pydantic import BaseModel
+from core.config import TWITTER_COOKIES_TOKEN
 
 router = APIRouter(prefix="/worker", tags=["worker"])
+
 
 @router.post("/video-generation-pipeline", response_model=dict)
 async def submit_image_task(request: VideoGenerationPipelineTaskData):
@@ -36,23 +52,27 @@ async def submit_image_task(request: VideoGenerationPipelineTaskData):
             image_prompts=request.image_prompts,
             animation_prompts=request.animation_prompts,
             user_id=request.user_id,
-        )
+        ),
     )
 
     try:
         redis = await get_redis()
-        await redis.rpush("hailuo_tasks", task_data.model_dump_json()) # type: ignore
+        await redis.rpush("hailuo_tasks", task_data.model_dump_json())  # type: ignore
         logger.info(f"New image generation task submitted: {task_id}")
     except Exception as e:
         logger.error(f"Redis error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to queue task") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to queue task",
+        ) from e
 
     return {"task_id": task_id, "status": "queued"}
+
 
 def generate_prompts_from_scenario(
     images_data: list[VideoGenerationPromptItem],
     animations_data: list[VideoGenerationPromptItem],
-    global_characters: dict[str, str]
+    global_characters: dict[str, str],
 ) -> tuple[list[str], list[str]]:
     """
     Генерирует промпты для изображений и анимаций из данных сценария.
@@ -66,18 +86,18 @@ def generate_prompts_from_scenario(
             for char_name, char_value in item.characters.items():
                 # 1. Пытаемся найти описание в глобальном словаре по значению из item.characters
                 global_description = global_characters.get(char_value)
-            
+
                 if global_description:
                     # Нашли в глобальном словаре - используем его
                     prompt_output += f"; {char_name}: {global_description}"
-                elif char_value != char_name and ' ' in char_value:
+                elif char_value != char_name and " " in char_value:
                     # Не нашли в глобальном, но значение отличается от ключа и содержит пробел
                     # Считаем это локальным описанием
                     prompt_output += f"; {char_name}: {char_value}"
                 else:
                     # Не нашли в глобальном и нет локального описания
                     # Просто добавляем имя персонажа и выводим предупреждение
-                    prompt_output += f"; {char_name}" 
+                    prompt_output += f"; {char_name}"
                     logger.warning(
                         f"No description found for character key '{char_value}' (used by '{char_name}') "
                         f"in global characters or inline for image prompt: '{item.prompt}'"
@@ -91,67 +111,86 @@ def generate_prompts_from_scenario(
             for char_name, char_value in item.characters.items():
                 # 1. Пытаемся найти описание в глобальном словаре по значению из item.characters
                 global_description = global_characters.get(char_value)
-            
+
                 if global_description:
                     # Нашли в глобальном словаре - используем его
                     prompt_output += f"; {char_name}: {global_description}"
-                elif char_value != char_name and ' ' in char_value:
+                elif char_value != char_name and " " in char_value:
                     # Не нашли в глобальном, но значение отличается от ключа и содержит пробел
                     # Считаем это локальным описанием
                     prompt_output += f"; {char_name}: {char_value}"
                 else:
                     # Не нашли в глобальном и нет локального описания
                     # Просто добавляем имя персонажа и выводим предупреждение
-                    prompt_output += f"; {char_name}" 
+                    prompt_output += f"; {char_name}"
                     logger.warning(
                         f"No description found for character key '{char_value}' (used by '{char_name}') "
                         f"in global characters or inline for animation prompt: '{item.prompt}'"
                     )
         processed_animation_prompts.append(prompt_output)
-        
+
     return processed_image_prompts, processed_animation_prompts
 
-@router.post("/video-generation-from-scenario", response_model=dict, summary="Submit video generation task from JSON scenario")
+
+@router.post(
+    "/video-generation-from-scenario",
+    response_model=dict,
+    summary="Submit video generation task from JSON scenario",
+)
 async def submit_scenario_task(scenario: ScenarioInput):
     """
-    Принимает JSON-сценарий, генерирует промпты и ставит задачу 
+    Принимает JSON-сценарий, генерирует промпты и ставит задачу
     генерации видео в очередь.
     """
     task_id = str(uuid4())
-    
+
     try:
         # Генерируем промпты
         image_prompts, animation_prompts = generate_prompts_from_scenario(
             images_data=scenario.images,
             animations_data=scenario.animations,
-            global_characters=scenario.characters
+            global_characters=scenario.characters,
         )
 
         # Проверяем, что количество промптов совпадает (опционально, но полезно)
         if len(image_prompts) != len(animation_prompts):
-             logger.warning(f"Task {task_id}: Mismatch in number of image prompts ({len(image_prompts)}) and animation prompts ({len(animation_prompts)})")
-             raise HTTPException(status_code=400, detail="Number of image prompts must match number of animation prompts")
+            logger.warning(
+                f"Task {task_id}: Mismatch in number of image prompts ({len(image_prompts)}) and animation prompts ({len(animation_prompts)})"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Number of image prompts must match number of animation prompts",
+            )
 
         # Формируем данные задачи для воркера
         task_data = BaseWorkerTask(
-            type="video_generation", # Убедитесь, что тип соответствует тому, что ожидает ваш воркер
+            type="video_generation",  # Убедитесь, что тип соответствует тому, что ожидает ваш воркер
             task_id=task_id,
             created_at=datetime.now(timezone.utc),
             data=VideoGenerationPipelineTaskData(
                 image_prompts=image_prompts,
                 animation_prompts=animation_prompts,
                 user_id=scenario.user_id,
-            )
+            ),
         )
 
         # Задачу в очередь Redis
         redis = await get_redis()
-        await redis.rpush("hailuo_tasks", task_data.model_dump_json()) # Используем ту же очередь #type:ignore
-        logger.info(f"New video generation task from scenario submitted: {task_id} for user {scenario.user_id}")
+        await redis.rpush(
+            "hailuo_tasks", task_data.model_dump_json()
+        )  # Используем ту же очередь #type:ignore
+        logger.info(
+            f"New video generation task from scenario submitted: {task_id} for user {scenario.user_id}"
+        )
 
     except Exception as e:
-        logger.exception(f"Error processing scenario task {task_id}: {e}") # Логируем с traceback
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to process scenario and queue task: {str(e)}") from e
+        logger.exception(
+            f"Error processing scenario task {task_id}: {e}"
+        )  # Логируем с traceback
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process scenario and queue task: {str(e)}",
+        ) from e
 
     return {"task_id": task_id, "status": "queued"}
 
@@ -163,12 +202,14 @@ FILE_EXPIRY_SET = "expired_files"
 VIDEO_EXPIRY_SET = "expired_videos"
 DEFAULT_EXPIRY = timedelta(days=1)
 VIDEO_EXPIRY = timedelta(days=7)
+DOWNLOADS_DIR = DOWNLOADS_PATH
+
 
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...), # noqa: B008
-    redis: Redis = Depends(get_redis) # noqa: B008
+    file: UploadFile = File(...),  # noqa: B008
+    redis: Redis = Depends(get_redis),  # noqa: B008
 ):
     if not file:
         raise HTTPException(400, "Файл не предоставлен")
@@ -203,12 +244,12 @@ async def upload_file(
         asyncio.create_task(
             _update_stats(redis, key, f"{FILE_STATS_KEY_PREFIX}{file_hash}_{size}")
         )
-        logger.info(f"Duplicate upload ({time.time()-start:.2f}s)")
+        logger.info(f"Duplicate upload ({time.time() - start:.2f}s)")
         return FileUploadResponse(
             filename=file.filename or "unknown",
             filepath=existing,
             size=size,
-            content_type=file.content_type or "application/octet-stream"
+            content_type=file.content_type or "application/octet-stream",
         )
 
     final_name = f"{file_hash[:8]}_{uuid4().hex[:4]}{ext}"
@@ -223,7 +264,7 @@ async def upload_file(
         "size": size,
         "content_type": file.content_type or "application/octet-stream",
         "uploaded": int(time.time()),
-        "count": 1
+        "count": 1,
     }
     expiry = int(DEFAULT_EXPIRY.total_seconds())
 
@@ -233,12 +274,12 @@ async def upload_file(
     pipe.zadd(FILE_EXPIRY_SET, {final_name: time.time() + expiry})
     await pipe.execute()
 
-    logger.info(f"Upload done in {time.time()-start:.2f}s")
+    logger.info(f"Upload done in {time.time() - start:.2f}s")
     return FileUploadResponse(
         filename=file.filename or "unknown",
         filepath=final_name,
         size=size,
-        content_type=file.content_type or "application/octet-stream"
+        content_type=file.content_type or "application/octet-stream",
     )
 
 
@@ -264,8 +305,8 @@ async def download_video(filename: str):
 
 @router.post("/upload-video", response_model=FileUploadResponse)
 async def upload_video(
-    file: UploadFile = File(...), # noqa: B008
-    redis: Redis = Depends(get_redis) # noqa: B008
+    file: UploadFile = File(...),  # noqa: B008
+    redis: Redis = Depends(get_redis),  # noqa: B008
 ):
     if not file:
         raise HTTPException(400, "Видео не предоставлено")
@@ -284,20 +325,18 @@ async def upload_video(
     expiry_seconds = int(VIDEO_EXPIRY.total_seconds())
     await redis.zadd(VIDEO_EXPIRY_SET, {unique: time.time() + expiry_seconds})
 
-    logger.info(f"Video upload done in {time.time()-start:.2f}s size={dst.stat().st_size}")
+    logger.info(
+        f"Video upload done in {time.time() - start:.2f}s size={dst.stat().st_size}"
+    )
     return FileUploadResponse(
         filename=file.filename or "unknown",
         filepath=unique,
         size=dst.stat().st_size,
-        content_type=file.content_type or "application/octet-stream"
+        content_type=file.content_type or "application/octet-stream",
     )
 
 
-async def _cleanup_set(
-    redis: Redis,
-    set_key: str,
-    base_dir: Path
-) -> int:
+async def _cleanup_set(redis: Redis, set_key: str, base_dir: Path) -> int:
     now_ts = time.time()
     expired = await redis.zrangebyscore(set_key, 0, now_ts)
     if not expired:
@@ -319,22 +358,36 @@ async def _cleanup_set(
     return deleted
 
 
-
 @router.post("/cleanup", summary="Ручная очистка истёкших файлов/видео")
 async def manual_cleanup(
-    redis: Redis = Depends(get_redis) # noqa: B008
+    redis: Redis = Depends(get_redis),  # noqa: B008
 ):
-    files_deleted  = await _cleanup_set(redis, FILE_EXPIRY_SET,  UPLOAD_DIR)
+    files_deleted = await _cleanup_set(redis, FILE_EXPIRY_SET, UPLOAD_DIR)
     videos_deleted = await _cleanup_set(redis, VIDEO_EXPIRY_SET, UPLOAD_VIDEO_DIR)
+    downloads_deleted = 0
+    if DOWNLOADS_DIR.exists():
+        for p in DOWNLOADS_DIR.iterdir():
+            if p.is_file():
+                try:
+                    p.unlink()
+                    downloads_deleted += 1
+                except Exception as e:  # noqa: BLE001
+                    logger.error(f"Failed to delete {p}: {e}")
     return {
         "status": "ok",
         "files_deleted": files_deleted,
-        "videos_deleted": videos_deleted
+        "videos_deleted": videos_deleted,
+        "downloads_deleted": downloads_deleted,
     }
 
-@router.post("/upload-archive", response_model=FileUploadResponse, summary="Upload an archive from a worker")
+
+@router.post(
+    "/upload-archive",
+    response_model=FileUploadResponse,
+    summary="Upload an archive from a worker",
+)
 async def upload_worker_archive(
-    file: UploadFile = File(...), # noqa: B008
+    file: UploadFile = File(...),  # noqa: B008
 ):
     """
     Allows a worker to upload an archive file.
@@ -342,37 +395,51 @@ async def upload_worker_archive(
     Returns a direct download URL for the archive.
     """
     if not file or not file.filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File not provided or filename missing")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File not provided or filename missing",
+        )
 
     start_time = time.time()
     original_filename = file.filename
     file_extension = Path(original_filename).suffix
-    
+
     # Generate a unique filename for storing on the server to prevent conflicts
     saved_filename = f"{uuid4().hex}{file_extension}"
     archive_save_path = WORKER_ARCHIVES_DIR / saved_filename
-    
+
     # Ensure the target directory exists (it should be created by config.py, but good to be safe)
     WORKER_ARCHIVES_DIR.mkdir(parents=True, exist_ok=True)
 
     file_size = 0
     try:
         async with aiofiles.open(archive_save_path, "wb") as out_file:
-            while chunk := await file.read(4 * 1024 * 1024): # Read and write in 4MB chunks
+            while chunk := await file.read(
+                4 * 1024 * 1024
+            ):  # Read and write in 4MB chunks
                 await out_file.write(chunk)
                 file_size += len(chunk)
     except Exception as e:
-        logger.error(f"Error saving worker archive '{original_filename}' to '{archive_save_path}': {e}")
+        logger.error(
+            f"Error saving worker archive '{original_filename}' to '{archive_save_path}': {e}"
+        )
         # Attempt to clean up partially written file if an error occurs
         if archive_save_path.exists():
             try:
                 os.unlink(archive_save_path)
             except Exception as unlink_e:
-                logger.error(f"Error cleaning up partial archive '{archive_save_path}' during save error: {unlink_e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not save archive file.")
+                logger.error(
+                    f"Error cleaning up partial archive '{archive_save_path}' during save error: {unlink_e}"
+                )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save archive file.",
+        )
 
-    logger.info(f"Worker archive '{original_filename}' uploaded as '{saved_filename}' to '{archive_save_path}'. Size: {file_size}. Took {time.time() - start_time:.2f}s.")
-    
+    logger.info(
+        f"Worker archive '{original_filename}' uploaded as '{saved_filename}' to '{archive_save_path}'. Size: {file_size}. Took {time.time() - start_time:.2f}s."
+    )
+
     return FileUploadResponse(
         filename=original_filename,
         filepath=saved_filename,
@@ -380,21 +447,52 @@ async def upload_worker_archive(
         content_type=file.content_type or "application/octet-stream",
     )
 
-@router.get("/download-archive/{filename}", summary="Download a worker-uploaded archive")
+
+@router.get(
+    "/download-archive/{filename}", summary="Download a worker-uploaded archive"
+)
 async def download_worker_archive(filename: str):
     """
     Allows downloading of an archive previously uploaded by a worker.
     """
     file_path = WORKER_ARCHIVES_DIR / filename
-    
-    if not file_path.is_file(): # Check if the file exists and is a file
-        logger.warning(f"Worker archive not found for download: '{filename}' at expected path '{file_path}'")
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found.")
-    
+
+    if not file_path.is_file():  # Check if the file exists and is a file
+        logger.warning(
+            f"Worker archive not found for download: '{filename}' at expected path '{file_path}'"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found."
+        )
+
     # For archives, 'application/octet-stream' is a safe default.
     # You could try to guess based on extension if needed for specific archive types.
     return FileResponse(
         path=file_path,
-        filename=filename, # This name will be suggested to the user when downloading
-        media_type='application/octet-stream' 
+        filename=filename,  # This name will be suggested to the user when downloading
+        media_type="application/octet-stream",
     )
+
+
+class TwitterCookies(BaseModel):
+    auth_token: str
+    ct0: str
+
+
+@router.post("/set-twitter-cookies", summary="Update Twitter auth cookies")
+async def set_twitter_cookies(
+    data: TwitterCookies,
+    authorization: str | None = Header(None, alias="Authorization"),
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        )
+    token = authorization.removeprefix("Bearer ")
+    if token != TWITTER_COOKIES_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        )
+    redis: Redis = await get_redis()
+    await redis.mset({"twitter_auth_token": data.auth_token, "twitter_ct0": data.ct0})
+    return {"status": "ok"}
