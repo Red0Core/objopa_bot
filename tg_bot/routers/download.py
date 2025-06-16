@@ -186,4 +186,6 @@ async def universal_download_handler(message: Message, command: CommandObject):
 
         await status_message.delete()
     else:
-        await status_message.edit_text(error if error else "❌ Не удалось скачать медиа.", parse_mode="MarkdownV2")
+        await status_message.edit_text(
+            error if error else "❌ Не удалось скачать медиа.", parse_mode="MarkdownV2"
+        )

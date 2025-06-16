@@ -1,4 +1,5 @@
 import asyncio
+import re
 import traceback
 from pathlib import Path
 from typing import List, Tuple
@@ -11,6 +12,11 @@ from core.logger import logger
 
 MAX_SIZE_MB = 50
 MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
+IP_PATTERN = re.compile(r"https?://[^/]*\b(?:\d{1,3}\.){3}\d{1,3}\b")
+
+
+def has_ip_in_url(url: str) -> bool:
+    return bool(IP_PATTERN.search(url))
 
 
 async def download_with_ytdlp(
@@ -46,7 +52,11 @@ async def download_with_ytdlp(
                     return int((fmt["tbr"] * 1000 / 8) * duration)
                 return 0
 
-            candidates = [fmt for fmt in formats if fmt.get("ext") == "mp4" and fmt.get("height")]
+            candidates = [
+                fmt
+                for fmt in formats
+                if fmt.get("ext") == "mp4" and fmt.get("height") and not has_ip_in_url(fmt["url"])
+            ]
 
             # Сортируем по убыванию качества
             candidates.sort(key=lambda f: f.get("height", 0), reverse=True)
