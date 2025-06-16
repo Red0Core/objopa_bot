@@ -13,7 +13,7 @@ all: install
 
 install:
 	@echo "📦 Creating venv and installing dependencies..."
-	$(UV) venv $(VENV_DIR) --python=3.13.2
+$(UV) venv $(VENV_DIR) --python=3.13.5
 	$(UV) pip install -r tg_bot/requirements.txt -p $(VENV_DIR)
 	$(UV) pip install -r backend/requirements.txt -p $(VENV_DIR)
 	$(UV) pip install uvloop -p $(VENV_DIR)

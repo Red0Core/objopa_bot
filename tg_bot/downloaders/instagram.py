@@ -6,7 +6,7 @@ from pathlib import Path
 import instaloader
 from curl_cffi.requests import AsyncSession
 
-from core.config import STORAGE_PATH as STORAGE_DIR
+from core.config import STORAGE_PATH as STORAGE_DIR, DOWNLOADS_PATH
 from core.logger import logger
 
 INSTAGRAM_REGEX = re.compile(
@@ -20,7 +20,9 @@ async def get_instagram_shortcode(url: str) -> str | None:
     """
     async with AsyncSession() as session:
         try:
-            response = await session.get(url, allow_redirects=True, impersonate="chrome")  # type: ignore
+            response = await session.get(
+                url, allow_redirects=True, impersonate="chrome"
+            )  # type: ignore
             final_url = response.url  # Итоговый URL
             match = re.search(r"/(p|reel|tv)/([\w-]+)", final_url)
             if match:
@@ -46,7 +48,14 @@ def init_instaloader():
 
     try:
         if INSTAGRAM_USERNAME:
-            bot_loader.load_session_from_file(INSTAGRAM_USERNAME, str((STORAGE_DIR / "session" / f"session-{INSTAGRAM_USERNAME}").absolute()))
+            bot_loader.load_session_from_file(
+                INSTAGRAM_USERNAME,
+                str(
+                    (
+                        STORAGE_DIR / "session" / f"session-{INSTAGRAM_USERNAME}"
+                    ).absolute()
+                ),
+            )
             logger.success("✅ Успешная авторизация в Instagram.")
         else:
             raise ValueError("Не указаны имя пользователя и пароль Instagram.")
@@ -69,8 +78,8 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
         if not shortcode:
             return None, "❌ Ошибка: Не удалось извлечь shortcode из ссылки."
 
-        download_path = "downloads"
-        os.makedirs(download_path, exist_ok=True)
+        download_path = str(DOWNLOADS_PATH)
+        DOWNLOADS_PATH.mkdir(exist_ok=True)
 
         post = await asyncio.to_thread(
             instaloader.Post.from_shortcode, bot_loader.context, shortcode
@@ -92,11 +101,11 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
         return None, f"❌ Ошибка: {e}"
 
 
-Path("downloads").mkdir(exist_ok=True)
+DOWNLOADS_PATH.mkdir(exist_ok=True)
 
 
 async def select_instagram_media(
-    shortcode: str, download_path: Path = Path("downloads")
+    shortcode: str, download_path: Path = DOWNLOADS_PATH
 ) -> dict[str, list[Path] | str]:
     """
     Определяет, какие файлы скачал Instaloader, и выбирает нужный формат для отправки.

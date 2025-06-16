@@ -32,6 +32,8 @@ UPLOAD_VIDEO_DIR = STORAGE_PATH / "video_generation_uploads"
 UPLOAD_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 WORKER_ARCHIVES_DIR = UPLOAD_DIR / "worker_archives"
 WORKER_ARCHIVES_DIR.mkdir(parents=True, exist_ok=True)
+DOWNLOADS_PATH = BASE_DIR / "downloads"
+DOWNLOADS_PATH.mkdir(parents=True, exist_ok=True)
 
 TOKEN_BOT = get_required_env("TOKEN_BOT")
 OBZHORA_CHAT_ID = get_required_env("OBZHORA_CHAT_ID")  # Используется в личных целях
@@ -51,6 +53,7 @@ GEMINI_API_KEY = get_required_env("GEMINI_API_KEY")
 WOLFRAMALPHA_TOKEN = get_required_env("WOLFRAMALPHA_TOKEN")
 ALPHAVANTAGE_API_KEY = get_required_env("ALPHAVANTAGE_API_KEY")
 COINMARKETCAP_API_KEY = get_required_env("COINMARKETCAP_API_KEY")
+TWITTER_COOKIES_TOKEN = get_required_env("TWITTER_COOKIES_TOKEN")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
