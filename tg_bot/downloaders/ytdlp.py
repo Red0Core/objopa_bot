@@ -53,21 +53,27 @@ async def download_with_ytdlp(
                     return int((fmt["tbr"] * 1000 / 8) * duration)
                 return 0
 
-            candidates = [
-                fmt
-                for fmt in formats
-                if fmt.get("ext") == "mp4" and fmt.get("height") and not has_ip_in_url(fmt["url"])
+            # Check if this is a YouTube Shorts or similar with separate video/audio streams
+            video_formats = [
+                fmt for fmt in formats 
+                if fmt.get("vcodec") != "none" and fmt.get("height") and not has_ip_in_url(fmt.get("url", ""))
             ]
-
-            # Сортируем по убыванию качества
-            candidates.sort(key=lambda f: f.get("height", 0), reverse=True)
-
-            for fmt in candidates:
+            
+            # Sort by quality
+            video_formats.sort(key=lambda f: (f.get("height", 0), f.get("tbr", 0)), reverse=True)
+            
+            for fmt in video_formats:
                 size = estimate_size(fmt)
                 logger.info(f"Format: {fmt}, Estimated size: {size} bytes")
-                if 0 < size <= MAX_SIZE_BYTES and fmt.get("height") >= 480: # Чтобы скачивал только видео с высотой от 480p
-                    format_selector = f"bestvideo[height={fmt['height']}][ext=mp4]+bestaudio/best"
+                if 0 < size <= MAX_SIZE_BYTES and fmt.get("height", 0) >= 480:
+                    # Use format selectors that work well with YouTube Shorts
+                    format_selector = f"{fmt['format_id']}+bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[ext=aac]/bestaudio"
                     ydl.params["format"] = format_selector
+                    # Set merge output format to ensure we get a single file
+                    ydl.params["merge_output_format"] = "mp4"
+                    # Ensure we prefer ffmpeg for merging
+                    ydl.params["postprocessor_args"] = {"ffmpeg": ["-movflags", "faststart"]}
+                    
                     downloaded: dict | None = ydl.extract_info(url, download=True)
                     if not downloaded:
                         error = "❌ Failed to download the video."
