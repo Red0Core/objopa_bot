@@ -1,17 +1,21 @@
 import asyncio
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from aiogram import Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import (
     FSInputFile,
     InputMediaPhoto,
+    InputMediaVideo,
+    InputMediaDocument,
+    InputMediaAudio,
     MediaUnion,
     Message,
 )
 
 from core.config import DOWNLOADS_PATH
+from core.logger import logger
 from tg_bot.downloaders import (
     INSTAGRAM_REGEX,
     TWITTER_REGEX,
@@ -28,7 +32,7 @@ router = Router()
 async def send_images_in_chunks(message: Message, images: list[Path], caption: str | None = None):
     """Разбивает список изображений на чанки по 10 и отправляет их в Telegram"""
 
-    def chunk_list(lst: Sequence[Any], size: int = 10) -> Sequence[Any]:
+    def chunk_list(lst: list[Any], size: int = 10) -> list[list[Any]]:
         """Функция разбивает список на части по size элементов"""
         return [lst[i : i + size] for i in range(0, len(lst), size)]
 
@@ -116,9 +120,11 @@ async def universal_download_handler(message: Message, command: CommandObject):
 
     if INSTAGRAM_REGEX.match(url):
         await process_instagram(message, url)
+        logger.info(f"Instagram media downloaded from: {url}")
         return
 
     if TWITTER_REGEX.match(url):
+        logger.info(f"Twitter media download requested for: {url}")
         status_message = await message.answer("⏳ Загружаю медиа из Twitter...")
         img_files, vid_files, tw_caption, tw_error = await download_twitter_media(url)
 
@@ -156,7 +162,10 @@ async def universal_download_handler(message: Message, command: CommandObject):
     status_message = await message.answer("⏳ Загружаю медиа...")
 
     files, caption, error = await download_with_ytdlp(url)
-    if not files:
+    if not files and \
+        (error is not None and "available formats" not in error.lower()):
+        # Если yt-dlp не смог скачать, пробуем gallery-dl
+        logger.info(f"yt-dlp failed for: {url}, trying gallery-dl")
         g_files, g_caption, g_error = await download_with_gallery_dl(url)
         files = g_files
         if not caption:
@@ -165,24 +174,35 @@ async def universal_download_handler(message: Message, command: CommandObject):
             error = g_error
 
     if files:
-        for i, file_path in enumerate(files):
+        media_group: list[MediaUnion] = []
+        audio_files: list[MediaUnion] = [] # pylance ругает на InputMediaAudio, но это нормально 
+        for file_path in files:
             suffix = file_path.suffix.lower()
             input_file = FSInputFile(file_path)
             if suffix in (".jpg", ".jpeg", ".png", ".webp"):
-                if i == 0:
-                    await message.reply_photo(input_file, caption=caption)
-                else:
-                    await message.reply_photo(input_file)
+                media_group.append(InputMediaPhoto(media=input_file))
             elif suffix in (".mp4", ".mov", ".mkv", ".webm"):
-                if i == 0:
-                    await message.reply_video(input_file, caption=caption)
-                else:
-                    await message.reply_video(input_file)
+                media_group.append(InputMediaVideo(media=input_file))
+            elif suffix in (".mp3", ".wav", ".ogg"):
+                audio_files.append(InputMediaAudio(media=input_file))
             else:
-                if i == 0:
-                    await message.reply_document(input_file, caption=caption)
-                else:
-                    await message.reply_document(input_file)
+                media_group.append(InputMediaDocument(media=input_file))
+
+        # Разбиваем на чанки по 10 медиа
+        for i in range(0, len(media_group), 10):
+            chunk = media_group[i : i + 10]
+            if i == 0 and caption:
+                await message.reply_media_group(media=chunk, caption=caption)
+            else:
+                await message.reply_media_group(media=chunk)
+
+        # Отправляем аудио файлы отдельно, так как ТЕЛЕГА не поддерживает их в медиа-группах
+        for i in range(0, len(audio_files), 10):
+            chunk = audio_files[i : i + 10]
+            if i == 0 and caption:
+                await message.reply_media_group(media=chunk, caption=caption)
+            else:
+                await message.reply_media_group(media=chunk)
 
         await status_message.delete()
     else:

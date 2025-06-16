@@ -2,7 +2,6 @@ import asyncio
 import re
 import traceback
 from pathlib import Path
-from typing import List, Tuple
 
 import telegramify_markdown
 from yt_dlp import YoutubeDL
@@ -21,7 +20,7 @@ def has_ip_in_url(url: str) -> bool:
 
 async def download_with_ytdlp(
     url: str, download_path: Path = DOWNLOADS_PATH
-) -> Tuple[List[Path], str | None, str | None]:
+) -> tuple[list[Path], str | None, str | None]:
     """Download media using yt-dlp and return downloaded file paths, title and error."""
     ydl_opts = {
         "outtmpl": str(download_path / "%(id)s.%(ext)s"),
@@ -30,15 +29,17 @@ async def download_with_ytdlp(
         "extractor_args": {"generic": ["impersonate=chrome"]},
     }
 
-    files: List[Path] = []
+    files: list[Path] = []
     title: str | None = None
     error: str | None = None
 
     def _download() -> None:
         nonlocal files, title, error, url
         with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            logger.info(info)
+            info: dict | None = ydl.extract_info(url, download=False)
+            if not info:
+                error = "❌ Failed to extract video information."
+                return
 
             duration = info.get("duration") or 0
             formats = info.get("formats", [])
@@ -64,10 +65,13 @@ async def download_with_ytdlp(
             for fmt in candidates:
                 size = estimate_size(fmt)
                 logger.info(f"Format: {fmt}, Estimated size: {size} bytes")
-                if 0 < size <= MAX_SIZE_BYTES and fmt.get("height") >= 720:
+                if 0 < size <= MAX_SIZE_BYTES and fmt.get("height") >= 480: # Чтобы скачивал только видео с высотой от 480p
                     format_selector = f"bestvideo[height={fmt['height']}][ext=mp4]+bestaudio/best"
                     ydl.params["format"] = format_selector
-                    downloaded = ydl.extract_info(url, download=True)
+                    downloaded: dict | None = ydl.extract_info(url, download=True)
+                    if not downloaded:
+                        error = "❌ Failed to download the video."
+                        return
                     title = downloaded.get("title")
                     entries = downloaded["entries"] if "entries" in downloaded else [downloaded]
                     for entry in entries:
@@ -77,11 +81,23 @@ async def download_with_ytdlp(
             # Если ни один формат не прошел по весу
             title = info.get("title", "Video")
             lines = [f"*❌ File too large to download\\. Available formats:*\n{title}\n"]
+            
+            # То мы собираем информацию о всех форматах и выбираем лучший по битрейту на каждом разрешении по высоте
+            best_bitrate_on_resolutions = dict()
             for f in candidates:
-                format_id = f.get("format_id", "")
-                resolution = f.get("resolution", f.get("height", "Unknown"))
-                url = f.get("url", "")
                 size_est = estimate_size(f)
+                height = int(f.get("height", 0))
+                best_bitrate_on_resolutions[height] = max(best_bitrate_on_resolutions.get(height, 0), size_est)
+
+            # Формируем список с информацией о лучших форматах
+            for f in candidates:
+                size_est = estimate_size(f)
+                height = int(f.get("height", 0))
+                if size_est != best_bitrate_on_resolutions.get(height, 0):
+                    continue
+                format_id = f.get("format_id", "")
+                resolution = f.get("resolution", str(height) + "p")
+                url = f.get("url", "")
                 size_mb = round(size_est / (1024 * 1024), 2) if size_est else "?"
                 lines.append(f"{format_id} - {resolution} (~{size_mb} MB): [Link]({url})")
 
