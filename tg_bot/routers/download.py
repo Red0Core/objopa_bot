@@ -6,10 +6,10 @@ from aiogram import Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import (
     FSInputFile,
+    InputMediaAudio,
+    InputMediaDocument,
     InputMediaPhoto,
     InputMediaVideo,
-    InputMediaDocument,
-    InputMediaAudio,
     MediaUnion,
     Message,
 )
@@ -80,12 +80,12 @@ async def process_instagram(message: Message, url: str) -> None:
 
         caption_arr = split_message_by_paragraphs(caption or "")
         if len(images) > 1:
-            await send_images_in_chunks(message, images, caption_arr[0])
+            await send_images_in_chunks(message, images, caption_arr[0] if caption_arr else None)
             for part in caption_arr[1:]:
                 await message.reply(part)
         elif len(images) == 1:
             replied_photo = await message.reply_photo(
-                FSInputFile(images[0]), caption=caption_arr[0]
+                FSInputFile(images[0]), caption=caption_arr[0] if caption_arr else None
             )
             for part in caption_arr[1:]:
                 await replied_photo.reply(part)
@@ -132,13 +132,13 @@ async def universal_download_handler(message: Message, command: CommandObject):
         caption_arr = split_message_by_paragraphs(tw_caption or "")
         if img_files:
             if len(img_files) > 1:
-                await send_images_in_chunks(message, img_files, caption_arr[0])
+                await send_images_in_chunks(message, img_files, caption_arr[0] if caption_arr else None)
                 for part in caption_arr[1:]:
                     await message.reply(part, parse_mode="MarkdownV2")
             else:
                 replied = await message.reply_photo(
                     FSInputFile(img_files[0]),
-                    caption=caption_arr[0],
+                    caption=caption_arr[0] if caption_arr else None,
                     parse_mode="MarkdownV2",
                 )
                 for part in caption_arr[1:]:
@@ -162,8 +162,7 @@ async def universal_download_handler(message: Message, command: CommandObject):
     status_message = await message.answer("⏳ Загружаю медиа...")
 
     files, caption, error = await download_with_ytdlp(url)
-    if not files and \
-        (error is not None and "available formats" not in error.lower()):
+    if not files and (error is not None and "available formats" not in error.lower()):
         # Если yt-dlp не смог скачать, пробуем gallery-dl
         logger.info(f"yt-dlp failed for: {url}, trying gallery-dl")
         g_files, g_caption, g_error = await download_with_gallery_dl(url)
@@ -175,7 +174,7 @@ async def universal_download_handler(message: Message, command: CommandObject):
 
     if files:
         media_group: list[MediaUnion] = []
-        audio_files: list[MediaUnion] = [] # pylance ругает на InputMediaAudio, но это нормально 
+        audio_files: list[MediaUnion] = []  # pylance ругает на InputMediaAudio, но это нормально
         for file_path in files:
             suffix = file_path.suffix.lower()
             input_file = FSInputFile(file_path)
