@@ -13,6 +13,7 @@ from aiogram.types import (
     MediaUnion,
     Message,
 )
+import telegramify_markdown
 
 from core.config import DOWNLOADS_PATH
 from core.logger import logger
@@ -93,6 +94,7 @@ async def process_instagram(message: Message, url: str) -> None:
         await status_message.delete()
     else:
         await status_message.edit_text(error if error else "❌ Не удалось загрузить медиа.")
+    return error
 
 
 @router.message(Command("insta"))
@@ -119,9 +121,10 @@ async def universal_download_handler(message: Message, command: CommandObject):
     url = command.args.strip()
 
     if INSTAGRAM_REGEX.match(url):
-        await process_instagram(message, url)
+        error_inst = await process_instagram(message, url)
         logger.info(f"Instagram media downloaded from: {url}")
-        return
+        if not error_inst:
+            return
 
     if TWITTER_REGEX.match(url):
         logger.info(f"Twitter media download requested for: {url}")
@@ -206,5 +209,6 @@ async def universal_download_handler(message: Message, command: CommandObject):
         await status_message.delete()
     else:
         await status_message.edit_text(
-            error if error else "❌ Не удалось скачать медиа.", parse_mode="MarkdownV2"
+            telegramify_markdown.markdownify(error)
+                if error else "❌ Не удалось скачать медиа.", parse_mode="MarkdownV2"
         )
