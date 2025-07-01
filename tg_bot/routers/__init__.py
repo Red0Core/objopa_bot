@@ -11,6 +11,7 @@ from .misc import router as commands_router
 from .redis_workers_routers import router as redis_workers_router
 from .utils import router as utils_router
 from .video_generation_pipeline import video_router
+from .user_agent_management import router as user_agent_management_router
 
 
 def setup_routers(dp: Dispatcher):
@@ -25,5 +26,6 @@ def setup_routers(dp: Dispatcher):
         redis_workers_router,
         video_router,
         download_router,
+        user_agent_management_router,
         gpt_msg_router,  # Всегда в конце
     )

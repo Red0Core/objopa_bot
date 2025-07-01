@@ -7,6 +7,7 @@ from .twitter import (
     set_csrf_token,
 )
 from .ytdlp import download_with_ytdlp
+from .downloader_manager import downloader_manager, DownloadResult, DownloaderType
 
 __all__ = [
     "INSTAGRAM_REGEX",
@@ -17,4 +18,7 @@ __all__ = [
     "set_csrf_token",
     "download_with_ytdlp",
     "download_with_gallery_dl",
+    "downloader_manager",
+    "DownloadResult",
+    "DownloaderType",
 ]

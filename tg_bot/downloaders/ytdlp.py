@@ -90,13 +90,13 @@ async def download_with_ytdlp(
             
             # То мы собираем информацию о всех форматах и выбираем лучший по битрейту на каждом разрешении по высоте
             best_bitrate_on_resolutions = dict()
-            for f in candidates:
+            for f in video_formats:
                 size_est = estimate_size(f)
                 height = int(f.get("height", 0))
                 best_bitrate_on_resolutions[height] = max(best_bitrate_on_resolutions.get(height, 0), size_est)
 
             # Формируем список с информацией о лучших форматах
-            for f in candidates:
+            for f in video_formats:
                 size_est = estimate_size(f)
                 height = int(f.get("height", 0))
                 if size_est != best_bitrate_on_resolutions.get(height, 0):

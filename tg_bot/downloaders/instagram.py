@@ -1,5 +1,4 @@
 import asyncio
-import os
 import re
 from pathlib import Path
 
@@ -7,8 +6,8 @@ import instaloader
 from curl_cffi.requests import AsyncSession
 
 from core.config import DOWNLOADS_PATH
-from core.config import STORAGE_PATH as STORAGE_DIR
 from core.logger import logger
+from tg_bot.services.instagram_ua_service import instagram_ua_service
 
 INSTAGRAM_REGEX = re.compile(
     r"(https?:\/\/(?:www\.)?instagram\.com\/(?:share\/)?(p|reel|tv|stories)\/[\w\-]+)"
@@ -19,60 +18,102 @@ async def get_instagram_shortcode(url: str) -> str | None:
     """
     Определяет shortcode поста Instagram (редиректим сразу).
     """
+    # Импортируем сервис внутри функции для избежания циклических импортов
+    try:
+        user_agent = await instagram_ua_service.get_user_agent()
+        logger.debug(f"Using User-Agent: {user_agent[:50]}...")
+    except Exception as e:
+        logger.warning(f"Failed to get dynamic User-Agent: {e}, using fallback")
+        user_agent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36"
+    
     async with AsyncSession() as session:
         try:
-            response = await session.get(url, allow_redirects=True, impersonate="chrome")  # type: ignore
-            final_url = response.url  # Итоговый URL
+            headers = {
+                "User-Agent": user_agent,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Encoding": "gzip, deflate, br",
+                "DNT": "1",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+            }
+            
+            response = await session.get(
+                url, 
+                allow_redirects=True, 
+                impersonate="chrome", 
+                headers=headers,
+                timeout=10
+            )  # type: ignore
+            
+            final_url = str(response.url)  # Итоговый URL
             match = re.search(r"/(p|reel|tv)/([\w-]+)", final_url)
             if match:
-                return match.group(2)
+                shortcode = match.group(2)
+                logger.info(f"Extracted shortcode: {shortcode}")
+                return shortcode
 
         except Exception as e:
-            print(f"Ошибка при редиректе: {e}")
+            logger.error(f"Ошибка при редиректе Instagram URL: {e}")
             return None
 
     return None  # Shortcode не найден
 
 
-# Имя пользователя для сессии
-INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME")
-
-
-def init_instaloader():
-    """Инициализация Instaloader с авторизацией"""
-    user_agent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36"
-    bot_loader = instaloader.Instaloader(
-        filename_pattern="{shortcode}", iphone_support=False, user_agent=user_agent
-    )
-
+async def init_instaloader():
+    """Инициализация Instaloader с динамическим User-Agent"""
     try:
-        if INSTAGRAM_USERNAME:
-            bot_loader.load_session_from_file(
-                INSTAGRAM_USERNAME,
-                str((STORAGE_DIR / "session" / f"session-{INSTAGRAM_USERNAME}").absolute()),
-            )
-            logger.success("✅ Успешная авторизация в Instagram.")
-        else:
-            raise ValueError("Не указаны имя пользователя и пароль Instagram.")
-    except FileNotFoundError:
-        logger.error("⚠️ Файл сессии не найден. Будут загружены только открытые посты.")
+        user_agent = await instagram_ua_service.get_user_agent()
+        logger.info(f"Initializing Instaloader with UA: {user_agent[:50]}...")
+    except Exception as e:
+        logger.warning(f"Failed to get dynamic User-Agent for Instaloader: {e}, using fallback")
+        user_agent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36"
+    
+    bot_loader = instaloader.Instaloader(
+        filename_pattern="{shortcode}", 
+        iphone_support=False, 
+        user_agent=user_agent,
+        quiet=True,  # Убираем лишние выводы
+        download_pictures=True,
+        download_videos=True,
+        download_video_thumbnails=False,
+        download_geotags=False,
+        download_comments=False,
+        save_metadata=False
+    )
 
     return bot_loader
 
 
-# Создаём Instaloader сессию при старте
-INSTALOADER_SESSION = init_instaloader()
+# Кэш для Instaloader инстанса
+_instaloader_session = None
+
+
+async def get_instaloader_session():
+    """Получает или создает инстанс Instaloader."""
+    global _instaloader_session
+    if _instaloader_session is None:
+        _instaloader_session = await init_instaloader()
+    return _instaloader_session
+
+
+async def reset_instaloader_session():
+    """Сбрасывает кэш Instaloader для пересоздания с новым User-Agent."""
+    global _instaloader_session
+    _instaloader_session = None
+    logger.info("Instagram loader cache reset")
 
 
 async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
     """Асинхронно загружает посты Instagram (фото, видео, текст)
     и возвращает shortcode и ошибку, если есть."""
-    bot_loader = INSTALOADER_SESSION
     try:
         shortcode = await get_instagram_shortcode(url)
         if not shortcode:
             return None, "❌ Ошибка: Не удалось извлечь shortcode из ссылки."
 
+        bot_loader = await get_instaloader_session()
+        
         post = await asyncio.to_thread(
             instaloader.Post.from_shortcode, bot_loader.context, shortcode
         )
@@ -81,13 +122,20 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
         return shortcode, None
 
     except instaloader.exceptions.LoginRequiredException:
-        return None, "❌ Ошибка: Требуется вход в Instagram. Сессия устарела."
+        return None, "❌ Ошибка: Требуется авторизация в Instagram для этого контента."
 
-    except instaloader.exceptions.ConnectionException:
-        return None, "❌ Ошибка: Проблемы с соединением. Проверьте интернет или VPN."
-
-    except instaloader.exceptions.BadResponseException:
-        return None, "❌ Ошибка: Instagram заблокировал доступ. Попробуйте позже."
+    except (instaloader.exceptions.BadResponseException, instaloader.exceptions.ConnectionException):
+        # При плохом ответе пытаемся обновить User-Agent и пересоздать сессию
+        try:
+            # Получаем новый User-Agent (будет автоматически взят из Redis)
+            await instagram_ua_service.get_user_agent()
+            global _instaloader_session
+            _instaloader_session = None  # Сбрасываем кэш для пересоздания с новым UA
+            logger.warning("Instagram blocked access, refreshed User-Agent and reset cache...")
+        except Exception as e:
+            logger.error(f"Failed to refresh User-Agent: {e}")
+        
+        return None, "❌ Ошибка: Instagram заблокировал доступ. Попробуйте обновить User-Agent командой /ua_set"
 
     except Exception as e:
         return None, f"❌ Ошибка: {e}"
