@@ -8,7 +8,7 @@ import telegramify_markdown
 from curl_cffi.requests import AsyncSession
 from redis.asyncio import Redis
 
-from core.config import DOWNLOADS_PATH
+from core.config import DOWNLOADS_DIR
 from core.logger import logger
 from core.redis_client import get_redis
 
@@ -314,7 +314,7 @@ async def ensure_tokens() -> None:
 
 
 async def download_twitter_media(
-    url: str, download_path: Path = DOWNLOADS_PATH
+    url: str, download_path: Path = DOWNLOADS_DIR
 ) -> Tuple[List[Path], List[Path], str | None, str | None]:
     """Download images and videos from a tweet via GraphQL."""
     download_path.mkdir(exist_ok=True)

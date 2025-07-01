@@ -91,8 +91,8 @@ class DownloaderManager:
                 shortcode, error = await download_instagram_media(url)
                 
                 if shortcode and not error:
-                    from core.config import DOWNLOADS_PATH
-                    files = sorted([f for f in DOWNLOADS_PATH.iterdir() 
+                    from core.config import DOWNLOADS_DIR
+                    files = sorted([f for f in DOWNLOADS_DIR.iterdir() 
                                   if f.name.startswith(shortcode)])
                     
                     # Извлекаем caption из txt файла

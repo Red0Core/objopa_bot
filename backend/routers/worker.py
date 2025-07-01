@@ -29,7 +29,7 @@ from backend.models.workers import (
     VideoGenerationPromptItem,
 )
 from core.config import (
-    DOWNLOADS_PATH,
+    DOWNLOADS_DIR,
     TWITTER_COOKIES_TOKEN,
     UPLOAD_DIR,
     UPLOAD_VIDEO_DIR,
@@ -201,7 +201,7 @@ FILE_EXPIRY_SET = "expired_files"
 VIDEO_EXPIRY_SET = "expired_videos"
 DEFAULT_EXPIRY = timedelta(days=1)
 VIDEO_EXPIRY = timedelta(days=7)
-DOWNLOADS_DIR = DOWNLOADS_PATH
+DOWNLOADS_DIR = DOWNLOADS_DIR
 
 
 @router.post("/upload", response_model=FileUploadResponse)

@@ -5,7 +5,7 @@ import httpx
 
 import tg_bot.redis_workers.base_notifications as base_notifications
 import tg_bot.routers.day_tracker as day_tracker
-from core.config import BACKEND_ROUTE, DOWNLOADS_PATH, MAIN_ACC, OBZHORA_CHAT_ID
+from core.config import BACKEND_ROUTE, DOWNLOADS_DIR, MAIN_ACC, OBZHORA_CHAT_ID
 from core.logger import logger
 from tg_bot.redis_workers import image_selection
 from tg_bot.services.horoscope_mail_ru import get_horoscope_mail_ru
@@ -79,7 +79,7 @@ async def send_daily_tracker_messages(bot):
 @daily_schedule(hour=3, minute=0)
 async def cleanup_downloads(bot):
     removed = 0
-    for file in DOWNLOADS_PATH.glob("*"):
+    for file in DOWNLOADS_DIR.glob("*"):
         if file.is_file():
             try:
                 file.unlink()

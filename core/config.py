@@ -24,22 +24,22 @@ BACKEND_ROUTE = get_required_env("BACKEND_ROUTE")
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 # objopa_ecosystem/
-STORAGE_PATH: Path = BASE_DIR / "storage"
-STORAGE_PATH.mkdir(parents=True, exist_ok=True)
-UPLOAD_DIR = STORAGE_PATH / "image_generation_uploads"
+STORAGE_DIR: Path = BASE_DIR / "storage"
+STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR = STORAGE_DIR / "image_generation_uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-UPLOAD_VIDEO_DIR = STORAGE_PATH / "video_generation_uploads"
+UPLOAD_VIDEO_DIR = STORAGE_DIR / "video_generation_uploads"
 UPLOAD_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 WORKER_ARCHIVES_DIR = UPLOAD_DIR / "worker_archives"
 WORKER_ARCHIVES_DIR.mkdir(parents=True, exist_ok=True)
-DOWNLOADS_PATH = BASE_DIR / "downloads"
-DOWNLOADS_PATH.mkdir(parents=True, exist_ok=True)
+DOWNLOADS_DIR = BASE_DIR / "downloads"
+DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 TOKEN_BOT = get_required_env("TOKEN_BOT")
 OBZHORA_CHAT_ID = get_required_env("OBZHORA_CHAT_ID")  # Используется в личных целях
 ZA_IDEU_CHAT_ID = get_required_env("ZA_IDEU_CHAT_ID")  # Используется в личных целях
 MAIN_ACC = get_required_env("MAIN_ACC")  # Используется для проверки запуска бота
-MEXC_JSON_FILE = STORAGE_PATH / "mexc_activities.json"
+MEXC_JSON_FILE = STORAGE_DIR / "mexc_activities.json"
 
 GIFS_ID = {
     "Салам дай брад": "CgACAgIAAxkBAAMLZ14AAaOekJCeA-Nct3-QfFBf2YTsAAKjPgACMqoRShjIMCPEyv2zNgQ",
@@ -54,6 +54,7 @@ WOLFRAMALPHA_TOKEN = get_required_env("WOLFRAMALPHA_TOKEN")
 ALPHAVANTAGE_API_KEY = get_required_env("ALPHAVANTAGE_API_KEY")
 COINMARKETCAP_API_KEY = get_required_env("COINMARKETCAP_API_KEY")
 TWITTER_COOKIES_TOKEN = get_required_env("TWITTER_COOKIES_TOKEN")
+INSTAGRAM_USERNAME = get_required_env("INSTAGRAM_USERNAME")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))

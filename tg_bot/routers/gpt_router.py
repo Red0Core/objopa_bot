@@ -3,7 +3,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from core.config import GEMINI_API_KEY, STORAGE_PATH
+from core.config import GEMINI_API_KEY, STORAGE_DIR
 from core.logger import logger
 from tg_bot.services.gpt import (
     AIModelError,
@@ -21,7 +21,7 @@ from .mention_dice import AI_CLIENT
 
 router = Router()
 
-WHITELIST_PATH = STORAGE_PATH / "whitelist_gpt.json"
+WHITELIST_PATH = STORAGE_DIR / "whitelist_gpt.json"
 
 
 def load_whitelist(file_path=WHITELIST_PATH):

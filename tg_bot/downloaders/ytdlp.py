@@ -6,7 +6,7 @@ from pathlib import Path
 import telegramify_markdown
 from yt_dlp import YoutubeDL
 
-from core.config import DOWNLOADS_PATH
+from core.config import DOWNLOADS_DIR
 from core.logger import logger
 
 MAX_SIZE_MB = 50
@@ -19,7 +19,7 @@ def has_ip_in_url(url: str) -> bool:
 
 
 async def download_with_ytdlp(
-    url: str, download_path: Path = DOWNLOADS_PATH
+    url: str, download_path: Path = DOWNLOADS_DIR
 ) -> tuple[list[Path], str | None, str | None]:
     """Download media using yt-dlp and return downloaded file paths, title and error."""
     ydl_opts = {

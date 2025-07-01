@@ -8,13 +8,13 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from core.config import STORAGE_PATH
+from core.config import STORAGE_DIR
 from tg_bot.services.gpt import get_gpt_formatted_chunks
 
 from .mention_dice import AI_CLIENT
 
 track_router = Router()
-TRACK_FILE = STORAGE_PATH / "trackers.json"
+TRACK_FILE = STORAGE_DIR / "trackers.json"
 
 
 # ===== Хранилище =====

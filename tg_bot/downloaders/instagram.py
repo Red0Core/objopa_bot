@@ -5,7 +5,7 @@ from pathlib import Path
 import instaloader
 from curl_cffi.requests import AsyncSession
 
-from core.config import DOWNLOADS_PATH
+from core.config import DOWNLOADS_DIR, STORAGE_DIR, INSTAGRAM_USERNAME
 from core.logger import logger
 from tg_bot.services.instagram_ua_service import instagram_ua_service
 
@@ -82,6 +82,25 @@ async def init_instaloader():
         save_metadata=False
     )
 
+    try:
+        if INSTAGRAM_USERNAME:
+            bot_loader.load_session_from_file(
+                INSTAGRAM_USERNAME,
+                str((STORAGE_DIR / "session" / f"session-{INSTAGRAM_USERNAME}").absolute()),
+            )
+            username = bot_loader.test_login()  # Проверяем, что сессия валидна
+            if username:
+                logger.success(f"Instaloader session loaded for user: {username}")
+            else:
+                logger.warning("⚠️ Не удалось загрузить сессию Instagram. Проверьте правильность имени пользователя. Пересоздайте сессию.")
+        else:
+            raise ValueError("Не указаны имя пользователя Instagram для загрузки сессии.")
+    except FileNotFoundError:
+        logger.error("⚠️ Файл сессии не найден. Будут загружены только открытые посты.")
+    except KeyError:
+        logger.error("⚠️ Ошибка при загрузке сессии. Проверьте правильность имени пользователя и наличие файла сессии.")
+    except Exception as e:
+        logger.exception(f"Неизвестная ошибка при загрузке сессии: {e}")
     return bot_loader
 
 
@@ -117,7 +136,7 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
         post = await asyncio.to_thread(
             instaloader.Post.from_shortcode, bot_loader.context, shortcode
         )
-        await asyncio.to_thread(bot_loader.download_post, post, DOWNLOADS_PATH)
+        await asyncio.to_thread(bot_loader.download_post, post, DOWNLOADS_DIR)
 
         return shortcode, None
 
@@ -141,11 +160,11 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
         return None, f"❌ Ошибка: {e}"
 
 
-DOWNLOADS_PATH.mkdir(exist_ok=True)
+DOWNLOADS_DIR.mkdir(exist_ok=True)
 
 
 async def select_instagram_media(
-    shortcode: str, download_path: Path = DOWNLOADS_PATH
+    shortcode: str, download_path: Path = DOWNLOADS_DIR
 ) -> dict[str, list[Path] | str]:
     """
     Определяет, какие файлы скачал Instaloader, и выбирает нужный формат для отправки.

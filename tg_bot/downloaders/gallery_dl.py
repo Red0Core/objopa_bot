@@ -5,12 +5,12 @@ import subprocess
 from pathlib import Path
 from typing import List, Tuple
 
-from core.config import DOWNLOADS_PATH
+from core.config import DOWNLOADS_DIR
 from core.logger import logger
 
 
 async def download_with_gallery_dl(
-    url: str, download_path: Path = DOWNLOADS_PATH
+    url: str, download_path: Path = DOWNLOADS_DIR
 ) -> Tuple[List[Path], str | None, str | None]:
     """Download media using gallery-dl and return file paths, title and error."""
     download_path.mkdir(exist_ok=True)

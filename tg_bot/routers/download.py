@@ -15,7 +15,7 @@ from aiogram.types import (
 )
 import telegramify_markdown
 
-from core.config import DOWNLOADS_PATH
+from core.config import DOWNLOADS_DIR
 from core.logger import logger
 from tg_bot.downloaders import (
     INSTAGRAM_REGEX,
@@ -363,9 +363,9 @@ async def downloader_status_handler(message: Message):
             status_report += f"• gallery-dl: ❌ {str(e)}\n"
         
         # Проверяем папку загрузок
-        from core.config import DOWNLOADS_PATH
-        if DOWNLOADS_PATH.exists():
-            files_count = len(list(DOWNLOADS_PATH.iterdir()))
+        from core.config import DOWNLOADS_DIR
+        if DOWNLOADS_DIR.exists():
+            files_count = len(list(DOWNLOADS_DIR.iterdir()))
             status_report += f"\n📁 **Папка загрузок:** ✅ Доступна ({files_count} файлов)\n"
         else:
             status_report += "\n📁 **Папка загрузок:** ❌ Не найдена\n"
