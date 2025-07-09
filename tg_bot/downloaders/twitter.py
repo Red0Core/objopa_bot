@@ -294,8 +294,6 @@ async def login_and_get_tokens(username: str, password: str) -> tuple[str, str] 
 
 async def ensure_tokens() -> None:
     global AUTH_TOKEN, CSRF_TOKEN
-    if AUTH_TOKEN and CSRF_TOKEN:
-        return
     await _load_tokens_from_redis()
     if AUTH_TOKEN and CSRF_TOKEN:
         return

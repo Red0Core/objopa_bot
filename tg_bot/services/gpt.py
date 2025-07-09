@@ -301,7 +301,7 @@ class OpenRouterModel(BaseOpenAIModel):
 class GeminiModel(AIModelInterface):
     """Модель Google Gemini."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash-exp"):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash-preview-05-20"):
         if not api_key:
             raise APIKeyError("API ключ для Gemini не может быть пустым")
 
