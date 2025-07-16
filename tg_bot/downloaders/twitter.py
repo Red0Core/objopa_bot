@@ -81,6 +81,7 @@ TWITTER_FEATURES = {
     "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
     "responsive_web_graphql_timeline_navigation_enabled": True,
     "responsive_web_enhance_cards_enabled": False,
+    "responsive_web_grok_community_note_auto_translation_is_enabled": False,
 }
 
 TWITTER_FIELD_TOGGLES = {
