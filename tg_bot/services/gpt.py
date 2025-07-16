@@ -1,3 +1,5 @@
+import asyncio
+import time
 from abc import ABC, abstractmethod
 from calendar import c
 from dataclasses import dataclass
@@ -332,6 +334,31 @@ class GeminiFile:
                     logger.warning(f"Could not reliably determine MIME type for {self.file_path}. Using 'application/octet-stream'.")
                     self.mime_type = 'application/octet-stream' # Fallback to generic binary
 
+async def wait_for_file_active(client: genai.Client, file_obj: types.File) -> types.File:
+    """Ожидает, пока файл Gemini перейдет в состояние ACTIVE."""
+    start_time = time.time()
+    # Максимальное время ожидания для файла (например, 5 минут для больших видео)
+    # Можно настроить в зависимости от ожидаемых размеров файлов.
+    MAX_WAIT_TIME_SECONDS = 5 * 60 
+    POLLING_INTERVAL_SECONDS = 5 # Интервал между проверками
+
+    logger.info(f"Ожидание активации файла Gemini: {file_obj.name} (URI: {file_obj.uri})")
+
+    while file_obj.state.name == 'PROCESSING':
+        if time.time() - start_time > MAX_WAIT_TIME_SECONDS:
+            logger.error(f"Время ожидания активации файла {file_obj.name} истекло.")
+            raise TimeoutError(f"Файл {file_obj.name} не перешел в ACTIVE состояние за {MAX_WAIT_TIME_SECONDS} секунд.")
+        
+        await asyncio.sleep(POLLING_INTERVAL_SECONDS)
+        file_obj = await client.aio.files.get(name=file_obj.name) # Повторно получаем статус файла
+
+    if file_obj.state.name != 'ACTIVE':
+        logger.error(f"Файл {file_obj.name} перешел в состояние: {file_obj.state.name}, но не ACTIVE.")
+        raise ValueError(f"Файл {file_obj.name} не активен. Текущее состояние: {file_obj.state.name}")
+    
+    logger.info(f"Файл Gemini {file_obj.name} успешно активирован за {time.time() - start_time:.2f} секунд.")
+    return file_obj
+
 class GeminiModel(AIModelInterface):
     """Модель Google Gemini."""
 
@@ -370,6 +397,7 @@ class GeminiModel(AIModelInterface):
                 config_params["system_instruction"] = system_prompt
 
             if self.files_to_upload:
+                uploaded_files = []
                 for gemini_file in self.files_to_upload:
                     try:
                         # Загружаем файл, используя file_path и mime_type из объекта GeminiFile
@@ -378,14 +406,18 @@ class GeminiModel(AIModelInterface):
                             file=gemini_file.file_path,
                             config=types.UploadFileConfig(mime_type=gemini_file.mime_type if gemini_file.mime_type != 'application/octet-stream' else None)
                         )
-                        contents.append(uploaded_file)
+                        # Добавляем загруженный файл в список содержимого
+                        uploaded_files.append(uploaded_file)
                         # Добавляем путь в список для удаления ТОЛЬКО после успешной загрузки в Gemini
                         files_to_delete_locally.append(gemini_file.file_path)
                     except Exception as upload_e:
                         logger.error(f"Ошибка загрузки файла {gemini_file.file_path} в Gemini File API: {upload_e}")
                         # Если загрузка не удалась, файл останется локально для возможной отладки
                         continue
-                self.files_to_upload.clear() # Очищаем список объектов GeminiFile
+                contents.extend(
+                    await asyncio.gather(*[wait_for_file_active(self.client, file) for file in uploaded_files])
+                )
+                self.files_to_upload.clear()  # Очищаем список объектов GeminiFile
 
             # Выполняем запрос к Gemini API
             response = await self.client.aio.models.generate_content(
@@ -487,6 +519,7 @@ class GeminiChatModel(AIChatInterface):
                 message_parts.append(types.Part.from_text(text=prompt))
 
             if self.files_to_upload:
+                uploaded_files = []
                 for gemini_file in self.files_to_upload:
                     try:
                         # Асинхронно загружаем файл, используя file_path и mime_type из объекта GeminiFile
@@ -494,13 +527,18 @@ class GeminiChatModel(AIChatInterface):
                             file=gemini_file.file_path,
                             config=types.UploadFileConfig(mime_type=gemini_file.mime_type if gemini_file.mime_type != 'application/octet-stream' else None)
                         )
-                        message_parts.append(uploaded_file)
+                        uploaded_files.append(uploaded_file)
                         # Добавляем путь в список для удаления ТОЛЬКО после успешной загрузки в Gemini
                         files_to_delete_locally.append(gemini_file.file_path)
                     except Exception as upload_e:
                         logger.error(f"Ошибка загрузки файла {gemini_file.file_path} в Gemini File API: {upload_e}")
                         # Если загрузка не удалась, файл останется локально
                         continue
+                
+                message_parts.extend(
+                    await asyncio.gather(*[wait_for_file_active(self.client, file) for file in uploaded_files])
+                )
+
                 self.files_to_upload.clear() # Очищаем список объектов GeminiFile
 
             # Выполняем запрос к Gemini API
