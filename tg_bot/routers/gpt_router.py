@@ -156,13 +156,13 @@ async def start_session(message: Message):
     chat_id = message.chat.id
     chat_manager = ChatSessionManager()
 
-    if not chat_manager.get_chat(chat_id):
+    if not await chat_manager.get_chat(chat_id):
         chat_model = GeminiChatModel(api_key=GEMINI_API_KEY)
         text_input = message.text.split(maxsplit=1) if message.text else ""
         system_prompt = text_input[1] if len(text_input) > 1 else ""
         
         chat_model.new_chat(system_prompt)
-        chat_manager.create_chat(chat_id, chat_model)
+        await chat_manager.create_chat(chat_id, chat_model)
 
         await message.answer(
             "Чат создан! Можете начать общение.\n"
@@ -184,7 +184,7 @@ async def handle_gpt_chat(message: Message):
         return
 
     chat_manager = ChatSessionManager()
-    chat_session = chat_manager.get_chat(chat_id)
+    chat_session = await chat_manager.get_chat(chat_id)
     chat_session = cast(GeminiChatModel, chat_session)
 
     if not chat_session:
@@ -323,7 +323,7 @@ async def add_user_to_whitelist(message: Message):
     if message.chat.id not in whitelist:
         whitelist[message.chat.id] = {}
     whitelist[message.chat.id][message.from_user.id] = custom_name
-    save_whitelist(whitelist)
+    await save_whitelist(whitelist)
     await message.reply(
         f"Пользователь '{custom_name}' (ID: {message.from_user.id}) добавлен в белый список."
     )
