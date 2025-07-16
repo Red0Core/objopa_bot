@@ -5,7 +5,7 @@ from pathlib import Path
 import instaloader
 from curl_cffi.requests import AsyncSession
 
-from core.config import DOWNLOADS_DIR, STORAGE_DIR, INSTAGRAM_USERNAME
+from core.config import DOWNLOADS_DIR, STORAGE_DIR, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
 from core.logger import logger
 from tg_bot.services.instagram_ua_service import instagram_ua_service
 
@@ -84,25 +84,42 @@ async def init_instaloader():
 
     try:
         if INSTAGRAM_USERNAME:
-            bot_loader.load_session_from_file(
-                INSTAGRAM_USERNAME,
-                str((STORAGE_DIR / "session" / f"session-{INSTAGRAM_USERNAME}").absolute()),
-            )
-            username = bot_loader.test_login()  # Проверяем, что сессия валидна
-            if username:
-                logger.success(f"Instaloader session loaded for user: {username}")
-            else:
-                logger.warning("⚠️ Не удалось загрузить сессию Instagram. Проверьте правильность имени пользователя. Пересоздайте сессию.")
-        else:
-            raise ValueError("Не указаны имя пользователя Instagram для загрузки сессии.")
-    except FileNotFoundError:
-        logger.error("⚠️ Файл сессии не найден. Будут загружены только открытые посты.")
-    except KeyError:
-        logger.error("⚠️ Ошибка при загрузке сессии. Проверьте правильность имени пользователя и наличие файла сессии.")
-    except Exception as e:
-        logger.exception(f"Неизвестная ошибка при загрузке сессии: {e}")
-    return bot_loader
+            session_loaded = False
+            try:
+                bot_loader.load_session_from_file(
+                    INSTAGRAM_USERNAME,
+                    str((STORAGE_DIR / "session" / f"session-{INSTAGRAM_USERNAME}").absolute()),
+                )
+                if bot_loader.test_login():
+                    logger.success(f"Instaloader session loaded for user: {INSTAGRAM_USERNAME}")
+                    session_loaded = True
+                else:
+                    logger.warning("⚠️ Session from file is invalid.")
+            except FileNotFoundError:
+                logger.warning("⚠️ Session file not found. Attempting login with password.")
+            except KeyError:
+                logger.warning("⚠️ Session file is corrupted or missing required data. Attempting login with password.")
 
+            if not session_loaded and INSTAGRAM_PASSWORD:
+                logger.info(f"Attempting to log in as {INSTAGRAM_USERNAME}...")
+                bot_loader.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
+                if bot_loader.test_login():
+                    logger.success(f"Successfully logged in as {INSTAGRAM_USERNAME}")
+                    # Сохраняем сессию для будущих запусков
+                    bot_loader.save_session_to_file(
+                        str((STORAGE_DIR / "session" / f"session-{INSTAGRAM_USERNAME}").absolute())
+                    )
+                else:
+                    logger.error("❌ Login failed with username/password. Check credentials.")
+            elif not session_loaded:
+                logger.warning("⚠️ No password provided. Only public posts can be downloaded.")
+        else:
+            logger.info("No Instagram username provided. Only public posts can be downloaded.")
+            
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred during Instaloader session setup: {e}")
+        
+    return bot_loader
 
 # Кэш для Instaloader инстанса
 _instaloader_session = None
