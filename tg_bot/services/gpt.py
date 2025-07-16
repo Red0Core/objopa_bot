@@ -301,7 +301,7 @@ class OpenRouterModel(BaseOpenAIModel):
 class GeminiModel(AIModelInterface):
     """Модель Google Gemini."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash-preview-05-20"):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
         if not api_key:
             raise APIKeyError("API ключ для Gemini не может быть пустым")
 
@@ -316,6 +316,10 @@ class GeminiModel(AIModelInterface):
 
         try:
             config_params = {}
+
+            google_search_tool = Tool(google_search=GoogleSearch())
+            config_params["tools"] = [google_search_tool]
+
             if system_prompt:
                 config_params["system_instruction"] = system_prompt
 
@@ -363,7 +367,7 @@ class GeminiModel(AIModelInterface):
 class GeminiChatModel(AIChatInterface):
     """Чат-модель Google Gemini."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash-exp"):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
         if not api_key:
             raise APIKeyError("API ключ для Gemini Chat не может быть пустым")
 
