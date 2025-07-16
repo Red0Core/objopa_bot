@@ -1,4 +1,8 @@
 from abc import ABC, abstractmethod
+from calendar import c
+from dataclasses import dataclass
+from pathlib import Path
+import mimetypes
 
 import openai
 import telegramify_markdown
@@ -297,6 +301,36 @@ class OpenRouterModel(BaseOpenAIModel):
     def __init__(self, api_key: str, model: str = "google/gemini-2.0-flash-exp:free"):
         super().__init__(api_key, model, "https://openrouter.ai/api/v1")
 
+@dataclass
+class GeminiFile:
+    """Класс для представления файла в Gemini."""
+    file_path: Path
+    mime_type: str | None = None
+
+    def __post_init__(self):
+        if not self.file_path.exists():
+            raise FileNotFoundError(f"Файл {self.file_path} не найден")
+
+        if self.mime_type is None:
+            # Пытаемся угадать MIME-тип на основе расширения файла
+            guessed_mime, _ = mimetypes.guess_type(str(self.file_path))
+            if guessed_mime:
+                self.mime_type = guessed_mime
+                logger.debug(f"Guessed MIME type for {self.file_path}: {self.mime_type}")
+            else:
+                # Специальные случаи для текстовых файлов без стандартных расширений,
+                # или если угадать не удалось. Gemini может принимать некоторые text/* MIME-типы.
+                if self.file_path.suffix.lower() == '.txt':
+                    self.mime_type = 'text/plain'
+                elif self.file_path.suffix.lower() == '.md':
+                    self.mime_type = 'text/markdown'
+                elif self.file_path.suffix.lower() == '.html':
+                    self.mime_type = 'text/html'
+                elif self.file_path.suffix.lower() == '.xml':
+                    self.mime_type = 'text/xml'
+                else:
+                    logger.warning(f"Could not reliably determine MIME type for {self.file_path}. Using 'application/octet-stream'.")
+                    self.mime_type = 'application/octet-stream' # Fallback to generic binary
 
 class GeminiModel(AIModelInterface):
     """Модель Google Gemini."""
@@ -308,13 +342,25 @@ class GeminiModel(AIModelInterface):
         self.api_key = api_key
         self.model = model
         self.client = genai.Client(api_key=api_key)
+        self.files_to_upload: list[GeminiFile] = []
+
+    def add_file(self, gemini_file: GeminiFile) -> None:
+        """Добавляет файл для использования в запросах к Gemini."""
+        self.files_to_upload.append(gemini_file)
 
     async def get_response(self, prompt: str, system_prompt: str = "") -> str:
         """Получает ответ от Gemini."""
-        if not prompt.strip():
+        if not prompt.strip() and not self.files_to_upload:
             return ""
 
+        # Список путей к локальным файлам, которые нужно удалить после попытки загрузки в Gemini API
+        files_to_delete_locally: list[Path] = [] 
+
         try:
+            contents: types.ContentListUnion = []
+            if prompt.strip():
+                contents.append(types.Part.from_text(text=prompt))
+
             config_params = {}
 
             google_search_tool = Tool(google_search=GoogleSearch())
@@ -323,9 +369,28 @@ class GeminiModel(AIModelInterface):
             if system_prompt:
                 config_params["system_instruction"] = system_prompt
 
+            if self.files_to_upload:
+                for gemini_file in self.files_to_upload:
+                    try:
+                        # Загружаем файл, используя file_path и mime_type из объекта GeminiFile
+                        # Передаем mime_type=None, если он 'application/octet-stream', чтобы Gemini сам определил
+                        uploaded_file = await self.client.aio.files.upload(
+                            file=gemini_file.file_path,
+                            config=types.UploadFileConfig(mime_type=gemini_file.mime_type if gemini_file.mime_type != 'application/octet-stream' else None)
+                        )
+                        contents.append(uploaded_file)
+                        # Добавляем путь в список для удаления ТОЛЬКО после успешной загрузки в Gemini
+                        files_to_delete_locally.append(gemini_file.file_path)
+                    except Exception as upload_e:
+                        logger.error(f"Ошибка загрузки файла {gemini_file.file_path} в Gemini File API: {upload_e}")
+                        # Если загрузка не удалась, файл останется локально для возможной отладки
+                        continue
+                self.files_to_upload.clear() # Очищаем список объектов GeminiFile
+
+            # Выполняем запрос к Gemini API
             response = await self.client.aio.models.generate_content(
                 model=self.model,
-                contents=prompt,
+                contents=contents,
                 config=types.GenerateContentConfig(**config_params),
             )
 
@@ -338,6 +403,13 @@ class GeminiModel(AIModelInterface):
         except Exception as e:
             logger.error(f"Ошибка при запросе к Gemini: {e}")
             raise UnexpectedResponseError(f"Ошибка Gemini: {e}") from e
+        finally:
+            # Удаляем локальные временные файлы, которые были успешно загружены в Gemini API
+            for local_path in files_to_delete_locally:
+                if local_path.exists():
+                    local_path.unlink(missing_ok=True)
+                    logger.info(f"Deleted temporary local file after successful upload to Gemini File API: {local_path}")
+
 
     def _is_valid_response(self, response) -> bool:
         """Проверяет валидность ответа."""
@@ -353,12 +425,9 @@ class GeminiModel(AIModelInterface):
         result_parts = []
 
         for part in response.candidates[0].content.parts:
-            if not part.text:
-                continue
-
-            if hasattr(part, "thought") and part.thought:
-                logger.debug(f"Gemini thought: {part.text}")
-            else:
+            if hasattr(part, "function_call") and part.function_call:
+                logger.debug(f"Gemini function_call: {part.function_call}")
+            elif hasattr(part, "text") and part.text:
                 result_parts.append(part.text)
 
         return "".join(result_parts)
@@ -374,6 +443,11 @@ class GeminiChatModel(AIChatInterface):
         self.client = genai.Client(api_key=api_key)
         self.model = model
         self.chat = None
+        self.files_to_upload: list[GeminiFile] = []
+
+    def add_file(self, gemini_file: GeminiFile) -> None:
+        """Добавляет файл для использования в следующем сообщении к Gemini Chat."""
+        self.files_to_upload.append(gemini_file)
 
     def new_chat(self, system_prompt: str = "") -> None:
         """Создает новый чат."""
@@ -397,17 +471,49 @@ class GeminiChatModel(AIChatInterface):
             raise AIModelError(f"Не удалось создать чат: {e}") from e
 
     async def send_message(self, prompt: str) -> str:
-        """Отправляет сообщение в чат."""
+        """Отправляет сообщение в чат, включая добавленные файлы."""
         if not self.chat:
             raise AIModelError("Чат не инициализирован. Вызовите new_chat() сначала.")
 
-        if not prompt.strip():
+        if not prompt.strip() and not self.files_to_upload:
             return ""
 
+        # Список путей к локальным файлам, которые нужно удалить после попытки загрузки в Gemini API
+        files_to_delete_locally: list[Path] = []
+
         try:
-            response = await self.chat.send_message(prompt)
+            message_parts: list[types.PartUnionDict] = []
+            if prompt.strip():
+                message_parts.append(types.Part.from_text(text=prompt))
+
+            if self.files_to_upload:
+                for gemini_file in self.files_to_upload:
+                    try:
+                        # Асинхронно загружаем файл, используя file_path и mime_type из объекта GeminiFile
+                        uploaded_file = await self.client.aio.files.upload(
+                            file=gemini_file.file_path,
+                            config=types.UploadFileConfig(mime_type=gemini_file.mime_type if gemini_file.mime_type != 'application/octet-stream' else None)
+                        )
+                        message_parts.append(uploaded_file)
+                        # Добавляем путь в список для удаления ТОЛЬКО после успешной загрузки в Gemini
+                        files_to_delete_locally.append(gemini_file.file_path)
+                    except Exception as upload_e:
+                        logger.error(f"Ошибка загрузки файла {gemini_file.file_path} в Gemini File API: {upload_e}")
+                        # Если загрузка не удалась, файл останется локально
+                        continue
+                self.files_to_upload.clear() # Очищаем список объектов GeminiFile
+
+            # Выполняем запрос к Gemini API
+            response = await self.chat.send_message(message_parts)
+
             return response.text if response and response.text else ""
 
         except Exception as e:
             logger.error(f"Ошибка отправки сообщения в Gemini чат: {e}")
             raise UnexpectedResponseError(f"Ошибка чата Gemini: {e}") from e
+        finally:
+            # Удаляем локальные временные файлы, которые были успешно загружены в Gemini API
+            for local_path in files_to_delete_locally:
+                if local_path.exists():
+                    local_path.unlink(missing_ok=True)
+                    logger.info(f"Deleted temporary local file after successful upload to Gemini File API: {local_path}")

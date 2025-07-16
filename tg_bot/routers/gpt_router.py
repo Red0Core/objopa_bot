@@ -1,7 +1,11 @@
+from typing import cast
 import ujson
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import Message
+import tempfile
+from pathlib import Path
+import aiofiles
 
 from core.config import GEMINI_API_KEY, STORAGE_DIR
 from core.logger import logger
@@ -9,6 +13,8 @@ from tg_bot.services.gpt import (
     AIModelError,
     APIKeyError,
     GeminiChatModel,
+    GeminiFile,
+    GeminiModel,
     QuotaExceededError,
     RateLimitError,
     UnexpectedResponseError,
@@ -16,8 +22,6 @@ from tg_bot.services.gpt import (
 )
 from tg_bot.services.gptchat_manager import ChatSessionManager
 from tg_bot.services.pastebin import upload_to_pastebin
-
-from .mention_dice import AI_CLIENT
 
 router = Router()
 
@@ -32,28 +36,104 @@ def load_whitelist(file_path=WHITELIST_PATH):
         return {}
 
 
-def save_whitelist(data, file_path=WHITELIST_PATH):
-    with open(file_path, "w") as file:
-        ujson.dump(data, file, indent=4)
+async def save_whitelist(data, file_path=WHITELIST_PATH):
+    async with aiofiles.open(file_path, "w") as file:
+        await file.write(ujson.dumps(data, indent=4))
 
 
 whitelist = load_whitelist()
 
+# --- Поддерживаемые MIME-типы (вынесены для удобства) ---
+SUPPORTED_MIMES = {
+    "document": ["text/plain", "application/pdf"],
+    "photo": ["image/jpeg", "image/png", "image/webp"],
+    "audio": ["audio/aac", "audio/flac", "audio/mp3", "audio/m4a", "audio/mpeg", "audio/mpga", "audio/mp4", "audio/opus", "audio/pcm", "audio/wav", "audio/webm"],
+    "video": ["video/x-flv", "video/quicktime", "video/mpeg", "video/mpegps", "video/mpg", "video/mp4", "video/webm", "video/wmv", "video/3gpp", "video/avi"]
+}
 
+# --- Хендлер для команды /ask ---
 @router.message(Command("ask"))
 async def handle_ask_gpt(message: Message):
+    # Список для хранения объектов GeminiFile, которые будут скачаны и добавлены в модель.
+    # Файлы будут удалены локально методом get_response после попытки загрузки в Gemini File API.
+    gemini_files_to_add: list[GeminiFile] = []
+    prompt_text: str = "" 
+    AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY)
+
     try:
-        if message.text:
-            text_input = message.text.split(maxsplit=1)
-            if len(text_input) < 2:
-                await message.answer("Использование: /ask <ваш вопрос>")
+        # 1. Извлекаем текстовый промпт из аргумента команды /ask
+        if message.text and len(message.text.split(maxsplit=1)) > 1:
+            prompt_text = message.text.split(maxsplit=1)[1].strip()
+
+        # 2. Определяем, откуда брать файл: из ответа на сообщение или из самого сообщения
+        source_message = message.reply_to_message if message.reply_to_message else message
+        
+        file_obj_to_download = None
+        current_file_mime_type: str | None = None
+
+        # 3. Проверяем наличие и тип прикрепленного файла в source_message
+        if source_message.document:
+            file_obj_to_download = source_message.document
+            current_file_mime_type = file_obj_to_download.mime_type
+            if current_file_mime_type not in SUPPORTED_MIMES["document"]:
+                await message.answer(f"Извините, для /ask я поддерживаю только текстовые (.txt) и PDF (.pdf) файлы. Тип файла: {current_file_mime_type}.")
                 return
-            # Генерируем объяснение через OpenAI API
-            text = await AI_CLIENT.get_response(
-                text_input[1],
-            )
-            for i in get_gpt_formatted_chunks(text):
-                await message.answer(i, parse_mode="MarkdownV2")
+        elif source_message.photo:
+            file_obj_to_download = source_message.photo[-1] # Берем самую большую версию фото
+            current_file_mime_type = "image/jpeg" # Примерный MIME-тип для фото
+        elif source_message.audio:
+            file_obj_to_download = source_message.audio
+            current_file_mime_type = file_obj_to_download.mime_type
+            if current_file_mime_type not in SUPPORTED_MIMES["audio"]:
+                await message.answer(f"Извините, для /ask я поддерживаю только определенные аудиоформаты. Тип файла: {current_file_mime_type}.")
+                return
+        elif source_message.video:
+            file_obj_to_download = source_message.video
+            current_file_mime_type = file_obj_to_download.mime_type
+            if current_file_mime_type not in SUPPORTED_MIMES["video"]:
+                await message.answer(f"Извините, для /ask я поддерживаю только определенные видеоформаты. Тип файла: {current_file_mime_type}.")
+                return
+
+        # 4. Если файл найден, скачиваем его и подготавливаем для Gemini
+        if file_obj_to_download:
+            # Создаем временный файл для сохранения документа
+            with tempfile.NamedTemporaryFile(delete=False, dir=STORAGE_DIR) as temp_file:
+                temp_file_path = Path(temp_file.name)
+            
+            await message.bot.download(file_obj_to_download, destination=temp_file_path)
+            gemini_files_to_add.append(GeminiFile(file_path=temp_file_path, mime_type=current_file_mime_type))
+            logger.info(f"Downloaded file for /ask: {temp_file_path} (MIME: {current_file_mime_type})")
+            
+            # Если явный текстовый промпт не был задан, формируем его по умолчанию
+            if not prompt_text:
+                if source_message.photo:
+                    prompt_text = "Проанализируй это изображение."
+                elif source_message.audio:
+                    prompt_text = "Проанализируй этот аудиофайл."
+                elif source_message.video:
+                    prompt_text = "Проанализируй это видео."
+                elif source_message.document:
+                    prompt_text = "Проанализируй этот документ."
+                else: # Fallback
+                    prompt_text = "Проанализируй прикрепленный файл."
+        
+        # 5. Финальная проверка: есть ли что-либо для отправки в модель?
+        if not prompt_text and not gemini_files_to_add:
+            await message.answer("Использование: /ask <ваш вопрос> или ответьте на документ/фото/аудио/видео с /ask <ваш вопрос>")
+            return
+
+        # 6. Добавляем все собранные файлы в AI_CLIENT (GeminiModel instance)
+        for g_file in gemini_files_to_add:
+            AI_CLIENT.add_file(g_file)
+
+        # 7. Получаем ответ от AI_CLIENT
+        edit_message = await message.answer("Анализирую... Пожалуйста, подождите.")
+        response_text = await AI_CLIENT.get_response(prompt_text)
+
+        # 8. Отправляем ответ пользователю
+        for chunk in get_gpt_formatted_chunks(response_text):
+            await edit_message.edit_text(chunk, parse_mode="MarkdownV2")
+
     except APIKeyError:
         await message.answer("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
     except RateLimitError:
@@ -64,8 +144,13 @@ async def handle_ask_gpt(message: Message):
         await message.answer("Ошибка: Непредвиденный ответ от модели. Попробуйте позже.")
     except AIModelError as e:
         await message.answer(f"Ошибка: {str(e)}")
+    except Exception as e:
+        logger.exception("Произошла непредвиденная ошибка в handle_ask_gpt:")
+        await message.answer(f"Произошла непредвиденная ошибка: {e}")
+    # ! Блок `finally` для удаления файлов здесь не нужен, так как удаление происходит в GeminiModel.get_response !
 
 
+# --- Хендлер для команды /chat ---
 @router.message(Command("chat"))
 async def start_session(message: Message):
     chat_id = message.chat.id
@@ -74,80 +159,165 @@ async def start_session(message: Message):
     if not chat_manager.get_chat(chat_id):
         chat_model = GeminiChatModel(api_key=GEMINI_API_KEY)
         text_input = message.text.split(maxsplit=1) if message.text else ""
-        if len(text_input) > 1:
-            chat_model.new_chat(text_input[1])
-        else:
-            chat_model.new_chat()
+        system_prompt = text_input[1] if len(text_input) > 1 else ""
+        
+        chat_model.new_chat(system_prompt)
         chat_manager.create_chat(chat_id, chat_model)
 
         await message.answer(
             "Чат создан! Можете начать общение.\n"
-            "Сессия автоматически удаляется через час после безыиспользования\n"
+            "Сессия автоматически удаляется через час после безыспользования\n"
             "Вы можете добавить системный промпт после '/chat'"
         )
     else:
         await message.answer("Вы уже в чате. Продолжайте диалог.")
 
 
-@router.message()
+# --- Хендлер для обработки сообщений в чате (текст, документы, фото, аудио, видео) ---
+@router.message(F.text | F.document | F.photo | F.audio | F.video)
 async def handle_gpt_chat(message: Message):
-    text = message.text
+    text_content = message.text
     chat_id = message.chat.id
     from_user = message.from_user
 
-    # Пропускаем команды
-    if not text or text.startswith("/") or not from_user:
+    if text_content and text_content.startswith("/"):
         return
 
-    # Разрешить только ответы на сообщения от бота
-    if (
-        message.reply_to_message
-        and message.reply_to_message.from_user
-        and message.bot
-        and message.reply_to_message.from_user.id != message.bot.id
-    ):
-        return
-
-    # Проверяем: есть ли активная сессия?
     chat_manager = ChatSessionManager()
     chat_session = chat_manager.get_chat(chat_id)
+    chat_session = cast(GeminiChatModel, chat_session)
 
     if not chat_session:
-        # Нет активной сессии — не обрабатываем
+        await message.answer("Пожалуйста, начните чат с помощью команды /chat.")
         return
 
-    # --- Обработка whitelist'а ---
-    ids = whitelist.get(message.chat.id, {})
-    user_name = ids.get(
-        from_user.id,
-        f"{from_user.first_name} {from_user.last_name or ''}",
-    )
-
-    logger.info(f"GPT ответ для {user_name} в чате {chat_id} ({from_user.username})")
-
-    is_pastebin = text.strip().endswith("pastebin")
-    prompt_text = text.replace("pastebin", "").strip()
-
+    # Список для хранения объектов GeminiFile, скачанных из ТЕКУЩЕГО сообщения Telegram.
+    # Эти файлы будут добавлены в files_to_upload модели, а затем удалены самой моделью.
+    current_message_gemini_files: list[GeminiFile] = []
+    
     try:
-        response = await chat_session.send_message(f"{user_name}: {prompt_text}")
+        file_obj_to_download = None
+        current_file_mime_type: str | None = None
 
-        if is_pastebin:
-            paste_link = await upload_to_pastebin(response)
-            await message.answer(f"Ответ загружен: {paste_link}")
-        else:
-            for chunk in get_gpt_formatted_chunks(response):
-                await message.answer(chunk, parse_mode="MarkdownV2")
+        # Определяем и обрабатываем прикрепленные файлы из текущего сообщения
+        if message.document:
+            file_obj_to_download = message.document
+            current_file_mime_type = file_obj_to_download.mime_type
+            if current_file_mime_type not in SUPPORTED_MIMES["document"]:
+                await message.answer(f"Извините, я поддерживаю только текстовые (.txt) и PDF (.pdf) файлы для чата. Тип файла: {current_file_mime_type}.")
+                return
+        elif message.photo:
+            file_obj_to_download = message.photo[-1]
+            current_file_mime_type = "image/jpeg"
+        elif message.audio:
+            file_obj_to_download = message.audio
+            current_file_mime_type = file_obj_to_download.mime_type
+            if current_file_mime_type not in SUPPORTED_MIMES["audio"]:
+                await message.answer(f"Извините, я поддерживаю только определенные аудиоформаты для чата. Тип файла: {current_file_mime_type}.")
+                return
+        elif message.video:
+            file_obj_to_download = message.video
+            current_file_mime_type = file_obj_to_download.mime_type
+            if current_file_mime_type not in SUPPORTED_MIMES["video"]:
+                await message.answer(f"Извините, я поддерживаю только определенные видеоформаты для чата. Тип файла: {current_file_mime_type}.")
+                return
 
-    except Exception:
-        logger.exception("Ошибка при отправке в GPT:")
-        await message.answer("Произошла ошибка. Попробуйте позже.")
+        # Если файл обнаружен, скачиваем его
+        if file_obj_to_download:
+            with tempfile.NamedTemporaryFile(delete=False, dir=STORAGE_DIR) as temp_file:
+                temp_file_path = Path(temp_file.name)
+            
+            await message.bot.download(file_obj_to_download, destination=temp_file_path)
+            current_message_gemini_files.append(GeminiFile(file_path=temp_file_path, mime_type=current_file_mime_type))
+            logger.info(f"Downloaded file for chat: {temp_file_path} (MIME: {current_file_mime_type})")
+            
+            if not text_content and message.caption:
+                text_content = message.caption
+                logger.info(f"Using caption as prompt: {text_content}")
+
+        # Если нет ни текста, ни прикрепленных файлов в текущем сообщении, пропускаем
+        if not text_content and not current_message_gemini_files:
+            logger.debug(f"No text or files to process for chat_id {chat_id}. Skipping send.")
+            return
+
+        # Добавляем файлы из текущего сообщения в сессию чата.
+        # Они будут "ждать" отправки в Gemini, пока не придет текстовое сообщение.
+        for g_file in current_message_gemini_files:
+            chat_session.add_file(g_file)
+
+        # --- Ключевая логика для медиагрупп: отправляем сообщение в Gemini ТОЛЬКО при наличии текста ---
+        if text_content: # Если текущее сообщение содержит текст (или была подпись к медиа)
+            ids = whitelist.get(chat_id, {})
+            user_name = ids.get(
+                from_user.id,
+                f"{from_user.first_name} {from_user.last_name or ''}",
+            )
+
+            logger.info(f"GPT запрос от {user_name} в чате {chat_id} ({from_user.username})")
+
+            prompt_text_for_model = text_content.strip()
+
+            # Если после всех обработок промпт все еще пуст, но есть накопленные файлы в сессии,
+            # генерируем промпт по умолчанию (для сценария, когда пользователь сначала отправляет файлы,
+            # а потом пустое текстовое сообщение, чтобы "триггернуть" обработку)
+            if not prompt_text_for_model and chat_session.files_to_upload: 
+                if message.photo: prompt_text_for_model = "Проанализируй это изображение."
+                elif message.audio: prompt_text_for_model = "Проанализируй этот аудиофайл."
+                elif message.video: prompt_text_for_model = "Проанализируй это видео."
+                elif message.document: prompt_text_for_model = "Проанализируй этот документ."
+                else: prompt_text_for_model = "Проанализируй прикрепленные файлы."
+
+            # Финальная проверка: если промпт все еще пуст И нет файлов, которые ждут отправки,
+            # то нечего отправлять в Gemini.
+            if not prompt_text_for_model and not chat_session.files_to_upload:
+                await message.answer("Пожалуйста, введите текст или прикрепите файл для отправки.")
+                return
+
+            is_pastebin = prompt_text_for_model.endswith("pastebin")
+            if is_pastebin:
+                prompt_text_for_model = prompt_text_for_model[:-len("pastebin")].strip()
+            
+            final_prompt_for_model = f"{user_name}: {prompt_text_for_model}"
+
+            edit_message = await message.answer("Обрабатываю... Пожалуйста, подождите.")
+            response = await chat_session.send_message(final_prompt_for_model)
+
+            if is_pastebin:
+                paste_link = await upload_to_pastebin(response)
+                await edit_message.edit_text(f"Ответ загружен: {paste_link}")
+            else:
+                for chunk in get_gpt_formatted_chunks(response):
+                    await edit_message.edit_text(chunk, parse_mode="MarkdownV2")
+        else: # Если текущее сообщение не содержит текста (только файлы, например, часть медиагруппы)
+            if current_message_gemini_files:
+                await message.answer(
+                    "Файл(ы) получены. Отправьте текстовое сообщение, чтобы обработать их.",
+                    reply_to_message_id=message.message_id
+                )
+            return
+
+    except APIKeyError:
+        await message.answer("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
+    except RateLimitError:
+        await message.answer("Ошибка: Превышен лимит запросов. Попробуйте позже.")
+    except QuotaExceededError:
+        await message.answer("Ошибка: Превышена квота использования API.")
+    except UnexpectedResponseError:
+        await message.answer("Ошибка: Непредвиденный ответ от модели. Попробуйте позже.")
+    except AIModelError as e:
+        await message.answer(f"Ошибка: {str(e)}")
+    except Exception as e:
+        logger.exception("Произошла непредвиденная ошибка при отправке сообщения в GPT чат:")
+        await message.answer(f"Произошла непредвиденная ошибка: {e}")
+    # ! Блок `finally` для удаления файлов здесь не нужен, так как удаление происходит в GeminiChatModel.send_message !
 
 
+# --- Хендлер для команды /add_me_as ---
 @router.message(Command("add_me_as"))
 async def add_user_to_whitelist(message: Message):
     text_input = message.text.split(maxsplit=1) if message.text else ""
     if len(text_input) < 2 or not message.from_user:
-        await message.reply("Использование: /add_me_as  имя")
+        await message.reply("Использование: /add_me_as <имя>")
         return
     custom_name = text_input[1]
     if message.chat.id not in whitelist:
@@ -155,5 +325,5 @@ async def add_user_to_whitelist(message: Message):
     whitelist[message.chat.id][message.from_user.id] = custom_name
     save_whitelist(whitelist)
     await message.reply(
-        f"Пользователь {custom_name} (ID: {message.from_user.id}) добавлен в белый список."
+        f"Пользователь '{custom_name}' (ID: {message.from_user.id}) добавлен в белый список."
     )
