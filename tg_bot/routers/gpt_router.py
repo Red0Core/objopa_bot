@@ -57,17 +57,31 @@ async def handle_ask_gpt(message: Message):
     # Список для хранения объектов GeminiFile, которые будут скачаны и добавлены в модель.
     # Файлы будут удалены локально методом get_response после попытки загрузки в Gemini File API.
     gemini_files_to_add: list[GeminiFile] = []
-    prompt_text: str = "" 
+    ask_command_text: str = ""
     AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY)
 
     try:
         # 1. Извлекаем текстовый промпт из аргумента команды /ask
         if message.text and len(message.text.split(maxsplit=1)) > 1:
-            prompt_text = message.text.split(maxsplit=1)[1].strip()
+            ask_command_text = message.text.split(maxsplit=1)[1].strip()
 
         # 2. Определяем, откуда брать файл: из ответа на сообщение или из самого сообщения
         source_message = message.reply_to_message if message.reply_to_message else message
         
+        # 2.1. Если есть ответ на сообщение, добавляем его текст в контекст
+        replied_text = ""
+        if message.reply_to_message:
+            if message.reply_to_message.text:
+                replied_text = message.reply_to_message.text
+            elif message.reply_to_message.caption:
+                replied_text = message.reply_to_message.caption
+        
+        # Формируем итоговый промпт
+        final_prompt_text = ""
+        if replied_text:
+            final_prompt_text += f"Контекст из предыдущего сообщения:\n---\n{replied_text}\n---\n\n"
+        final_prompt_text += ask_command_text
+
         file_obj_to_download = None
         current_file_mime_type: str | None = None
 
@@ -105,20 +119,22 @@ async def handle_ask_gpt(message: Message):
             logger.info(f"Downloaded file for /ask: {temp_file_path} (MIME: {current_file_mime_type})")
             
             # Если явный текстовый промпт не был задан, формируем его по умолчанию
-            if not prompt_text:
+            if not ask_command_text:
+                default_prompt = ""
                 if source_message.photo:
-                    prompt_text = "Проанализируй это изображение."
+                    default_prompt = "Проанализируй это изображение."
                 elif source_message.audio:
-                    prompt_text = "Проанализируй этот аудиофайл."
+                    default_prompt = "Проанализируй этот аудиофайл."
                 elif source_message.video:
-                    prompt_text = "Проанализируй это видео."
+                    default_prompt = "Проанализируй это видео."
                 elif source_message.document:
-                    prompt_text = "Проанализируй этот документ."
+                    default_prompt = "Проанализируй этот документ."
                 else: # Fallback
-                    prompt_text = "Проанализируй прикрепленный файл."
-        
+                    default_prompt = "Проанализируй прикрепленный файл."
+                final_prompt_text += default_prompt
+
         # 5. Финальная проверка: есть ли что-либо для отправки в модель?
-        if not prompt_text and not gemini_files_to_add:
+        if not final_prompt_text.strip() and not gemini_files_to_add:
             await message.answer("Использование: /ask <ваш вопрос> или ответьте на документ/фото/аудио/видео с /ask <ваш вопрос>")
             return
 
@@ -128,7 +144,7 @@ async def handle_ask_gpt(message: Message):
 
         # 7. Получаем ответ от AI_CLIENT
         edit_message = await message.answer("Анализирую... Пожалуйста, подождите.")
-        response_text = await AI_CLIENT.get_response(prompt_text)
+        response_text = await AI_CLIENT.get_response(final_prompt_text.strip())
 
         # 8. Отправляем ответ пользователю
         for chunk in get_gpt_formatted_chunks(response_text):
@@ -255,12 +271,25 @@ async def handle_gpt_chat(message: Message):
 
             logger.info(f"GPT запрос от {user_name} в чате {chat_id} ({from_user.username})")
 
-            prompt_text_for_model = text_content.strip()
+            # 1. Извлекаем текст из сообщения, на которое отвечают
+            replied_text = ""
+            if message.reply_to_message:
+                if message.reply_to_message.text:
+                    replied_text = message.reply_to_message.text
+                elif message.reply_to_message.caption:
+                    replied_text = message.reply_to_message.caption
+            
+            # 2. Формируем итоговый промпт с учетом контекста из ответа
+            prompt_text_for_model = ""
+            if replied_text:
+                prompt_text_for_model += f"Контекст из предыдущего сообщения:\n---\n{replied_text}\n---\n\n"
+            
+            prompt_text_for_model += text_content.strip()
 
             # Если после всех обработок промпт все еще пуст, но есть накопленные файлы в сессии,
             # генерируем промпт по умолчанию (для сценария, когда пользователь сначала отправляет файлы,
             # а потом пустое текстовое сообщение, чтобы "триггернуть" обработку)
-            if not prompt_text_for_model and chat_session.files_to_upload: 
+            if not prompt_text_for_model.strip() and chat_session.files_to_upload: 
                 if message.photo: prompt_text_for_model = "Проанализируй это изображение."
                 elif message.audio: prompt_text_for_model = "Проанализируй этот аудиофайл."
                 elif message.video: prompt_text_for_model = "Проанализируй это видео."
@@ -269,7 +298,7 @@ async def handle_gpt_chat(message: Message):
 
             # Финальная проверка: если промпт все еще пуст И нет файлов, которые ждут отправки,
             # то нечего отправлять в Gemini.
-            if not prompt_text_for_model and not chat_session.files_to_upload:
+            if not prompt_text_for_model.strip() and not chat_session.files_to_upload:
                 await message.answer("Пожалуйста, введите текст или прикрепите файл для отправки.")
                 return
 
