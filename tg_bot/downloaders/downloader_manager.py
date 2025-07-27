@@ -4,7 +4,7 @@
 """
 import asyncio
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from dataclasses import dataclass
 from enum import Enum
 
@@ -58,7 +58,7 @@ class DownloaderManager:
         
         # Если это кастомная платформа и она не сработала - не пробуем другие методы
         if is_custom_platform:
-            logger.warning(f"Custom platform failed for {url}, not trying other methods")
+            logger.warning(f"Custom platform failed for {url}, not trying other methods - {custom_result}")
             return custom_result  # Возвращаем ошибку кастомного скачивателя
         
         # Попытка 2: yt-dlp для видео контента (только для не-кастомных платформ)
@@ -143,7 +143,7 @@ class DownloaderManager:
             success=False,
             files=[],
             caption=None,
-            error="Custom downloaders failed",
+            error='\n'.join(self.download_attempts),
             downloader_used=None
         )
     

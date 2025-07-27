@@ -37,17 +37,19 @@ async def get_instagram_shortcode(url: str) -> str | None:
                 "Connection": "keep-alive",
                 "Upgrade-Insecure-Requests": "1",
             }
-            
-            response = await session.get(
+            match = re.search(r"/(p|reel|tv)/([\w-]+)", url)
+            if not match:
+                logger.info(f"Current {url} doesn't have shortcode, redirect")
+                response = await session.get(
                 url, 
                 allow_redirects=True, 
                 impersonate="chrome", 
                 headers=headers,
                 timeout=10
-            )  # type: ignore
+                )  # type: ignore
             
-            final_url = str(response.url)  # Итоговый URL
-            match = re.search(r"/(p|reel|tv)/([\w-]+)", final_url)
+                final_url = str(response.url)  # Итоговый URL
+                match = re.search(r"/(p|reel|tv)/([\w-]+)", final_url)
             if match:
                 shortcode = match.group(2)
                 logger.info(f"Extracted shortcode: {shortcode}")
@@ -79,7 +81,8 @@ async def init_instaloader():
         download_video_thumbnails=False,
         download_geotags=False,
         download_comments=False,
-        save_metadata=False
+        save_metadata=False,
+        fatal_status_codes=[302,400,401,429,403]
     )
 
     try:
@@ -112,13 +115,15 @@ async def init_instaloader():
                 else:
                     logger.error("❌ Login failed with username/password. Check credentials.")
             elif not session_loaded:
-                logger.warning("⚠️ No password provided. Only public posts can be downloaded.")
+                logger.warning("No password provided. Only public posts can be downloaded.")
         else:
             logger.info("No Instagram username provided. Only public posts can be downloaded.")
             
+    except instaloader.exceptions.QueryReturnedBadRequestException as e:
+        if "checkpoint" in str(e):
+            logger.error("Инста забанила акк, надо разблочиться")
     except Exception as e:
         logger.exception(f"An unexpected error occurred during Instaloader session setup: {e}")
-        
     return bot_loader
 
 # Кэш для Instaloader инстанса
@@ -144,7 +149,7 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
     """Асинхронно загружает посты Instagram (фото, видео, текст)
     и возвращает shortcode и ошибку, если есть."""
     try:
-        shortcode = await get_instagram_shortcode(url)
+        shortcode: str | None = await get_instagram_shortcode(url)
         if not shortcode:
             return None, "❌ Ошибка: Не удалось извлечь shortcode из ссылки."
 
@@ -172,9 +177,15 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
             logger.error(f"Failed to refresh User-Agent: {e}")
         
         return None, "❌ Ошибка: Instagram заблокировал доступ. Попробуйте обновить User-Agent командой /ua_set"
+     
+    except instaloader.exceptions.QueryReturnedBadRequestException as e:
+        if "checkpoint" in str(e):
+            return None, "❌ Ошибка: Instagram забанил акк. Надо разблочить"
 
     except Exception as e:
         return None, f"❌ Ошибка: {e}"
+    
+    return None, f"Хз, ничего не скачалось. {url}"
 
 
 DOWNLOADS_DIR.mkdir(exist_ok=True)
