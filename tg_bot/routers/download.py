@@ -305,6 +305,7 @@ async def send_twitter_files(message: Message, files: list[Path], caption: str |
             await message.reply_video(
                 FSInputFile(optimized_video),
                 caption=video_caption,
+                supports_streaming=True
             )
             
             # Очищаем временные файлы
@@ -383,6 +384,7 @@ async def download_handler(message: Message, command: CommandObject):
                 elif suffix in (".mp4", ".mov", ".mkv", ".webm"):
                     await message.reply_video(
                         FSInputFile(first_file), 
+                        supports_streaming=True,
                         caption="🎥 Пример скачанного файла"
                     )
                 else:
@@ -540,6 +542,7 @@ async def video_test_handler(message: Message, command: CommandObject):
                 # Отправляем оптимизированное видео как пример
                 await message.reply_video(
                     FSInputFile(optimized_path),
+                    supports_streaming=True,
                     caption="🎬 Оптимизированное видео (для демонстрации)"
                 )
                 
