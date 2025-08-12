@@ -14,6 +14,7 @@ from aiogram.types import (
     MediaUnion,
     Message,
 )
+from aiogram.utils.media_group import MediaGroupBuilder
 import telegramify_markdown
 
 from core.config import DOWNLOADS_DIR
@@ -40,14 +41,12 @@ async def send_images_in_chunks(message: Message, images: list[Path], caption: s
 
     image_chunks = chunk_list(images, 10)
 
-    for i, chunk in enumerate(image_chunks):
-        media_group: list[MediaUnion] = [InputMediaPhoto(media=FSInputFile(img)) for img in chunk]
+    for chunk in image_chunks:
+        media_group = MediaGroupBuilder()
+        for idx, img in enumerate(chunk):
+            media_group.add_photo(media=FSInputFile(img), caption=caption if idx == 0 else None, parse_mode="MarkdownV2" if caption else None)
 
-        # Отправляем первый альбом с подписью, остальные без
-        if i == 0 and caption:
-            await message.reply_media_group(media=media_group, caption=caption)
-        else:
-            await message.reply_media_group(media=media_group)
+        await message.reply_media_group(media=media_group.build())
         await asyncio.sleep(5)
 
 
@@ -248,11 +247,10 @@ async def universal_download_handler(message: Message, command: CommandObject):
 
 async def send_downloaded_files(message: Message, files: list[Path], caption: str | None, downloader_used) -> None:
     """Отправляет скачанные файлы в Telegram."""
-    if not files:
+    if not files or (message.text is None):
         return
-    
     # Обработка для Twitter (если использовался кастомный скачиватель и есть изображения/видео раздельно)
-    if downloader_used == DownloaderType.CUSTOM and TWITTER_REGEX.match(message.text or ""):
+    if downloader_used == DownloaderType.CUSTOM and TWITTER_REGEX.match(message.text.removeprefix("/d ") or ""):
         await send_twitter_files(message, files, caption)
         return
     
@@ -278,21 +276,21 @@ async def send_twitter_files(message: Message, files: list[Path], caption: str |
     
     success = False
     caption_arr = split_message_by_paragraphs(caption or "")
-    
+
     # Отправляем изображения
     if images:
         if len(images) > 1:
             await send_images_in_chunks(message, images, caption_arr[0] if caption_arr else None)
             for part in caption_arr[1:]:
-                await message.reply(telegramify_markdown.markdownify(part), parse_mode="MarkdownV2")
+                await message.reply(part, parse_mode="MarkdownV2")
         else:
             replied = await message.reply_photo(
                 FSInputFile(images[0]),
-                caption=telegramify_markdown.markdownify(caption_arr[0]) if caption_arr else None,
+                caption=caption_arr[0] if caption_arr else None,
                 parse_mode="MarkdownV2",
             )
             for part in caption_arr[1:]:
-                await replied.reply(telegramify_markdown.markdownify(part), parse_mode="MarkdownV2")
+                await replied.reply(part, parse_mode="MarkdownV2")
         success = True
 
     # Отправляем видео с оптимизацией
@@ -301,7 +299,7 @@ async def send_twitter_files(message: Message, files: list[Path], caption: str |
             # Оптимизируем видео
             optimized_video = await optimize_video_if_needed(video)
             
-            video_caption = caption if not success and idx == 0 else None
+            video_caption = caption_arr[0] if not success and idx == 0 else None
             await message.reply_video(
                 FSInputFile(optimized_video),
                 caption=video_caption,
