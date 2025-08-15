@@ -107,7 +107,7 @@ def split_message_by_paragraphs(text: str, max_length: int = 4096) -> list[str]:
     
     # Используем существующую функцию или простое разбиение
     try:
-        return get_gpt_formatted_chunks(text)
+        return get_gpt_formatted_chunks(text, max_length=max_length)
     except:
         # Fallback: простое разбиение по символам
         chunks = []
@@ -125,6 +125,52 @@ def split_message_by_paragraphs(text: str, max_length: int = 4096) -> list[str]:
             chunks.append(current_chunk.strip())
             
         return chunks
+
+
+def _fallback_split(text: str, max_length: int) -> list[str]:
+    """Простое разбиение текста на чанки по строкам с учетом max_length."""
+    if not text:
+        return []
+    chunks: list[str] = []
+    current = ""
+    for line in text.split("\n"):
+        add = ("\n" if current else "") + line
+        if len(current) + len(add) <= max_length:
+            current += add
+        else:
+            if current:
+                chunks.append(current)
+            current = line
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def build_caption_chunks(text: str | None) -> list[str]:
+    """Строит подпись: первый чанк ≤1024, остальные ≤4096.
+
+    При ошибках форматтера использует простой fallback-алгоритм.
+    """
+    if not text:
+        return []
+    try:
+        if len(text) <= 1024:
+            return get_gpt_formatted_chunks(text, max_length=1024)
+        # Получаем первый чанк (≤1024)
+        first_parts = get_gpt_formatted_chunks(text, max_length=1024)
+        first_chunk = first_parts[0] if first_parts else text[:1024]
+        rest_text = text[len(first_chunk):]
+        # Остальные чанки (≤4096)
+        rest_chunks = get_gpt_formatted_chunks(rest_text, max_length=4096) if rest_text else []
+        return [first_chunk] + rest_chunks
+    except Exception:
+        # Fallback: безопасное разбиение без форматтера
+        if len(text) <= 1024:
+            return [text]
+        first_fallback = _fallback_split(text, 1024)
+        first_chunk = first_fallback[0] if first_fallback else text[:1024]
+        rest_text = text[len(first_chunk):]
+        return [first_chunk] + _fallback_split(rest_text, 4096)
 
 
 async def process_instagram(message: Message, url: str) -> bool:
@@ -150,14 +196,10 @@ async def process_instagram(message: Message, url: str) -> bool:
                 images.append(file_path)
             elif suffix in (".mp4", ".mov"):
                 videos.append(file_path)
-         
-        # Подготавливаем текст
-        caption_arr = []
-        if result.caption: 
-            if len(result.caption) > 1024:
-                caption_arr.append(telegramify_markdown.markdownify(result.caption[:1024]))
-            caption_arr.extend(get_gpt_formatted_chunks(result.caption[1024:] or ""))
         
+        # Подготавливаем текст: первый чанк ≤1024, остальные ≤4096
+        caption_arr = build_caption_chunks(result.caption)
+
         # Отправляем видео с оптимизацией
         if videos:
             success = await media_processor.process_and_send(
@@ -274,8 +316,8 @@ async def send_twitter_files(message: Message, files: list[Path], caption: str |
     images = [f for f in files if f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.webp')]
     videos = [f for f in files if f.suffix.lower() in ('.mp4', '.mov', '.mkv', '.webm')]
     
-    success = False
-    caption_arr = split_message_by_paragraphs(caption or "")
+    is_caption_sended = False
+    caption_arr = build_caption_chunks(caption or "")
 
     # Отправляем изображения
     if images:
@@ -291,15 +333,15 @@ async def send_twitter_files(message: Message, files: list[Path], caption: str |
             )
             for part in caption_arr[1:]:
                 await replied.reply(part, parse_mode="MarkdownV2")
-        success = True
+        is_caption_sended = True
 
     # Отправляем видео с оптимизацией
     if videos:
         for idx, video in enumerate(videos):
             # Оптимизируем видео
             optimized_video = await optimize_video_if_needed(video)
-            
-            video_caption = caption_arr[0] if not success and idx == 0 else None
+
+            video_caption = caption_arr[0] if not is_caption_sended and idx == len(videos) - 1 else None
             await message.reply_video(
                 FSInputFile(optimized_video),
                 caption=video_caption,
@@ -309,8 +351,10 @@ async def send_twitter_files(message: Message, files: list[Path], caption: str |
             # Очищаем временные файлы
             if optimized_video != video:
                 video_processor.cleanup_temp_files(video, optimized_video)
-                
-        success = True
+        if not is_caption_sended:
+            for part in caption_arr[1:]:
+                await message.reply(part, parse_mode="MarkdownV2")
+        is_caption_sended = True
 
 
 @router.message(Command("d_test"))
