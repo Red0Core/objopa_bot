@@ -203,7 +203,7 @@ async def handle_gpt_chat(message: Message):
     chat_session = await chat_manager.get_chat(chat_id)
     chat_session = cast(GeminiChatModel, chat_session)
 
-    if not chat_session:
+    if not chat_session and message.chat.type == "private":
         await message.answer("Пожалуйста, начните чат с помощью команды /chat.")
         return
 
