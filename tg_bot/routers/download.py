@@ -155,7 +155,7 @@ async def process_instagram(message: Message, url: str) -> bool:
         caption_arr = []
         if result.caption: 
             if len(result.caption) > 1024:
-                caption_arr.append(result.caption[:1024])
+                caption_arr.append(telegramify_markdown.markdownify(result.caption[:1024]))
             caption_arr.extend(get_gpt_formatted_chunks(result.caption[1024:] or ""))
         
         # Отправляем видео с оптимизацией
