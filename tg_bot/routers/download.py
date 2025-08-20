@@ -355,6 +355,11 @@ async def send_twitter_files(message: Message, files: list[Path], caption: str |
             for part in caption_arr[1:]:
                 await message.reply(part, parse_mode="MarkdownV2")
         is_caption_sended = True
+    
+    # Отправляем текст твита, если нет медиа файлов
+    if not images and not videos and caption_arr:
+        for part in caption_arr:
+            await message.reply(part, parse_mode="MarkdownV2")
 
 
 @router.message(Command("d_test"))

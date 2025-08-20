@@ -554,7 +554,7 @@ async def download_twitter_media(
                     await resolver.invalidate()
                     spec = await resolver.get_spec(session, html)
                     if not spec:
-                        return [], [], None, "Не удалось обновить параметры GraphQL"
+                        return [], [], None, "Не удалось обновить параметры GraphQL (auth token failed, guest token failed)"
                     params["features"] = json.dumps(spec.features, separators=(",", ":"))
                     params["fieldToggles"] = json.dumps(spec.field_toggles, separators=(",", ":"))
                     data, guest_err = await fetch(spec, False)
@@ -562,15 +562,18 @@ async def download_twitter_media(
                         logger.error(f"Guest request failed after refresh: {guest_err}")
                         set_auth_token(None)
                         set_csrf_token(None)
-                        return [], [], None, "Ошибка доступа к Twitter. Обновите токены"
+                        return [], [], None, "Ошибка доступа к Twitter (auth token failed, guest token failed). Обновите токены"
                     used_guest = True
                 else:
                     logger.error(f"Guest request failed: {guest_err}")
                     set_auth_token(None)
                     set_csrf_token(None)
-                    return [], [], None, "Ошибка доступа к Twitter. Обновите токены"
+                    return [], [], None, "Ошибка доступа к Twitter (auth token failed, guest token failed). Обновите токены"
             else:
                 used_guest = True
+        else:
+            # Auth token worked
+            logger.info("Используем auth token")
 
         if used_guest:
             logger.info("Используем guest token")
@@ -579,7 +582,8 @@ async def download_twitter_media(
         result = data["data"]["tweetResult"]["result"]
         result = result.get("tweet", result)
     except Exception:
-        return [], [], None, "Некорректный ответ Twitter"
+        token_info = "(guest token)" if used_guest else "(auth token)"
+        return [], [], None, f"Некорректный ответ Twitter {token_info}"
 
     # If no media on the main node, try quoted/retweeted nodes
     def pick_media_node(node: dict) -> dict:

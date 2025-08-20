@@ -133,6 +133,18 @@ class DownloaderManager:
                         downloader_used=DownloaderType.CUSTOM
                     )
                 
+                # Если есть только текст без медиа, но скачивание "успешное"
+                if caption and not error:
+                    self.download_attempts.append("Twitter: Text-only tweet")
+                    
+                    return DownloadResult(
+                        success=True,
+                        files=[],
+                        caption=caption,
+                        error=None,
+                        downloader_used=DownloaderType.CUSTOM
+                    )
+                
                 self.download_attempts.append(f"Twitter: {error or 'No media found'}")
         
         except Exception as e:
