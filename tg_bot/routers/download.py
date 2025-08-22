@@ -277,10 +277,14 @@ async def universal_download_handler(message: Message, command: CommandObject):
             return
 
         # Обрабатываем скачанные файлы
-        await send_downloaded_files(message, result.files, result.caption, result.downloader_used)
+        if not result.files and result.caption:
+            logger.info(f"Downloaded media has no files but has caption")
+            for part in get_gpt_formatted_chunks(result.caption):
+                await message.reply(part, parse_mode="MarkdownV2")
+        else:
+            logger.info(f"Media downloaded successfully using {result.downloader_used.value if result.downloader_used else 'unknown'} from: {url}")
+            await send_downloaded_files(message, result.files, result.caption, result.downloader_used)
         await status_message.delete()
-        
-        logger.info(f"Media downloaded successfully using {result.downloader_used.value if result.downloader_used else 'unknown'} from: {url}")
         
     except Exception as e:
         logger.error(f"Error in universal download handler: {e}")
