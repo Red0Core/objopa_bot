@@ -1,56 +1,49 @@
-# === Параметры окружения ===
-VENV_DIR ?= ./venv_objopa
-UV       ?= uv
-PYTHON   := $(VENV_DIR)/bin/python
-TMUX     ?= tmux
+# === Параметры ===
+UV      ?= uv
+VENV    ?= .venv
+TMUX    ?= tmux
 
-# Сети/порты
-HOST ?= 127.0.0.1
-PORT ?= 8888
+HOST    ?= 127.0.0.1
+PORT    ?= 8888
 
-# Названия tmux-сессий
 BOT_SESSION := objopa-bot
 API_SESSION := objopa-api
 
-.PHONY: all install sync dev prod lock upgrade-lock run-bot run-api clean reset \
-        restart-bot restart-api stop-bot stop-api logs-bot logs-api shell
+.PHONY: all init sync dev prod lock upgrade-lock run-bot run-api \
+        restart-bot restart-api stop-bot stop-api logs-bot logs-api \
+        shell clean reset help
 
-# По умолчанию — установка зависимостей
-all: install
+# По умолчанию — установка зависимостей (dev)
+all: init sync
 
-# 1) Создать venv (если нет) и накатить зависимости по pyproject.toml + uv.lock
-install: sync
+## Создать проектное окружение .venv под Python 3.13 (один раз)
+init:
+	@echo "🐍 Creating project venv ($(VENV))..."
+	$(UV) venv $(VENV) --python 3.13
 
-# Полная синхронизация (дев-окружение, с dev-группами)
+## Синхронизация зависимостей для разработки (с dev-группами)
 sync:
-	@echo "📦 Creating venv and syncing dependencies (dev)..."
-	$(UV) venv $(VENV_DIR) --python=3.13
-	. $(VENV_DIR)/bin/activate && $(UV) sync
+	@echo "📦 uv sync (dev)..."
+	$(UV) sync
 
-# Прод-синхронизация: ровно по lock и без dev-зависимостей
+## Прод-синхронизация: строго по lock и без dev-зависимостей
 prod:
-	@echo "🚀 Syncing dependencies for PROD (frozen, no-dev)..."
-	$(UV) venv $(VENV_DIR) --python=3.13
-	. $(VENV_DIR)/bin/activate && $(UV) sync --frozen --no-dev
+	@echo "🚀 uv sync (prod: --frozen --no-dev)..."
+	$(UV) sync --frozen --no-dev
 
-# Дев-синхронизация (если lock уже есть, но с dev-группами)
-dev:
-	@echo "🛠  Syncing dependencies for DEV..."
-	. $(VENV_DIR)/bin/activate && $(UV) sync
-
-# Пересобрать lock в рамках диапазонов (обновить версии)
+## Обновить uv.lock в рамках диапазонов версий
 upgrade-lock:
-	@echo "🔒 Upgrading uv.lock..."
+	@echo "🔒 uv lock --upgrade..."
 	$(UV) lock --upgrade
 
-# 2) Запуски через tmux из общего venv
+## === Запуски через tmux (без активации venv; uv сам найдёт .venv) ===
 run-bot:
 	@echo "🤖 Running Telegram Bot in tmux: $(BOT_SESSION)"
-	$(TMUX) new-session -d -s $(BOT_SESSION) 'source $(VENV_DIR)/bin/activate; $(PYTHON) -m tg_bot.main'
+	$(TMUX) new-session -d -s $(BOT_SESSION) '$(UV) run python -m tg_bot.main'
 
 run-api:
 	@echo "🚀 Running FastAPI in tmux: $(API_SESSION)"
-	$(TMUX) new-session -d -s $(API_SESSION) 'source $(VENV_DIR)/bin/activate; $(PYTHON) -m uvicorn backend.main:app --host $(HOST) --port $(PORT)'
+	$(TMUX) new-session -d -s $(API_SESSION) '$(UV) run uvicorn backend.main:app --host $(HOST) --port $(PORT)'
 
 restart-bot:
 	@echo "♻️ Restarting Telegram Bot..."
@@ -78,15 +71,27 @@ logs-api:
 	@echo "📜 Attaching to FastAPI logs..."
 	$(TMUX) attach -t $(API_SESSION)
 
-# Удобно зайти в общий venv
+## Зайти в shell с активированной .venv (по желанию)
 shell:
-	@echo "🐍 Spawning shell in venv..."
-	@/usr/bin/env bash -lc 'source $(VENV_DIR)/bin/activate; exec $$SHELL -l'
+	@echo "🐚 Shell in $(VENV)..."
+	@/usr/bin/env bash -lc 'source $(VENV)/bin/activate && exec $$SHELL -l'
 
-# Снести venv полностью
+## Удалить .venv
 clean:
-	@echo "🧹 Removing virtual environment..."
-	rm -rf $(VENV_DIR)
+	@echo "🧹 Removing $(VENV)..."
+	rm -rf $(VENV)
 
-# Полный ресет: снести venv и пересобрать
-reset: clean install
+## Полный ресет: снести .venv и пересобрать
+reset: clean all
+
+help:
+	@echo "Targets:"
+	@echo "  init           - создать .venv (Python 3.13)"
+	@echo "  sync           - uv sync (dev)"
+	@echo "  prod           - uv sync --frozen --no-dev"
+	@echo "  upgrade-lock   - обновить uv.lock в рамках диапазонов"
+	@echo "  run-bot        - запустить tg_bot в tmux"
+	@echo "  run-api        - запустить uvicorn backend в tmux"
+	@echo "  restart-*, stop-*, logs-*"
+	@echo "  shell          - shell с активированной .venv"
+	@echo "  clean / reset  - удалить/пересобрать окружение"
