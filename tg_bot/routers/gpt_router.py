@@ -147,8 +147,14 @@ async def handle_ask_gpt(message: Message):
         response_text = await AI_CLIENT.get_response(final_prompt_text.strip())
 
         # 8. Отправляем ответ пользователю
-        for chunk in get_gpt_formatted_chunks(response_text):
-            await edit_message.edit_text(chunk, parse_mode="MarkdownV2")
+        prev_message = message
+        chunks = get_gpt_formatted_chunks(response_text)
+        if chunks:
+            await edit_message.edit_text(chunks[0], parse_mode="MarkdownV2")
+            for chunk in chunks[1:]:
+                prev_message = await prev_message.reply(chunk, parse_mode="MarkdownV2")
+        else:
+            await edit_message.edit_text("Модель вернула пустой ответ.")
 
     except APIKeyError:
         await message.answer("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
@@ -188,6 +194,15 @@ async def start_session(message: Message):
     else:
         await message.answer("Вы уже в чате. Продолжайте диалог.")
 
+# --- Хендлер для команды /stopchat ---
+@router.message(Command("stopchat"))
+async def stop_session(message: Message):
+    chat_id = message.chat.id
+    chat_manager = ChatSessionManager()
+
+    if await chat_manager.get_chat(chat_id):
+        await chat_manager.remove_chat(chat_id)
+        await message.answer("Чат остановлен!")
 
 # --- Хендлер для обработки сообщений в чате (текст, документы, фото, аудио, видео) ---
 @router.message(F.text | F.document | F.photo | F.audio | F.video)
@@ -316,8 +331,15 @@ async def handle_gpt_chat(message: Message):
                 paste_link = await upload_to_pastebin(response)
                 await edit_message.edit_text(f"Ответ загружен: {paste_link}")
             else:
-                for chunk in get_gpt_formatted_chunks(response):
-                    await edit_message.edit_text(chunk, parse_mode="MarkdownV2")
+                # 8. Отправляем ответ пользователю
+                prev_message = message
+                chunks = get_gpt_formatted_chunks(response)
+                if chunks:
+                    await edit_message.edit_text(chunks[0], parse_mode="MarkdownV2")
+                    for chunk in chunks[1:]:
+                        prev_message = await prev_message.reply(chunk, parse_mode="MarkdownV2")
+                else:
+                    await edit_message.edit_text("Модель вернула пустой ответ.")
         else: # Если текущее сообщение не содержит текста (только файлы, например, часть медиагруппы)
             if current_message_gemini_files:
                 await message.answer(

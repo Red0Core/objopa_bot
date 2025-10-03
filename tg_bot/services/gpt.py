@@ -434,6 +434,8 @@ class GeminiModel(AIModelInterface):
 
         except Exception as e:
             logger.error(f"Ошибка при запросе к Gemini: {e}")
+            if 'error' in str(e).lower() and 'model is overloaded' in str(e).lower():
+                raise RateLimitError("Модель временно перегружена брадок.") from e
             raise UnexpectedResponseError(f"Ошибка Gemini: {e}") from e
         finally:
             # Удаляем локальные временные файлы, которые были успешно загружены в Gemini API
