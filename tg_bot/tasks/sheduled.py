@@ -8,7 +8,7 @@ import tg_bot.routers.day_tracker as day_tracker
 from core.config import BACKEND_ROUTE, DOWNLOADS_DIR, MAIN_ACC, OBZHORA_CHAT_ID
 from core.logger import logger
 from tg_bot.redis_workers import image_selection
-from tg_bot.services.horoscope_mail_ru import get_horoscope_mail_ru
+from tg_bot.services.horoscope_mail_ru import get_horoscope_mail_ru, format_horoscope
 
 
 async def scheduled_message(bot):
@@ -63,7 +63,7 @@ async def send_daily_horoscope_for_brothers(bot):
     # Для каждого знака получаем ежедневный гороскоп и рейтинг финансов из страницы prediction
     try:
         for zodiac_eng, zodiac_ru in zodiac_map.items():
-            message = await get_horoscope_mail_ru(zodiac_eng)
+            message = format_horoscope(await get_horoscope_mail_ru(zodiac_eng))
             await bot.send_message(OBZHORA_CHAT_ID, message)
             logger.info(f"Отправляем еждедневные гороскопы в чат {OBZHORA_CHAT_ID} для {zodiac_ru}")
             await asyncio.sleep(2)
