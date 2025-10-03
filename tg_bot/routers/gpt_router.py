@@ -205,7 +205,7 @@ async def stop_session(message: Message):
         await message.answer("Чат остановлен!")
 
 # --- Хендлер для обработки сообщений в чате (текст, документы, фото, аудио, видео) ---
-@router.message(F.text | F.document | F.photo | F.audio | F.video)
+@router.message(~Command(), F.text | F.document | F.photo | F.audio | F.video)
 async def handle_gpt_chat(message: Message):
     text_content = message.text
     chat_id = message.chat.id
