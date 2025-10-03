@@ -1,11 +1,12 @@
+import tempfile
+from pathlib import Path
 from typing import cast
+
+import aiofiles
 import ujson
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import Message
-import tempfile
-from pathlib import Path
-import aiofiles
 
 from core.config import GEMINI_API_KEY, STORAGE_DIR
 from core.logger import logger
@@ -204,15 +205,40 @@ async def stop_session(message: Message):
         await chat_manager.remove_chat(chat_id)
         await message.answer("Чат остановлен!")
 
+# --- Хендлер для команды /add_me_as ---
+@router.message(Command("add_me_as"))
+async def add_user_to_whitelist(message: Message):
+    text_input = message.text.split(maxsplit=1) if message.text else ""
+    if len(text_input) < 2 or not message.from_user:
+        await message.reply("Использование: /add_me_as <имя>")
+        return
+    custom_name = text_input[1]
+    if message.chat.id not in whitelist:
+        whitelist[message.chat.id] = {}
+    whitelist[message.chat.id][message.from_user.id] = custom_name
+    await save_whitelist(whitelist)
+    await message.reply(
+        f"Пользователь '{custom_name}' (ID: {message.from_user.id}) добавлен в белый список."
+    )
+
 # --- Хендлер для обработки сообщений в чате (текст, документы, фото, аудио, видео) ---
-@router.message(~Command(), F.text | F.document | F.photo | F.audio | F.video)
+@router.message(
+    (F.text & ~F.text.startswith("/"))
+    | (F.caption & ~F.caption.startswith("/"))
+    | F.document
+    | F.photo
+    | F.audio
+    | F.video
+)
 async def handle_gpt_chat(message: Message):
-    text_content = message.text
     chat_id = message.chat.id
     from_user = message.from_user
 
-    if text_content and text_content.startswith("/"):
+    # Ignore commands in text or caption
+    if (message.text and message.text.startswith("/")) or (message.caption and message.caption.startswith("/")):
         return
+
+    text_content: str | None = message.text or message.caption
 
     chat_manager = ChatSessionManager()
     chat_session = await chat_manager.get_chat(chat_id)
@@ -226,7 +252,7 @@ async def handle_gpt_chat(message: Message):
     # Список для хранения объектов GeminiFile, скачанных из ТЕКУЩЕГО сообщения Telegram.
     # Эти файлы будут добавлены в files_to_upload модели, а затем удалены самой моделью.
     current_message_gemini_files: list[GeminiFile] = []
-    
+
     try:
         file_obj_to_download = None
         current_file_mime_type: str | None = None
@@ -236,7 +262,9 @@ async def handle_gpt_chat(message: Message):
             file_obj_to_download = message.document
             current_file_mime_type = file_obj_to_download.mime_type
             if current_file_mime_type not in SUPPORTED_MIMES["document"]:
-                await message.answer(f"Извините, я поддерживаю только текстовые (.txt) и PDF (.pdf) файлы для чата. Тип файла: {current_file_mime_type}.")
+                await message.answer(
+                    f"Извините, я поддерживаю только текстовые (.txt) и PDF (.pdf) файлы для чата. Тип файла: {current_file_mime_type}."
+                )
                 return
         elif message.photo:
             file_obj_to_download = message.photo[-1]
@@ -245,27 +273,29 @@ async def handle_gpt_chat(message: Message):
             file_obj_to_download = message.audio
             current_file_mime_type = file_obj_to_download.mime_type
             if current_file_mime_type not in SUPPORTED_MIMES["audio"]:
-                await message.answer(f"Извините, я поддерживаю только определенные аудиоформаты для чата. Тип файла: {current_file_mime_type}.")
+                await message.answer(
+                    f"Извините, я поддерживаю только определенные аудиоформаты для чата. Тип файла: {current_file_mime_type}."
+                )
                 return
         elif message.video:
             file_obj_to_download = message.video
             current_file_mime_type = file_obj_to_download.mime_type
             if current_file_mime_type not in SUPPORTED_MIMES["video"]:
-                await message.answer(f"Извините, я поддерживаю только определенные видеоформаты для чата. Тип файла: {current_file_mime_type}.")
+                await message.answer(
+                    f"Извините, я поддерживаю только определенные видеоформаты для чата. Тип файла: {current_file_mime_type}."
+                )
                 return
 
         # Если файл обнаружен, скачиваем его
         if file_obj_to_download:
             with tempfile.NamedTemporaryFile(delete=False, dir=STORAGE_DIR) as temp_file:
                 temp_file_path = Path(temp_file.name)
-            
+
             await message.bot.download(file_obj_to_download, destination=temp_file_path)
-            current_message_gemini_files.append(GeminiFile(file_path=temp_file_path, mime_type=current_file_mime_type))
+            current_message_gemini_files.append(
+                GeminiFile(file_path=temp_file_path, mime_type=current_file_mime_type)
+            )
             logger.info(f"Downloaded file for chat: {temp_file_path} (MIME: {current_file_mime_type})")
-            
-            if not text_content and message.caption:
-                text_content = message.caption
-                logger.info(f"Using caption as prompt: {text_content}")
 
         # Если нет ни текста, ни прикрепленных файлов в текущем сообщении, пропускаем
         if not text_content and not current_message_gemini_files:
@@ -277,8 +307,8 @@ async def handle_gpt_chat(message: Message):
         for g_file in current_message_gemini_files:
             chat_session.add_file(g_file)
 
-        # --- Ключевая логика для медиагрупп: отправляем сообщение в Gemini ТОЛЬКО при наличии текста ---
-        if text_content: # Если текущее сообщение содержит текст (или была подпись к медиа)
+        # --- Ключевая логика для медиагрупп: отправляем сообщение в Gemini ТОЛЬКО при наличии текста/подписи ---
+        if text_content:
             ids = whitelist.get(chat_id, {})
             user_name = ids.get(
                 from_user.id,
@@ -294,34 +324,39 @@ async def handle_gpt_chat(message: Message):
                     replied_text = message.reply_to_message.text
                 elif message.reply_to_message.caption:
                     replied_text = message.reply_to_message.caption
-            
+
             # 2. Формируем итоговый промпт с учетом контекста из ответа
             prompt_text_for_model = ""
             if replied_text:
-                prompt_text_for_model += f"Контекст из предыдущего сообщения:\n---\n{replied_text}\n---\n\n"
-            
+                prompt_text_for_model += (
+                    f"Контекст из предыдущего сообщения:\n---\n{replied_text}\n---\n\n"
+                )
+
             prompt_text_for_model += text_content.strip()
 
-            # Если после всех обработок промпт все еще пуст, но есть накопленные файлы в сессии,
-            # генерируем промпт по умолчанию (для сценария, когда пользователь сначала отправляет файлы,
-            # а потом пустое текстовое сообщение, чтобы "триггернуть" обработку)
-            if not prompt_text_for_model.strip() and chat_session.files_to_upload: 
-                if message.photo: prompt_text_for_model = "Проанализируй это изображение."
-                elif message.audio: prompt_text_for_model = "Проанализируй этот аудиофайл."
-                elif message.video: prompt_text_for_model = "Проанализируй это видео."
-                elif message.document: prompt_text_for_model = "Проанализируй этот документ."
-                else: prompt_text_for_model = "Проанализируй прикрепленные файлы."
+            # Если после всех обработок промпт пуст, но есть накопленные файлы в сессии,
+            # генерируем промпт по умолчанию
+            if not prompt_text_for_model.strip() and chat_session.files_to_upload:
+                if message.photo:
+                    prompt_text_for_model = "Проанализируй это изображение."
+                elif message.audio:
+                    prompt_text_for_model = "Проанализируй этот аудиофайл."
+                elif message.video:
+                    prompt_text_for_model = "Проанализируй это видео."
+                elif message.document:
+                    prompt_text_for_model = "Проанализируй этот документ."
+                else:
+                    prompt_text_for_model = "Проанализируй прикрепленные файлы."
 
-            # Финальная проверка: если промпт все еще пуст И нет файлов, которые ждут отправки,
-            # то нечего отправлять в Gemini.
+            # Финальная проверка
             if not prompt_text_for_model.strip() and not chat_session.files_to_upload:
                 await message.answer("Пожалуйста, введите текст или прикрепите файл для отправки.")
                 return
 
             is_pastebin = prompt_text_for_model.endswith("pastebin")
             if is_pastebin:
-                prompt_text_for_model = prompt_text_for_model[:-len("pastebin")].strip()
-            
+                prompt_text_for_model = prompt_text_for_model[: -len("pastebin")].strip()
+
             final_prompt_for_model = f"{user_name}: {prompt_text_for_model}"
 
             edit_message = await message.answer("Обрабатываю... Пожалуйста, подождите.")
@@ -331,7 +366,6 @@ async def handle_gpt_chat(message: Message):
                 paste_link = await upload_to_pastebin(response)
                 await edit_message.edit_text(f"Ответ загружен: {paste_link}")
             else:
-                # 8. Отправляем ответ пользователю
                 prev_message = message
                 chunks = get_gpt_formatted_chunks(response)
                 if chunks:
@@ -340,12 +374,9 @@ async def handle_gpt_chat(message: Message):
                         prev_message = await prev_message.reply(chunk, parse_mode="MarkdownV2")
                 else:
                     await edit_message.edit_text("Модель вернула пустой ответ.")
-        else: # Если текущее сообщение не содержит текста (только файлы, например, часть медиагруппы)
+        else:
             if current_message_gemini_files:
-                await message.answer(
-                    "Файл(ы) получены. Отправьте текстовое сообщение, чтобы обработать их.",
-                    reply_to_message_id=message.message_id
-                )
+                await message.reply("Файл(ы) получены. Отправьте текстовое сообщение, чтобы обработать их.")
             return
 
     except APIKeyError:
@@ -362,20 +393,3 @@ async def handle_gpt_chat(message: Message):
         logger.exception("Произошла непредвиденная ошибка при отправке сообщения в GPT чат:")
         await message.answer(f"Произошла непредвиденная ошибка: {e}")
     # ! Блок `finally` для удаления файлов здесь не нужен, так как удаление происходит в GeminiChatModel.send_message !
-
-
-# --- Хендлер для команды /add_me_as ---
-@router.message(Command("add_me_as"))
-async def add_user_to_whitelist(message: Message):
-    text_input = message.text.split(maxsplit=1) if message.text else ""
-    if len(text_input) < 2 or not message.from_user:
-        await message.reply("Использование: /add_me_as <имя>")
-        return
-    custom_name = text_input[1]
-    if message.chat.id not in whitelist:
-        whitelist[message.chat.id] = {}
-    whitelist[message.chat.id][message.from_user.id] = custom_name
-    await save_whitelist(whitelist)
-    await message.reply(
-        f"Пользователь '{custom_name}' (ID: {message.from_user.id}) добавлен в белый список."
-    )
