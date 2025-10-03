@@ -15,7 +15,7 @@ from tg_bot.tasks.sheduled import on_startup
 
 async def main():
     # Создание бота
-    bot = Bot(token=TOKEN_BOT, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    bot = Bot(token=TOKEN_BOT)
     dp = Dispatcher(fsm_strategy=FSMStrategy.CHAT)
     MessageQueue(bot=bot)
 
