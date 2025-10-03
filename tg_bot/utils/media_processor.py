@@ -124,7 +124,9 @@ class MediaProcessor:
         message: Message, 
         media_files: List[MediaFile], 
         caption_parts: List[str],
-        use_optimization: bool = True
+        use_optimization: bool = True,
+        caption_already_formatted: bool = False,
+        parse_mode: Optional[str] = None
     ) -> bool:
         """Отправляет медиа группы в Telegram"""
         try:
@@ -145,7 +147,7 @@ class MediaProcessor:
                 video_path = video.optimized_path or video.path
                 video_caption = caption_parts[caption_index] if caption_index < len(caption_parts) else None
                 
-                await message.reply_video(FSInputFile(video_path), caption=video_caption)
+                await message.reply_video(FSInputFile(video_path), caption=video_caption, parse_mode=parse_mode)
                 
                 if video_caption:
                     caption_index += 1
@@ -159,7 +161,8 @@ class MediaProcessor:
                 await self._send_image_chunks(
                     message, 
                     images, 
-                    caption_parts[caption_index] if caption_index < len(caption_parts) and not videos else None
+                    caption_parts[caption_index] if caption_index < len(caption_parts) and not videos else None,
+                    parse_mode=parse_mode
                 )
                 if images and not videos and caption_parts:
                     caption_index += 1
@@ -169,7 +172,8 @@ class MediaProcessor:
                 await self._send_audio_chunks(
                     message,
                     audio,
-                    caption_parts[caption_index] if caption_index < len(caption_parts) and not videos and not images else None
+                    caption_parts[caption_index] if caption_index < len(caption_parts) and not videos and not images else None,
+                    parse_mode=parse_mode
                 )
                 if audio and not videos and not images and caption_parts:
                     caption_index += 1
@@ -179,13 +183,17 @@ class MediaProcessor:
                 await self._send_document_chunks(
                     message,
                     documents,
-                    caption_parts[caption_index] if caption_index < len(caption_parts) and not videos and not images and not audio else None
+                    caption_parts[caption_index] if caption_index < len(caption_parts) and not videos and not images and not audio else None,
+                    parse_mode=parse_mode
                 )
                 caption_index += 1
             
             # Отправляем оставшиеся части подписи
             for part in caption_parts[caption_index:]:
-                await message.reply(telegramify_markdown.markdownify(part), parse_mode="MarkdownV2")
+                if caption_already_formatted:
+                    await message.reply(part, parse_mode=parse_mode)
+                else:
+                    await message.reply(telegramify_markdown.markdownify(part), parse_mode=parse_mode)
             
             return True
             
@@ -193,7 +201,7 @@ class MediaProcessor:
             logger.error(f"Error sending media groups: {e}")
             return False
     
-    async def _send_image_chunks(self, message: Message, images: List[MediaFile], caption: Optional[str] = None):
+    async def _send_image_chunks(self, message: Message, images: List[MediaFile], caption: Optional[str] = None, parse_mode: Optional[str] = None):
         """Отправляет изображения группами по 10"""
         for i in range(0, len(images), self.chunk_size):
             chunk = images[i:i + self.chunk_size]
@@ -202,12 +210,12 @@ class MediaProcessor:
             ]
             
             chunk_caption = caption if i == 0 else None
-            await message.reply_media_group(media=media_group, caption=chunk_caption)
+            await message.reply_media_group(media=media_group, caption=chunk_caption, parse_mode=parse_mode)
             
             if i + self.chunk_size < len(images):
                 await asyncio.sleep(self.chunk_delay)
     
-    async def _send_audio_chunks(self, message: Message, audio_files: List[MediaFile], caption: Optional[str] = None):
+    async def _send_audio_chunks(self, message: Message, audio_files: List[MediaFile], caption: Optional[str] = None, parse_mode: Optional[str] = None):
         """Отправляет аудио группами по 10"""
         for i in range(0, len(audio_files), self.chunk_size):
             chunk = audio_files[i:i + self.chunk_size]
@@ -216,12 +224,12 @@ class MediaProcessor:
             ]
             
             chunk_caption = caption if i == 0 else None
-            await message.reply_media_group(media=media_group, caption=chunk_caption)
-            
+            await message.reply_media_group(media=media_group, caption=chunk_caption, parse_mode=parse_mode)
+
             if i + self.chunk_size < len(audio_files):
                 await asyncio.sleep(self.chunk_delay)
     
-    async def _send_document_chunks(self, message: Message, documents: List[MediaFile], caption: Optional[str] = None):
+    async def _send_document_chunks(self, message: Message, documents: List[MediaFile], caption: Optional[str] = None, parse_mode: Optional[str] = None):
         """Отправляет документы группами по 10"""
         for i in range(0, len(documents), self.chunk_size):
             chunk = documents[i:i + self.chunk_size]
@@ -230,8 +238,8 @@ class MediaProcessor:
             ]
             
             chunk_caption = caption if i == 0 else None
-            await message.reply_media_group(media=media_group, caption=chunk_caption)
-            
+            await message.reply_media_group(media=media_group, caption=chunk_caption, parse_mode=parse_mode)
+
             if i + self.chunk_size < len(documents):
                 await asyncio.sleep(self.chunk_delay)
     
@@ -240,7 +248,8 @@ class MediaProcessor:
         message: Message, 
         media_file: MediaFile, 
         caption: Optional[str] = None,
-        use_optimization: bool = True
+        use_optimization: bool = True,
+        parse_mode: Optional[str] = None,
     ) -> bool:
         """Отправляет одиночный медиа файл"""
         try:
@@ -255,17 +264,17 @@ class MediaProcessor:
             input_file = FSInputFile(file_path)
             
             if media_file.type == MediaType.IMAGE:
-                await message.reply_photo(input_file, caption=caption)
+                await message.reply_photo(input_file, caption=caption, parse_mode=parse_mode)
             elif media_file.type == MediaType.VIDEO:
-                await message.reply_video(input_file, caption=caption)
+                await message.reply_video(input_file, caption=caption, parse_mode=parse_mode)
                 # Очищаем временные файлы
                 if file_path != media_file.path:
                     video_processor.cleanup_temp_files(media_file.path, file_path)
             elif media_file.type == MediaType.AUDIO:
-                await message.reply_audio(input_file, caption=caption)
+                await message.reply_audio(input_file, caption=caption, parse_mode=parse_mode)
             else:
-                await message.reply_document(input_file, caption=caption)
-            
+                await message.reply_document(input_file, caption=caption, parse_mode=parse_mode)
+
             return True
             
         except Exception as e:
@@ -277,7 +286,9 @@ class MediaProcessor:
         message: Message, 
         file_paths: List[Path], 
         caption: Optional[str] = None,
-        use_optimization: bool = True
+        use_optimization: bool = True,
+        caption_already_formatted: bool = False,
+        parse_mode: Optional[str] = None
     ) -> bool:
         """Основной метод: обрабатывает и отправляет медиа файлы"""
         if not file_paths:
@@ -286,7 +297,12 @@ class MediaProcessor:
         try:
             # Категоризируем файлы
             media_files = self.categorize_files(file_paths)
-            caption_parts = self.split_caption(caption) if caption else []
+            if caption:
+                # Если подпись уже отформатирована (экранирована под MarkdownV2 и/или заранее разбита),
+                # не выполняем повторное форматирование во избежание двойного экранирования.
+                caption_parts = [caption] if caption_already_formatted else self.split_caption(caption)
+            else:
+                caption_parts = []
             
             # Если один файл - отправляем как единичное медиа
             if len(media_files) == 1:
@@ -294,7 +310,8 @@ class MediaProcessor:
                     message, 
                     media_files[0], 
                     caption_parts[0] if caption_parts else None,
-                    use_optimization
+                    use_optimization,
+                    parse_mode=parse_mode,
                 )
             
             # Если несколько файлов - отправляем группами
@@ -302,7 +319,9 @@ class MediaProcessor:
                 message, 
                 media_files, 
                 caption_parts,
-                use_optimization
+                use_optimization,
+                caption_already_formatted=caption_already_formatted,
+                parse_mode=parse_mode,
             )
             
         except Exception as e:

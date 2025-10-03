@@ -206,7 +206,9 @@ async def process_instagram(message: Message, url: str) -> bool:
                 message, 
                 videos, 
                 caption_arr[0] if caption_arr else None,
-                use_optimization=True
+                use_optimization=True,
+                caption_already_formatted=True,
+                parse_mode="MarkdownV2"
             )
             # Отправляем оставшиеся части подписи
             for part in caption_arr[1:]:
@@ -218,7 +220,9 @@ async def process_instagram(message: Message, url: str) -> bool:
                 message,
                 images,
                 caption_arr[0] if caption_arr and not videos else None,
-                use_optimization=False  # Изображения не нуждаются в оптимизации
+                use_optimization=False,  # Изображения не нуждаются в оптимизации
+                caption_already_formatted=True,
+                parse_mode="MarkdownV2"
             )
             # Отправляем оставшиеся части подписи если видео не было
             start_index = 1 if not videos and caption_arr else 0
@@ -305,7 +309,8 @@ async def send_downloaded_files(message: Message, files: list[Path], caption: st
         message, 
         files, 
         caption,
-        use_optimization=True
+        use_optimization=True,
+        caption_already_formatted=True,
     )
     
     if not success:
