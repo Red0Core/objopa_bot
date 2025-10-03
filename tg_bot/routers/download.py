@@ -210,7 +210,7 @@ async def process_instagram(message: Message, url: str) -> bool:
             )
             # Отправляем оставшиеся части подписи
             for part in caption_arr[1:]:
-                await message.reply(part)
+                await message.reply(part, parse_mode="MarkdownV2")
 
         # Отправляем изображения  
         if images:
@@ -223,7 +223,7 @@ async def process_instagram(message: Message, url: str) -> bool:
             # Отправляем оставшиеся части подписи если видео не было
             start_index = 1 if not videos and caption_arr else 0
             for part in caption_arr[start_index:]:
-                await message.reply(part)
+                await message.reply(part, parse_mode="MarkdownV2")
 
         await status_message.delete()
         return True
