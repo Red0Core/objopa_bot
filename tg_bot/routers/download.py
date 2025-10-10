@@ -17,8 +17,9 @@ from aiogram.types import (
 from aiogram.utils.media_group import MediaGroupBuilder
 import telegramify_markdown
 
-from core.config import DOWNLOADS_DIR
+from core.config import DOWNLOADS_DIR, MAIN_ACC
 from core.logger import logger
+from core.redis_client import get_redis, Redis
 from tg_bot.downloaders import (
     INSTAGRAM_REGEX,
     TWITTER_REGEX,
@@ -743,3 +744,16 @@ async def batch_optimize_handler(message: Message, command: CommandObject):
     except Exception as e:
         logger.error(f"Error in batch optimization: {e}")
         await status_message.edit_text(f"❌ Ошибка пакетной оптимизации: {str(e)}")
+
+@router.message(Command("set_twitter"))
+async def set_twitter_cookies_only_admin_acc(message: Message, command: CommandObject):
+    if message.from_user is None or not message.from_user.id or (message.from_user.id != MAIN_ACC and message.chat.type != "private"):
+        await message.answer(telegramify_markdown.markdownify("❌ ЗАПРЕЩЕНО ВАМ!!!"), parse_mode='MarkdownV2')
+        return
+    redis: Redis = await get_redis()
+    if not command.args or " " not in command.args:
+        await message.answer(telegramify_markdown.markdownify("❌ Ты не указал токены! Используй: `/set_twitter <auth_token> <ct0>`"), parse_mode='MarkdownV2')
+        return
+    data = command.args.split(" ")
+    await redis.mset({"twitter_auth_token": data[0], "twitter_ct0": data[0]})
+    await message.answer(telegramify_markdown.markdownify("✅ Токены Twitter установлены!"), parse_mode='MarkdownV2')
