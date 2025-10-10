@@ -9,9 +9,9 @@ from .gpt_router import router as gpt_msg_router
 from .mention_dice import router as mention_dice_router
 from .misc import router as commands_router
 from .redis_workers_routers import router as redis_workers_router
+from .user_agent_management import router as user_agent_management_router
 from .utils import router as utils_router
 from .video_generation_pipeline import video_router
-from .user_agent_management import router as user_agent_management_router
 
 
 def setup_routers(dp: Dispatcher):

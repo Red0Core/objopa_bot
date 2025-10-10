@@ -17,7 +17,7 @@ logger.add(
     rotation="10 MB",  # Новый файл каждые 10 MB
     retention="10 days",  # Хранить файлы 10 дней
     compression="zip",  # Сжатие старых логов
-    level="INFO",
+    level="DEBUG",
 )
 
 __all__ = ["logger"]

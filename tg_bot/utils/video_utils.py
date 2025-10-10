@@ -2,12 +2,15 @@
 Утилиты для работы с видео файлами и FFmpeg
 """
 import asyncio
-import ujson as json
-from pathlib import Path
-from typing import Optional, Tuple, Dict
+import time
+import traceback
 from dataclasses import dataclass
 from functools import lru_cache
-import time
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+
+import aiofiles
+import ujson as json
 
 from core.logger import logger
 
@@ -49,8 +52,9 @@ class VideoProcessor:
         self.config = OptimizationConfig()
         self._video_info_cache: Dict[str, VideoInfo] = {}
     
+    @staticmethod
     @lru_cache(maxsize=32)
-    def _get_ffmpeg_command_base(self) -> list[str]:
+    def _get_ffmpeg_command_base() -> list[str]:
         """Кэшированная базовая команда FFmpeg"""
         return ["ffmpeg", "-hide_banner", "-loglevel", "warning"]
     
@@ -132,8 +136,15 @@ class VideoProcessor:
             
             return video_info
             
+        except FileNotFoundError:
+            logger.error("ffprobe command not found. Please install FFmpeg/ffprobe")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse ffprobe output for {video_path.name}: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Error getting video info for {video_path}: {e}")
+            logger.error(f"Error getting video info for {video_path}: {type(e).__name__}: {e}")
+            logger.debug(f"Full traceback: {traceback.format_exc()}")
             return None
     
     async def check_faststart(self, video_path: Path) -> bool:
@@ -176,9 +187,9 @@ class VideoProcessor:
             # Проверяем позицию moov atom через qtfaststart logic
             # Читаем начало файла и ищем структуру атомов
             try:
-                with open(video_path, 'rb') as f:
+                async with aiofiles.open(video_path, 'rb') as f:
                     # Читаем первые 64 байта для поиска ftyp и moov атомов
-                    header = f.read(64)
+                    header = await f.read(64)
                     
                     # Ищем сигнатуры MP4 атомов
                     if b'ftyp' in header and b'moov' in header:
@@ -186,8 +197,8 @@ class VideoProcessor:
                         return True
                     
                     # Читаем больше данных для более точной проверки
-                    f.seek(0)
-                    larger_header = f.read(1024)
+                    await f.seek(0)
+                    larger_header = await f.read(1024)
                     
                     # Если moov не в первом килобайте, то нужен faststart
                     return b'moov' in larger_header

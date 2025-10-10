@@ -96,7 +96,7 @@ async def instagram_session_info_handler(message: Message):
                 session_info.append("✅ **Instagram система:** Готова к работе")
             else:
                 session_info.append("⚠️ **Instagram система:** Ошибка инициализации")
-        except Exception as e:
+        except Exception:
             session_info.append("❌ **Instagram система:** Ошибка инициализации")
         
         info_text = "📊 **Статус Instagram системы:**\n\n" + "\n".join(session_info)
