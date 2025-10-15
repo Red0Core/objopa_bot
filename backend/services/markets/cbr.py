@@ -135,21 +135,20 @@ async def fetch_key_rate_latest(window_days: int = 1) -> dict | None:
     
     return result
 
-async def fetch_last_date_cbr(force: bool = True) -> date:
+async def fetch_last_date_cbr() -> date:
     """Возвращает дату последнего обновления курсов ЦБ с кешированием (TTL 10 минут)."""
     redis = await get_redis()
     cache_key = "cbr:last_date"
     latest_date = date.today()
     
     # Проверяем кеш
-    if not force:
-        try:
-            cached = await redis.get(cache_key)
-            if cached:
-                logger.debug(f"CBR last date from cache: {cached}")
-                return date.fromisoformat(cached)
-        except Exception as e:
-            logger.warning(f"Redis get error for {cache_key}: {e}")
+    try:
+        cached = await redis.get(cache_key)
+        if cached:
+            logger.debug(f"CBR last date from cache: {cached}")
+            return date.fromisoformat(cached)
+    except Exception as e:
+        logger.warning(f"Redis get error for {cache_key}: {e}")
     
     # Запрашиваем у ЦБ
     headers = {

@@ -129,7 +129,7 @@ async def check_cbr_update(bot):
                 
                 # Используем стандартную функцию для формирования сообщения
                 # Показываем только основные валюты: USD, EUR, CNY
-                message = await build_cbr_message(requested_codes=["USD", "EUR", "CNY"])
+                message = await build_cbr_message(requested_codes=["USD", "EUR", "CNY", "BYN"])
                 
                 # Добавляем заголовок уведомления
                 message = f"🔔 <b>Обновление курсов ЦБ РФ</b>\n\n{message}"
