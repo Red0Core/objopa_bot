@@ -77,12 +77,11 @@ class PriceResponse(BaseModel):
     error: str | None = None
 
 
-# CBR Models
-class RateItem(BaseModel):
+# CBR SOAP Envelopes
+class CBRValuteItem(BaseModel):
     rate: float
-    diff: float
-
+    name: str
+    char_code: str
 
 class CBRResponse(BaseModel):
-    rates: dict[str, RateItem | str]
-    html_output: str
+    rates: Sequence[CBRValuteItem]

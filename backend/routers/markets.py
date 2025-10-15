@@ -11,6 +11,7 @@ from backend.models.markets import (
     PriceResponse,
 )
 from backend.services.markets import alphavantage, bybit_p2p, cbr, coinmarketcap, exchanges
+import datetime as dt
 
 router = APIRouter(prefix="/markets", tags=["markets"])
 
@@ -97,7 +98,28 @@ async def get_exchange_price(symbol: str):
 
 # CBR Endpoints
 @router.get("/cbr/rates", response_model=CBRResponse)
-async def get_cbr_rates():
-    """Get Central Bank of Russia exchange rates."""
-    rates = await cbr.get_cbr_exchange_rate()
-    return CBRResponse(rates=rates, html_output=await cbr.generate_html_output(rates))
+async def get_cbr_rates(date: dt.date | None = None):
+    """Get Central Bank of Russia exchange rates. If no date is provided, return the latest."""
+    rates = (
+        await cbr.fetch_exchanges_rate_on_date(date)
+        if date
+        else await cbr.fetch_exchanges_rate_on_date(await cbr.fetch_last_date_cbr())
+    )
+    return CBRResponse(rates=rates)
+
+
+@router.get("/cbr/last-date")
+async def get_cbr_last_date():
+    """Get the latest date for which CBR rates are available."""
+    last_date = await cbr.fetch_last_date_cbr()
+    return {"date": last_date.isoformat()}
+
+
+@router.get("/cbr/key-rate")
+async def get_cbr_key_rate():
+    """Get the latest CBR key rate."""
+    result = await cbr.fetch_key_rate_latest()
+    if result is None:
+        raise HTTPException(status_code=500, detail={"error": "Failed to fetch key rate"})
+    return result
+
