@@ -70,7 +70,7 @@ async def get_cmc_handler(message: Message):
             await message.reply("Ошибка, напишите позднее")
         return
 
-    await message.reply(output)
+    await message.reply(output, parse_mode="HTML")
     logger.info(
         f"Успешно отправлен coinmarketcap {args[1]} к {message.from_user.id if message.from_user else 'unknown'}"
     )
@@ -116,13 +116,14 @@ async def current_p2p_bybit_orders(message: Message):
     """
     args = message.text.split() if message.text else []
     if len(args) != 4:
-        await message.reply("Примерк команд. Пример: /p2p buy 1000 USDT | /p2p buy 1000 RUB")
+        await message.reply("Примерк команд. Пример: /p2p buy 1000 USDT | /p2p buy 1000 RUB", parse_mode="HTML")
         return
 
     symbol = args[1].upper()
     if symbol not in ["BUY", "SELL"]:
         await message.reply(
-            "Укажите покупку или продажу тейкером. Пример: /p2p buy | /p2p sell | /p2p buy 1000 USDT | /p2p buy 1000 RUB"
+            "Укажите покупку или продажу тейкером. Пример: /p2p buy | /p2p sell | /p2p buy 1000 USDT | /p2p buy 1000 RUB",
+            parse_mode="HTML"
         )
         return
 
@@ -134,8 +135,9 @@ async def current_p2p_bybit_orders(message: Message):
             is_fiat = args[3].upper() == "RUB"
     except (ValueError, IndexError):
         await message.reply(
-            "Укажите сумму и валюту. Пример: /p2p buy 1000 USDT | /p2p buy 1000 RUB"
-        )
+            "Укажите сумму и валюту. Пример: /p2p buy 1000 USDT | /p2p buy 1000 RUB",
+            parse_mode="HTML"
+         )
         return
 
     # Получаем данные из p2p
@@ -147,7 +149,7 @@ async def current_p2p_bybit_orders(message: Message):
             )
             response.raise_for_status()
             result = response.json()
-            await message.reply(result["html_output"])
+            await message.reply(result["html_output"], parse_mode="HTML")
         except HTTPStatusError as e:
             if e.response.status_code == 500:
                 await message.reply("Ошибка сервера, напишите позднее")
