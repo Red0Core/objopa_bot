@@ -46,28 +46,6 @@ def hourly_schedule():
     return decorator
 
 
-@daily_schedule(hour=16, minute=0)
-async def send_daily_cbr_rates(bot, chat_id):
-    """
-    Ежедневно отправляет курсы валют в указанный чат.
-    """
-    try:
-        async with httpx.AsyncClient() as session:
-            response = await session.get(f"{BACKEND_ROUTE}/markets/cbr/rates")
-            response.raise_for_status()
-            data = response.json()
-            await bot.send_message(chat_id=chat_id, text=data["html_output"], parse_mode="html")
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 400:
-            await bot.send_message(chat_id=chat_id, text="Ошибка: неверный запрос")
-        else:
-            await bot.send_message(chat_id=chat_id, text="Ошибка: не удалось получить данные")
-        logger.info(f"Отправляем курсы валют в чат {chat_id}")
-    except Exception as e:
-        await bot.send_message(chat_id=chat_id, text="Ошибка: не удалось получить данные")
-        logger.error(f"Ошибка при отправке курсов валют в чат {chat_id}: {e}")
-
-
 @daily_schedule(hour=6, minute=0)
 async def send_daily_horoscope_for_brothers(bot):
     zodiac_map = {"taurus": "телец", "pisces": "рыбы", "libra": "весы"}
@@ -148,7 +126,6 @@ async def check_cbr_update(bot):
 async def on_startup(bot):
     for coro in (
         scheduled_message(bot),
-        send_daily_cbr_rates(bot, OBZHORA_CHAT_ID),
         send_daily_horoscope_for_brothers(bot),
         send_daily_tracker_messages(bot),
         cleanup_downloads(bot),
