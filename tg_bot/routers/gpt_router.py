@@ -16,6 +16,7 @@ from tg_bot.services.gpt import (
     GeminiChatModel,
     GeminiFile,
     GeminiModel,
+    ModelOverloadedError,
     QuotaExceededError,
     RateLimitError,
     UnexpectedResponseError,
@@ -387,6 +388,8 @@ async def handle_gpt_chat(message: Message):
         await message.answer("Ошибка: Превышена квота использования API.")
     except UnexpectedResponseError:
         await message.answer("Ошибка: Непредвиденный ответ от модели. Попробуйте позже.")
+    except ModelOverloadedError:
+        await message.answer("Ошибка: Модель временно перегружена. Пожалуйста, попробуйте позже.")
     except AIModelError as e:
         await message.answer(f"Ошибка: {str(e)}")
     except Exception as e:

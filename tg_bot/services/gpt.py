@@ -1,10 +1,9 @@
 import asyncio
+import mimetypes
 import time
 from abc import ABC, abstractmethod
-from calendar import c
 from dataclasses import dataclass
 from pathlib import Path
-import mimetypes
 
 import openai
 import telegramify_markdown
@@ -196,6 +195,11 @@ class RateLimitError(AIModelError):
 
 class UnexpectedResponseError(AIModelError):
     """Ошибка при неожиданном ответе от API."""
+
+    pass
+
+class ModelOverloadedError(AIModelError):
+    """Ошибка перегрузки модели."""
 
     pass
 
@@ -435,7 +439,7 @@ class GeminiModel(AIModelInterface):
         except Exception as e:
             logger.error(f"Ошибка при запросе к Gemini: {e}")
             if 'error' in str(e).lower() and 'model is overloaded' in str(e).lower():
-                raise RateLimitError("Модель временно перегружена брадок.") from e
+                raise ModelOverloadedError("Модель временно перегружена брадок.") from e
             raise UnexpectedResponseError(f"Ошибка Gemini: {e}") from e
         finally:
             # Удаляем локальные временные файлы, которые были успешно загружены в Gemini API
@@ -550,6 +554,8 @@ class GeminiChatModel(AIChatInterface):
 
         except Exception as e:
             logger.error(f"Ошибка отправки сообщения в Gemini чат: {e}")
+            if 'error' in str(e).lower() and 'model is overloaded' in str(e).lower():
+                raise ModelOverloadedError("Модель временно перегружена брадок.") from e
             raise UnexpectedResponseError(f"Ошибка чата Gemini: {e}") from e
         finally:
             # Удаляем локальные временные файлы, которые были успешно загружены в Gemini API
