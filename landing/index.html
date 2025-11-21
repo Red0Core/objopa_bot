@@ -35,7 +35,7 @@
     }
 
     .shell {
-      width: min(960px, 100%);
+      width: min(720px, 100%);
       background: linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
       border: 1px solid var(--border);
       border-radius: 28px;
@@ -73,38 +73,32 @@
     }
 
     header {
-      display: grid;
-      grid-template-columns: 1fr auto;
+      display: flex;
       align-items: center;
-      gap: 12px;
+      justify-content: space-between;
       margin-bottom: 22px;
     }
 
-    .title {
-      display: grid;
-      gap: 6px;
-    }
-
     .badge {
-      padding: 6px 12px;
-      border-radius: 10px;
+      padding: 8px 14px;
+      border-radius: 12px;
       background: linear-gradient(120deg, var(--accent), var(--accent-2));
       color: #0b0f1a;
-      font-weight: 700;
-      letter-spacing: 0.04em;
+      font-weight: 800;
+      letter-spacing: 0.08em;
       box-shadow: 0 12px 30px rgba(124, 58, 237, 0.35);
     }
 
     h1 {
       margin: 0;
-      font-size: 30px;
-      letter-spacing: 0.04em;
+      font-size: 28px;
+      letter-spacing: 0.06em;
     }
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 18px;
+      grid-template-columns: 1fr;
+      gap: 16px;
     }
 
     .card {
@@ -140,6 +134,8 @@
       outline: none;
       font-size: 16px;
       transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+      letter-spacing: 0.04em;
     }
 
     .input:focus {
@@ -152,14 +148,14 @@
       grid-template-columns: repeat(6, 1fr);
       gap: 8px;
       margin: 6px 0 12px;
-      font-size: 30px;
+      font-size: 34px;
       font-weight: 800;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
       color: #f8fafc;
     }
 
     .otp-box {
-      padding: 14px 12px;
+      padding: 16px 12px;
       text-align: center;
       border-radius: 12px;
       background: rgba(255, 255, 255, 0.04);
@@ -168,63 +164,26 @@
       min-width: 42px;
     }
 
-    .status {
+    .timer {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       padding: 8px 12px;
-      border-radius: 10px;
+      border-radius: 12px;
       background: rgba(255, 255, 255, 0.04);
-      color: var(--muted);
+      border: 1px solid var(--border);
       font-size: 14px;
-    }
-
-    .status.success {
-      color: var(--success);
-    }
-
-    .status.error {
-      color: var(--error);
-    }
-
-    .timer {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .progress {
-      position: relative;
-      width: 100%;
-      height: 10px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.06);
-      overflow: hidden;
-    }
-
-    .progress span {
-      position: absolute;
-      inset: 0;
-      display: block;
-      background: linear-gradient(90deg, var(--accent), var(--accent-2));
-      width: 100%;
-      transform-origin: left center;
-      transform: scaleX(0);
-      transition: transform 0.2s ease;
+      color: var(--muted);
     }
 
     .meta {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
       color: var(--muted);
       font-size: 13px;
-    }
-
-    .meta span {
-      padding: 6px 10px;
-      border-radius: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.03);
     }
@@ -239,19 +198,16 @@
     }
   </style>
 </head>
-<body>
-  <div class="shell">
-    <header>
-      <div class="title">
-        <span class="badge">OBJOPA</span>
-        <h1>OBJOPA 2FA Authenticator</h1>
-      </div>
-      <div class="status" id="status">Готово офлайн</div>
-    </header>
+  <body>
+    <div class="shell">
+      <header>
+        <span class="badge">OBJOPA 2FA</span>
+        <h1>Offline Authenticator</h1>
+      </header>
 
-    <div class="grid">
-      <div class="card">
-        <h2>Base32 секрет</h2>
+      <div class="grid">
+        <div class="card">
+          <h2>Base32 секрет</h2>
         <input
           id="secret"
           class="input"
@@ -261,31 +217,22 @@
         />
       </div>
 
-      <div class="card">
-        <h2>Код</h2>
-        <div class="otp-value" id="otp"></div>
-        <div class="timer">
-          <div class="progress"><span id="progress"></span></div>
-          <div id="remaining">30s</div>
+        <div class="card">
+          <h2>Код</h2>
+          <div class="otp-value" id="otp"></div>
+          <div class="timer" id="remaining">30s</div>
         </div>
-      </div>
 
-      <div class="card">
-        <h2>Системное время</h2>
-        <div class="meta">
-          <span>UNIX: <strong id="unix">-</strong></span>
-          <span>Обновление: каждые 30s</span>
-          <span>Локально: без сетевых запросов</span>
+        <div class="card">
+          <h2>UNIX штамп</h2>
+          <div class="meta">UNIX: <strong id="unix">-</strong></div>
         </div>
       </div>
     </div>
-  </div>
 
   <script>
     const secretInput = document.getElementById("secret");
-    const statusTag = document.getElementById("status");
     const otpTag = document.getElementById("otp");
-    const progressFill = document.getElementById("progress");
     const remainingTag = document.getElementById("remaining");
     const unixTag = document.getElementById("unix");
 
@@ -315,7 +262,6 @@
       if (!secret.trim()) {
         cryptoKey = null;
         lastSecret = "";
-        setStatus("Готово офлайн", "");
         return;
       }
       try {
@@ -331,17 +277,10 @@
           ["sign"]
         );
         lastSecret = secret;
-        setStatus("Секрет принят", "success");
       } catch (error) {
         cryptoKey = null;
         lastSecret = "";
-        setStatus(error.message || "Ошибка секрета", "error");
       }
-    }
-
-    function setStatus(text, type) {
-      statusTag.textContent = text;
-      statusTag.className = `status${type ? " " + type : ""}`;
     }
 
     async function generateOtp(unixTime) {
@@ -370,8 +309,6 @@
       unixTag.textContent = unixTime;
       const secondsLeft = 30 - (unixTime % 30);
       remainingTag.textContent = `${secondsLeft}s`;
-      const progress = (secondsLeft / 30).toFixed(3);
-      progressFill.style.transform = `scaleX(${progress})`;
 
       if (!cryptoKey) {
         renderOtp("------");
@@ -384,7 +321,6 @@
         renderOtp(otp ?? "------");
       } catch (error) {
         renderOtp("------");
-        setStatus("Ошибка генерации", "error");
       } finally {
         isUpdating = false;
       }
