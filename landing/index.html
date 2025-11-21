@@ -188,6 +188,47 @@
       background: rgba(255, 255, 255, 0.03);
     }
 
+    .meta strong {
+      color: #e2e8f0;
+      letter-spacing: 0.02em;
+    }
+
+    .actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .ghost-btn {
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-main);
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .ghost-btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .ghost-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      margin: 0;
+    }
+
     @media (max-width: 520px) {
       h1 {
         font-size: 26px;
@@ -225,7 +266,13 @@
 
         <div class="card">
           <h2>UNIX штамп</h2>
-          <div class="meta">UNIX: <strong id="unix">-</strong></div>
+          <div class="meta">Локально: <strong id="unix">-</strong></div>
+          <div class="meta">Глобально: <strong id="unix-global">—</strong></div>
+          <div class="meta">Сдвиг: <strong id="drift">—</strong></div>
+          <div class="actions">
+            <button class="ghost-btn" id="sync" type="button">Сравнить время</button>
+            <p class="hint" id="sync-hint">Запрос по сети только по кнопке.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -235,10 +282,15 @@
     const otpTag = document.getElementById("otp");
     const remainingTag = document.getElementById("remaining");
     const unixTag = document.getElementById("unix");
+    const unixGlobalTag = document.getElementById("unix-global");
+    const driftTag = document.getElementById("drift");
+    const syncBtn = document.getElementById("sync");
+    const syncHint = document.getElementById("sync-hint");
 
     let cryptoKey = null;
     let lastSecret = "";
     let isUpdating = false;
+    let lastLocalUnix = null;
 
     function base32ToBytes(secret) {
       const cleaned = secret.replace(/\s+/g, "").toUpperCase();
@@ -306,6 +358,7 @@
       if (isUpdating) return;
       isUpdating = true;
       const unixTime = Math.floor(Date.now() / 1000);
+      lastLocalUnix = unixTime;
       unixTag.textContent = unixTime;
       const secondsLeft = 30 - (unixTime % 30);
       remainingTag.textContent = `${secondsLeft}s`;
@@ -341,6 +394,37 @@
       if (value === lastSecret) return;
       prepareKey(value).then(update);
     });
+
+    async function fetchNetworkTime() {
+      syncBtn.disabled = true;
+      syncBtn.textContent = "Запрос...";
+      syncHint.textContent = "Пробуем получить сетевое время";
+      try {
+        const response = await fetch("https://worldtimeapi.org/api/ip", {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error(`Статус ${response.status}`);
+        }
+        const data = await response.json();
+        const networkUnix = Math.floor(data.unixtime);
+        unixGlobalTag.textContent = networkUnix;
+        const currentLocal = lastLocalUnix ?? Math.floor(Date.now() / 1000);
+        const drift = currentLocal - networkUnix;
+        const signed = drift > 0 ? `+${drift}` : `${drift}`;
+        driftTag.textContent = `${signed} сек`;
+        syncHint.textContent = "Сравнение завершено.";
+      } catch (error) {
+        syncHint.textContent = "Не удалось получить время.";
+        driftTag.textContent = "—";
+        unixGlobalTag.textContent = "—";
+      } finally {
+        syncBtn.disabled = false;
+        syncBtn.textContent = "Сравнить время";
+      }
+    }
+
+    syncBtn.addEventListener("click", fetchNetworkTime);
 
     setInterval(update, 1000);
     renderOtp("------");
