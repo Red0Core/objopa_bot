@@ -330,6 +330,28 @@
     let isUpdating = false;
     let lastLocalUnix = null;
 
+    function extractSecretFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const querySecret = params.get("secret");
+      const segments = window.location.pathname.split("/").filter(Boolean);
+      const lastSegment = segments[segments.length - 1];
+      const candidates = [querySecret];
+
+      if (lastSegment && !lastSegment.toLowerCase().endsWith("index.html")) {
+        candidates.push(lastSegment);
+      }
+
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        const normalized = decodeURIComponent(candidate)
+          .replace(/[^a-zA-Z2-7\s]/g, "")
+          .toUpperCase();
+        if (normalized.trim()) return normalized;
+      }
+
+      return null;
+    }
+
     function base32ToBytes(secret) {
       const cleaned = secret.replace(/\s+/g, "").toUpperCase();
       const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -432,6 +454,12 @@
       if (value === lastSecret) return;
       prepareKey(value).then(update);
     });
+
+    const initialSecret = extractSecretFromUrl();
+    if (initialSecret) {
+      secretInput.value = initialSecret;
+      prepareKey(initialSecret).then(update);
+    }
 
     async function fetchNetworkTime() {
       syncBtn.disabled = true;
