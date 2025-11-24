@@ -4,6 +4,7 @@
 """
 import asyncio
 from pathlib import Path
+import traceback
 from typing import List, Optional
 from dataclasses import dataclass
 from enum import Enum
@@ -13,6 +14,7 @@ from .instagram import INSTAGRAM_REGEX, download_instagram_media
 from .twitter import TWITTER_REGEX, download_twitter_media
 from .ytdlp import download_with_ytdlp
 from .gallery_dl import download_with_gallery_dl
+from .spotify import SPOTIFY_TRACK_REGEX, download_spotify_track, TrackInfo, extract_track_id
 
 
 class DownloaderType(Enum):
@@ -146,9 +148,36 @@ class DownloaderManager:
                     )
                 
                 self.download_attempts.append(f"Twitter: {error or 'No media found'}")
+            
+            elif SPOTIFY_TRACK_REGEX.match(url):
+                logger.info(f"Attempting Spotify download for: {url}")
+                track_id = extract_track_id(url)
+                if not track_id:
+                    self.download_attempts.append("Spotify: Invalid track URL")
+                    return DownloadResult(
+                        success=False,
+                        files=[],
+                        caption=None,
+                        error="Invalid Spotify track URL",
+                        downloader_used=None
+                    )
+                track_info: TrackInfo = download_spotify_track(track_id)
+                
+                if track_info and track_info.local_path.exists():
+                    self.download_attempts.append("Spotify: Success")
+                    
+                    return DownloadResult(
+                        success=True,
+                        files=[track_info.local_path, track_info.local_cover_path] if track_info.local_cover_path else [track_info.local_path],
+                        caption=f"{track_info.title} - {track_info.artist} - {track_info.bitrate_kbps}kbps",
+                        error=None,
+                        downloader_used=DownloaderType.CUSTOM
+                    )
+                
+                self.download_attempts.append("Spotify: No track downloaded")
         
         except Exception as e:
-            logger.error(f"Custom downloader error: {e}")
+            logger.error(f"Custom downloader error: {e}\n{traceback.format_exc()}")
             self.download_attempts.append(f"Custom: Exception - {str(e)}")
         
         return DownloadResult(
