@@ -23,30 +23,40 @@
       box-sizing: border-box;
     }
 
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
       display: flex;
       justify-content: center;
       align-items: flex-start;
-      padding: max(18px, env(safe-area-inset-left));
-      padding-right: max(18px, env(safe-area-inset-right));
-      padding-top: max(22px, env(safe-area-inset-top));
-      padding-bottom: max(22px, env(safe-area-inset-bottom));
+      padding: max(16px, env(safe-area-inset-left));
+      padding-right: max(16px, env(safe-area-inset-right));
+      padding-top: max(18px, env(safe-area-inset-top));
+      padding-bottom: max(18px, env(safe-area-inset-bottom));
       background: var(--bg);
       color: var(--text-main);
       overflow-x: hidden;
     }
 
     .shell {
-      width: min(820px, 100%);
+      width: min(760px, 100%);
       background: linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
       border: 1px solid var(--border);
       border-radius: 28px;
       box-shadow:
         0 16px 60px rgba(0, 0, 0, 0.45),
         0 0 1px rgba(255, 255, 255, 0.18);
-      padding: clamp(22px, 4vw, 34px);
+      padding: clamp(18px, 4vw, 30px);
       backdrop-filter: blur(18px);
       position: relative;
       overflow: hidden;
@@ -80,14 +90,14 @@
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      gap: 14px;
-      margin-bottom: 18px;
+      gap: 12px;
+      margin-bottom: 14px;
     }
 
     .title-group {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
 
     .subtitle {
@@ -100,7 +110,7 @@
 
     .pill {
       align-self: center;
-      padding: 10px 14px;
+      padding: 8px 12px;
       border-radius: 999px;
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.06);
@@ -111,7 +121,7 @@
     }
 
     .badge {
-      padding: 8px 14px;
+      padding: 8px 12px;
       border-radius: 12px;
       background: linear-gradient(120deg, var(--accent), var(--accent-2));
       color: #0b0f1a;
@@ -123,14 +133,14 @@
 
     h1 {
       margin: 0;
-      font-size: clamp(22px, 4vw, 30px);
+      font-size: clamp(22px, 4vw, 28px);
       letter-spacing: 0.06em;
     }
 
     .grid {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 16px;
+      gap: 14px;
     }
 
     .card {
@@ -138,7 +148,7 @@
       background: var(--glass);
       border: 1px solid var(--border);
       border-radius: 18px;
-      padding: 18px 18px 20px;
+      padding: 16px 16px 18px;
       overflow: hidden;
     }
 
@@ -160,8 +170,8 @@
       display: flex;
       align-items: baseline;
       justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 12px;
+      gap: 8px;
+      margin-bottom: 10px;
     }
 
     .micro-hint {
@@ -174,13 +184,13 @@
 
     .input {
       width: 100%;
-      padding: 14px 16px;
+      padding: 13px 15px;
       border-radius: 12px;
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.06);
       color: var(--text-main);
       outline: none;
-      font-size: 16px;
+      font-size: 15px;
       transition: border-color 0.2s ease, box-shadow 0.2s ease;
       font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
       letter-spacing: 0.04em;
@@ -195,33 +205,35 @@
     .otp-value {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
-      gap: 10px;
-      margin: 6px 0 12px;
-      font-size: clamp(28px, 6vw, 38px);
+      gap: 8px;
+      margin: 4px 0 10px;
+      font-size: clamp(26px, 6vw, 36px);
       font-weight: 800;
       letter-spacing: 0.06em;
       color: #f8fafc;
+      font-variant-numeric: tabular-nums;
     }
 
     .otp-box {
-      padding: 16px 12px;
+      padding: 14px 12px;
       text-align: center;
       border-radius: 12px;
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid var(--border);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-      min-width: 42px;
+      min-width: 38px;
     }
 
     @media (max-width: 380px) {
       .otp-value {
         gap: 6px;
-        font-size: clamp(26px, 7vw, 34px);
+        font-size: clamp(24px, 7vw, 32px);
+        letter-spacing: 0.04em;
       }
 
       .otp-box {
-        padding: 14px 10px;
-        min-width: 36px;
+        padding: 12px 10px;
+        min-width: 34px;
       }
     }
 
@@ -345,6 +357,11 @@
         padding: 16px;
       }
 
+      .subtitle {
+        font-size: 13px;
+        line-height: 1.35;
+      }
+
       .card-head {
         flex-direction: column;
         align-items: flex-start;
@@ -371,6 +388,34 @@
       .ghost-btn {
         width: 100%;
         text-align: center;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .shell {
+        border-radius: 22px;
+        padding: 16px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+      }
+
+      header {
+        gap: 10px;
+      }
+
+      .pill {
+        font-size: 12px;
+      }
+
+      .card {
+        border-radius: 16px;
+      }
+
+      .timer-row {
+        gap: 10px;
+      }
+
+      .timer-track {
+        min-width: 120px;
       }
     }
   </style>
