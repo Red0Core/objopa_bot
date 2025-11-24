@@ -23,18 +23,29 @@
       box-sizing: border-box;
     }
 
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
       display: flex;
-      align-items: center;
       justify-content: center;
+      align-items: flex-start;
       padding: max(16px, env(safe-area-inset-left));
       padding-right: max(16px, env(safe-area-inset-right));
-      padding-top: max(20px, env(safe-area-inset-top));
-      padding-bottom: max(20px, env(safe-area-inset-bottom));
+      padding-top: max(18px, env(safe-area-inset-top));
+      padding-bottom: max(18px, env(safe-area-inset-bottom));
       background: var(--bg);
       color: var(--text-main);
+      overflow-x: hidden;
     }
 
     .shell {
@@ -45,7 +56,7 @@
       box-shadow:
         0 16px 60px rgba(0, 0, 0, 0.45),
         0 0 1px rgba(255, 255, 255, 0.18);
-      padding: clamp(22px, 4vw, 34px);
+      padding: clamp(18px, 4vw, 30px);
       backdrop-filter: blur(18px);
       position: relative;
       overflow: hidden;
@@ -77,32 +88,59 @@
 
     header {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 22px;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+      line-height: 1.4;
+      font-size: 14px;
+    }
+
+    .pill {
+      align-self: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.06);
+      color: #e2e8f0;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
     }
 
     .badge {
-      padding: 8px 14px;
+      padding: 8px 12px;
       border-radius: 12px;
       background: linear-gradient(120deg, var(--accent), var(--accent-2));
       color: #0b0f1a;
       font-weight: 800;
       letter-spacing: 0.08em;
       box-shadow: 0 12px 30px rgba(124, 58, 237, 0.35);
+      width: fit-content;
     }
 
     h1 {
       margin: 0;
-      font-size: clamp(22px, 4vw, 30px);
+      font-size: clamp(22px, 4vw, 28px);
       letter-spacing: 0.06em;
     }
 
     .grid {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 16px;
+      gap: 14px;
     }
 
     .card {
@@ -110,7 +148,7 @@
       background: var(--glass);
       border: 1px solid var(--border);
       border-radius: 18px;
-      padding: 18px 18px 20px;
+      padding: 16px 16px 18px;
       overflow: hidden;
     }
 
@@ -123,20 +161,36 @@
     }
 
     .card h2 {
-      margin: 0 0 12px;
+      margin: 0;
       font-size: 17px;
       letter-spacing: 0.03em;
     }
 
+    .card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .micro-hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      text-align: right;
+    }
+
     .input {
       width: 100%;
-      padding: 14px 16px;
+      padding: 13px 15px;
       border-radius: 12px;
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.04);
+      background: rgba(255, 255, 255, 0.06);
       color: var(--text-main);
       outline: none;
-      font-size: 16px;
+      font-size: 15px;
       transition: border-color 0.2s ease, box-shadow 0.2s ease;
       font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
       letter-spacing: 0.04em;
@@ -145,39 +199,83 @@
     .input:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.18);
+      background: rgba(255, 255, 255, 0.08);
     }
 
     .otp-value {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
-      gap: 10px;
-      margin: 6px 0 12px;
-      font-size: clamp(28px, 6vw, 38px);
+      gap: 8px;
+      margin: 4px 0 10px;
+      font-size: clamp(26px, 6vw, 36px);
       font-weight: 800;
       letter-spacing: 0.06em;
       color: #f8fafc;
+      font-variant-numeric: tabular-nums;
     }
 
     .otp-box {
-      padding: 16px 12px;
+      padding: 14px 12px;
       text-align: center;
       border-radius: 12px;
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid var(--border);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-      min-width: 42px;
+      min-width: 38px;
+    }
+
+    @media (max-width: 380px) {
+      .otp-value {
+        gap: 6px;
+        font-size: clamp(24px, 7vw, 32px);
+        letter-spacing: 0.04em;
+      }
+
+      .otp-box {
+        padding: 12px 10px;
+        min-width: 34px;
+      }
+    }
+
+    .timer-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
     }
 
     .timer {
       display: inline-flex;
       align-items: center;
       gap: 10px;
-      padding: 8px 12px;
+      padding: 10px 14px;
       border-radius: 12px;
-      background: rgba(255, 255, 255, 0.04);
+      background: rgba(255, 255, 255, 0.06);
       border: 1px solid var(--border);
-      font-size: 14px;
+      font-size: 15px;
       color: var(--muted);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .timer-track {
+      flex: 1;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      position: relative;
+      min-width: 140px;
+    }
+
+    .timer-fill {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      transform-origin: left;
+      transition: width 0.25s ease;
     }
 
     .meta {
@@ -190,6 +288,7 @@
       border-radius: 12px;
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.03);
+      width: 100%;
     }
 
     .meta strong {
@@ -206,15 +305,17 @@
     }
 
     .ghost-btn {
-      padding: 10px 14px;
+      padding: 12px 14px;
       border-radius: 12px;
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.04);
+      background: rgba(255, 255, 255, 0.06);
       color: var(--text-main);
-      font-weight: 600;
+      font-weight: 700;
       letter-spacing: 0.01em;
       cursor: pointer;
       transition: border-color 0.2s ease, transform 0.2s ease;
+      flex: 1;
+      min-width: 180px;
     }
 
     .ghost-btn:hover:not(:disabled) {
@@ -231,12 +332,13 @@
       color: var(--muted);
       font-size: 12px;
       margin: 0;
+      line-height: 1.5;
     }
 
     @media (max-width: 640px) {
       body {
-        padding: max(12px, env(safe-area-inset-left));
-        padding-right: max(12px, env(safe-area-inset-right));
+        padding: max(14px, env(safe-area-inset-left));
+        padding-right: max(14px, env(safe-area-inset-right));
         padding-top: max(16px, env(safe-area-inset-top));
         padding-bottom: max(16px, env(safe-area-inset-bottom));
       }
@@ -244,7 +346,6 @@
       header {
         flex-direction: column;
         align-items: flex-start;
-        gap: 8px;
       }
 
       .badge {
@@ -254,6 +355,20 @@
 
       .card {
         padding: 16px;
+      }
+
+      .subtitle {
+        font-size: 13px;
+        line-height: 1.35;
+      }
+
+      .card-head {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .micro-hint {
+        text-align: left;
       }
 
       .input {
@@ -275,50 +390,103 @@
         text-align: center;
       }
     }
+
+    @media (max-width: 480px) {
+      .shell {
+        border-radius: 22px;
+        padding: 16px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+      }
+
+      header {
+        gap: 10px;
+      }
+
+      .pill {
+        font-size: 12px;
+      }
+
+      .card {
+        border-radius: 16px;
+      }
+
+      .timer-row {
+        gap: 10px;
+      }
+
+      .timer-track {
+        min-width: 120px;
+      }
+    }
   </style>
 </head>
-  <body>
-    <div class="shell">
-      <header>
+<body>
+  <main class="shell">
+    <header>
+      <div class="title-group">
         <span class="badge">OBJOPA 2FA</span>
         <h1>Offline Authenticator</h1>
-      </header>
+        <p class="subtitle">
+          Лёгкий лендинг для одноразовых кодов: безопасно, без лишнего шума и удобно на мобильных.
+        </p>
+      </div>
+      <div class="pill">30s шаг</div>
+    </header>
 
-      <div class="grid">
-        <div class="card">
+    <div class="grid">
+      <div class="card">
+        <div class="card-head">
           <h2>Base32 секрет</h2>
+          <p class="micro-hint">Вставьте или передайте через URL ?secret=</p>
+        </div>
         <input
           id="secret"
           class="input"
           placeholder="Например: JBSWY3DPEHPK3PXP"
           autocomplete="off"
           spellcheck="false"
+          autocapitalize="characters"
+          inputmode="text"
+          aria-label="Base32 секрет"
         />
+        <p class="hint">Секрет подставится автоматически, если открыть ссылку с параметром <code>secret</code> или последним сегментом URL.</p>
       </div>
 
-        <div class="card">
+      <div class="card">
+        <div class="card-head">
           <h2>Код</h2>
-          <div class="otp-value" id="otp"></div>
-          <div class="timer" id="remaining">30s</div>
+          <p class="micro-hint">Офлайн генерация TOTP</p>
         </div>
-
-        <div class="card">
-          <h2>UNIX штамп</h2>
-          <div class="meta">Локально: <strong id="unix">-</strong></div>
-          <div class="meta">Глобально: <strong id="unix-global">—</strong></div>
-          <div class="meta">Сдвиг: <strong id="drift">—</strong></div>
-          <div class="actions">
-            <button class="ghost-btn" id="sync" type="button">Сравнить время</button>
-            <p class="hint" id="sync-hint">Запрос по сети только по кнопке.</p>
+        <div class="otp-value" id="otp"></div>
+        <div class="timer-row">
+          <div class="timer" id="remaining">30s</div>
+          <div class="timer-track" aria-hidden="true">
+            <div class="timer-fill" id="timer-fill"></div>
           </div>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>UNIX штамп</h2>
+          <p class="micro-hint">Сверяем локальное и сетевое время</p>
+        </div>
+        <div class="meta">Локально: <strong id="unix">-</strong></div>
+        <div class="meta">Глобально: <strong id="unix-global">—</strong></div>
+        <div class="meta">Сдвиг: <strong id="drift">—</strong></div>
+        <div class="actions">
+          <button class="ghost-btn" id="sync" type="button">Сравнить время</button>
+          <p class="hint" id="sync-hint">Запрос по сети только по кнопке.</p>
+        </div>
+      </div>
     </div>
+  </main>
 
   <script>
     const secretInput = document.getElementById("secret");
     const otpTag = document.getElementById("otp");
     const remainingTag = document.getElementById("remaining");
+    const timerFill = document.getElementById("timer-fill");
     const unixTag = document.getElementById("unix");
     const unixGlobalTag = document.getElementById("unix-global");
     const driftTag = document.getElementById("drift");
@@ -422,6 +590,7 @@
       unixTag.textContent = unixTime;
       const secondsLeft = 30 - (unixTime % 30);
       remainingTag.textContent = `${secondsLeft}s`;
+      timerFill.style.width = `${(secondsLeft / 30) * 100}%`;
 
       if (!cryptoKey) {
         renderOtp("------");
