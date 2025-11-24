@@ -166,10 +166,17 @@ class DownloaderManager:
                 if track_info and track_info.local_path.exists():
                     self.download_attempts.append("Spotify: Success")
                     
+                    if track_info.local_path.suffix.lower() == ".mp3":
+                        files = [track_info.local_path]
+                        caption = f"{track_info.title} - {track_info.artist} - {track_info.bitrate_kbps}kbps"
+                    else:
+                        files = [track_info.local_path, track_info.local_cover_path] if track_info.local_cover_path else [track_info.local_path]
+                        caption = f"{track_info.title} - {track_info.artist} - {track_info.bitrate_kbps}kbps"
+
                     return DownloadResult(
                         success=True,
-                        files=[track_info.local_path, track_info.local_cover_path] if track_info.local_cover_path else [track_info.local_path],
-                        caption=f"{track_info.title} - {track_info.artist} - {track_info.bitrate_kbps}kbps",
+                        files=files,
+                        caption=caption,
                         error=None,
                         downloader_used=DownloaderType.CUSTOM
                     )

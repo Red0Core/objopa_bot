@@ -92,14 +92,25 @@ def download_binary(url: str, out_path: Path):
 
 def mux_audio_with_cover(
     ogg_path: Path,
+    cover_path: Path | None,
     out_path: Path,
     title: str | None,
     artist: str | None,
+    bitrate_kbps: int | None = None,
 ):
     """
-    Add metadata to OGG file. Cover is saved separately.
+    Convert OGG to MP3 with embedded cover art.
     """
-    cmd = ["ffmpeg", "-y", "-i", str(ogg_path), "-c", "copy"]
+    cmd = ["ffmpeg", "-y", "-i", str(ogg_path)]
+
+    bitrate = bitrate_kbps or 320
+    bitrate_str = f"{bitrate}k"
+
+    if cover_path and cover_path.exists():
+        cmd += ["-i", str(cover_path)]
+        cmd += ["-c:a", "libmp3lame", "-b:a", bitrate_str, "-map", "0:a", "-map", "1", "-id3v2_version", "3"]
+    else:
+        cmd += ["-c:a", "libmp3lame", "-b:a", bitrate_str]
 
     if title:
         cmd += ["-metadata", f"title={title}"]
@@ -151,7 +162,7 @@ def download_spotify_track(track_id: str, base_dir: Path = DOWNLOADS_DIR) -> Tra
     track_dir = base_dir / track_id
     ogg_path = track_dir / f"{track_id}.ogg"
     cover_path = track_dir / f"{track_id}.jpg"
-    out_path = track_dir / f"{safe_artist} - {safe_title}.ogg"
+    out_path = track_dir / f"{safe_artist} - {safe_title}.mp3"
 
     # качаем ogg
     download_binary(full_stream_url, ogg_path)
@@ -165,8 +176,8 @@ def download_spotify_track(track_id: str, base_dir: Path = DOWNLOADS_DIR) -> Tra
     else:
         cover_path = None
 
-    # конвертируем с метаданными (без обложки)
-    mux_audio_with_cover(ogg_path, out_path, meta["title"], meta["artist"])
+    # конвертируем с метаданными и обложкой
+    mux_audio_with_cover(ogg_path, cover_path, out_path, meta["title"], meta["artist"], input_bitrate)
 
     bitrate_kbps = get_bitrate_kbps(out_path)
 
@@ -177,7 +188,7 @@ def download_spotify_track(track_id: str, base_dir: Path = DOWNLOADS_DIR) -> Tra
         stream_url=full_stream_url,
         local_path=out_path,
         bitrate_kbps=bitrate_kbps,
-        local_cover_path=cover_path,
+        local_cover_path=None,  # Cover is embedded in MP3
     )
 
 
