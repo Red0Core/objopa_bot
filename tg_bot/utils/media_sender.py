@@ -62,7 +62,7 @@ class MediaSender:
             docs = [f for f in files if f.suffix.lower() not in (MediaSender.IMAGE_EXTS | MediaSender.VIDEO_EXTS | MediaSender.AUDIO_EXTS)]
             
             caption_used = False
-            
+
             # Отправляем изображения (группами по 10)
             if images:
                 await MediaSender._send_images(message, images, caption_parts[0] if caption_parts else None)
@@ -158,17 +158,31 @@ class MediaSender:
         """Отправляет аудио группами по 10."""
         for i in range(0, len(audio), 10):
             chunk = audio[i:i + 10]
-            media_group = [
-                InputMediaAudio(media=FSInputFile(a))
-                for a in chunk
-            ]
+            media_group = []
+            
+            for a in chunk:
+                # Ищем thumbnail в той же папке
+                cover_path = a.parent / f"{a.parent.name}.jpg"
+                thumbnail = FSInputFile(cover_path) if cover_path.exists() else None
+                
+                media_group.append(
+                    InputMediaAudio(
+                        media=FSInputFile(a),
+                        thumbnail=thumbnail
+                    )
+                )
             
             chunk_caption = caption if i == 0 and caption else None
             if chunk_caption and media_group:
+                # Обновляем первое аудио с caption и thumbnail
+                cover_path = chunk[0].parent / f"{chunk[0].parent.name}.jpg"
+                thumbnail = FSInputFile(cover_path) if cover_path.exists() else None
+                
                 media_group[0] = InputMediaAudio(
                     media=FSInputFile(chunk[0]),
                     caption=chunk_caption,
-                    parse_mode="MarkdownV2"
+                    parse_mode="MarkdownV2",
+                    thumbnail=thumbnail
                 )
             
             await message.reply_media_group(media=cast(list[MediaUnion], media_group))
