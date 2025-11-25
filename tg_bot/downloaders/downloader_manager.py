@@ -21,6 +21,9 @@ class DownloaderType(Enum):
     CUSTOM = "custom"
     YTDLP = "yt-dlp"
     GALLERY_DL = "gallery-dl"
+    SPOTIFY = "spotify"
+    TWITTER = "twitter"
+    INSTAGRAM = "instagram"
 
 
 @dataclass
@@ -114,7 +117,7 @@ class DownloaderManager:
                             files=media_files,
                             caption=caption,
                             error=None,
-                            downloader_used=DownloaderType.CUSTOM
+                            downloader_used=DownloaderType.INSTAGRAM
                         )
                 
                 self.download_attempts.append(f"Instagram: {error or 'Unknown error'}")
@@ -132,7 +135,7 @@ class DownloaderManager:
                         files=all_files,
                         caption=caption,
                         error=None,
-                        downloader_used=DownloaderType.CUSTOM
+                        downloader_used=DownloaderType.TWITTER
                     )
                 
                 # Если есть только текст без медиа, но скачивание "успешное"
@@ -144,7 +147,7 @@ class DownloaderManager:
                         files=[],
                         caption=caption,
                         error=None,
-                        downloader_used=DownloaderType.CUSTOM
+                        downloader_used=DownloaderType.TWITTER
                     )
                 
                 self.download_attempts.append(f"Twitter: {error or 'No media found'}")
@@ -159,26 +162,22 @@ class DownloaderManager:
                         files=[],
                         caption=None,
                         error="Invalid Spotify track URL",
-                        downloader_used=None
+                        downloader_used=DownloaderType.SPOTIFY
                     )
                 track_info: TrackInfo = download_spotify_track(track_id)
                 
                 if track_info and track_info.local_path.exists():
                     self.download_attempts.append("Spotify: Success")
                     
-                    if track_info.local_path.suffix.lower() == ".mp3":
-                        files = [track_info.local_path]
-                        caption = f"{track_info.title} - {track_info.artist} - {track_info.bitrate_kbps}kbps"
-                    else:
-                        files = [track_info.local_path, track_info.local_cover_path] if track_info.local_cover_path else [track_info.local_path]
-                        caption = f"{track_info.title} - {track_info.artist} - {track_info.bitrate_kbps}kbps"
+                    files = [track_info.local_path, track_info.local_cover_path] if track_info.local_cover_path else [track_info.local_path]
+                    caption = f"{track_info.title} - {track_info.artist} - {track_info.bitrate_kbps}kbps"
 
                     return DownloadResult(
                         success=True,
                         files=files,
                         caption=caption,
                         error=None,
-                        downloader_used=DownloaderType.CUSTOM
+                        downloader_used=DownloaderType.SPOTIFY
                     )
                 
                 self.download_attempts.append("Spotify: No track downloaded")
