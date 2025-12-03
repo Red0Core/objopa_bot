@@ -55,12 +55,16 @@
 
     h1 {
       margin: 0;
-      font-size: clamp(18px, 5vw, 20px);
-      letter-spacing: 0.02em;
+      font-size: clamp(17px, 4vw, 19px);
+      letter-spacing: 0.08em;
     }
 
     .pill {
-      padding: 6px 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 12px;
       border-radius: 999px;
       border: 1px solid var(--stroke);
       background: rgba(255, 255, 255, 0.05);
@@ -85,7 +89,7 @@
       padding: 12px;
       color: inherit;
       display: grid;
-      gap: 6px;
+      gap: 8px;
       cursor: pointer;
       transition: transform 120ms ease, border-color 150ms ease;
     }
@@ -122,7 +126,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      font-size: 13px;
+      font-size: 12px;
       color: var(--muted);
     }
 
@@ -146,12 +150,6 @@
     .field {
       display: grid;
       gap: 6px;
-    }
-
-    label {
-      font-size: 12px;
-      color: var(--muted);
-      letter-spacing: 0.02em;
     }
 
     input {
@@ -201,14 +199,14 @@
 
     .copy-toast {
       justify-self: center;
-      min-width: 160px;
-      padding: 8px 12px;
+      min-width: 120px;
+      padding: 6px 10px;
       border-radius: 12px;
       border: 1px solid var(--stroke);
       background: rgba(52, 211, 153, 0.08);
       color: var(--green);
       font-weight: 600;
-      font-size: 13px;
+      font-size: 12px;
       text-align: center;
       opacity: 0;
       transform: translateY(6px);
@@ -235,19 +233,17 @@
 <body>
   <div class="page">
     <header>
-      <div>
-        <h1>OBJOPA 2FA</h1>
-        <p class="inline" style="margin: 4px 0 0; color: var(--muted);">
-          Минимальный генератор OTP
-        </p>
-      </div>
-      <span class="pill">MINI</span>
+      <h1>OBJOPA</h1>
+      <span class="pill">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--accent);"></span>
+        2FA
+      </span>
     </header>
 
     <div class="card" aria-live="polite">
       <button class="otp-button" id="otp" type="button" aria-label="Скопировать код">
         <div class="inline">
-          <span>Ваш код</span>
+          <span>OTP</span>
           <span id="remaining">30s</span>
         </div>
         <div class="otp-digits"></div>
@@ -255,30 +251,34 @@
           <span id="timer-fill"></span>
         </div>
       </button>
-      <p class="inline" style="margin: 0; font-size: 12px;">
-        Коснитесь кода, чтобы скопировать в буфер обмена.
-      </p>
-      <div class="copy-toast" role="status">Код скопирован</div>
+      <div class="copy-toast" role="status">Скопировано</div>
     </div>
 
     <div class="card">
       <div class="field">
-        <label for="secret">Секрет в Base32</label>
-        <input id="secret" inputmode="text" autocomplete="one-time-code" placeholder="JBSWY3DPEHPK3PXP" />
+        <input
+          id="secret"
+          inputmode="text"
+          autocomplete="one-time-code"
+          placeholder="SECRET · BASE32"
+          aria-label="Секрет в Base32"
+        />
       </div>
-      <button class="ghost" id="sync-btn" type="button">Сравнить время</button>
-      <div class="meta" id="sync-hint">Синхронизация по сети не выполнялась.</div>
+      <div class="inline" style="gap: 10px;">
+        <button class="ghost" id="sync-btn" type="button" style="max-width: 120px;">Сеть</button>
+        <div class="meta" id="sync-hint" style="margin: 0;">—</div>
+      </div>
       <div class="meta">
         <div class="meta-row">
-          <span>Локальный UNIX</span>
+          <span>Локал</span>
           <strong id="unix-local">—</strong>
         </div>
         <div class="meta-row">
-          <span>Сетевой UNIX</span>
+          <span>Сеть</span>
           <strong id="unix-network">—</strong>
         </div>
         <div class="meta-row">
-          <span>Разница</span>
+          <span>Δ</span>
           <strong id="drift">—</strong>
         </div>
       </div>
@@ -409,13 +409,14 @@
       const value = otpDigits.textContent.replace(/\s+/g, "");
       if (!value || value.includes("-")) return;
       try {
+        toast.textContent = "Скопировано";
         await navigator.clipboard.writeText(value);
         toast.classList.add("show");
         otpTag.classList.add("copied");
         setTimeout(() => toast.classList.remove("show"), 1200);
         setTimeout(() => otpTag.classList.remove("copied"), 600);
       } catch (error) {
-        toast.textContent = "Не удалось скопировать";
+        toast.textContent = "Ошибка";
         toast.classList.add("show");
         setTimeout(() => toast.classList.remove("show"), 1400);
       }
@@ -423,8 +424,8 @@
 
     async function fetchNetworkTime() {
       syncBtn.disabled = true;
-      syncBtn.textContent = "Запрос...";
-      syncHint.textContent = "Получаем время из сети";
+      syncBtn.textContent = "...";
+      syncHint.textContent = "Запрос";
       try {
         const response = await fetch("https://worldtimeapi.org/api/ip", { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -435,14 +436,14 @@
         const drift = currentLocal - networkUnix;
         const signed = drift > 0 ? `+${drift}` : `${drift}`;
         driftTag.textContent = `${signed} сек`;
-        syncHint.textContent = "Сравнение завершено";
+        syncHint.textContent = "Готово";
       } catch (error) {
-        syncHint.textContent = "Не удалось получить сетевое время";
+        syncHint.textContent = "Ошибка";
         driftTag.textContent = "—";
         unixGlobalTag.textContent = "—";
       } finally {
         syncBtn.disabled = false;
-        syncBtn.textContent = "Сравнить время";
+        syncBtn.textContent = "Сеть";
       }
     }
 
