@@ -301,26 +301,33 @@
         lastSecret = "";
         return;
       }
-      try {
-        const bytes = base32ToBytes(secret);
-        if (!bytes.length) throw new Error("empty");
-        secretBytes = bytes;
-        if (crypto?.subtle?.importKey) {
-          cryptoKey = await crypto.subtle.importKey(
-            "raw",
-            bytes,
-            { name: "HMAC", hash: "SHA-1" },
-            false,
-            ["sign"]
-          );
-        } else {
-          cryptoKey = null;
-        }
-        lastSecret = secret;
-      } catch (error) {
+
+      const bytes = base32ToBytes(secret);
+      if (!bytes.length) {
         cryptoKey = null;
         secretBytes = null;
         lastSecret = "";
+        return;
+      }
+
+      secretBytes = bytes;
+      lastSecret = secret;
+
+      if (!crypto?.subtle?.importKey) {
+        cryptoKey = null;
+        return;
+      }
+
+      try {
+        cryptoKey = await crypto.subtle.importKey(
+          "raw",
+          bytes,
+          { name: "HMAC", hash: "SHA-1" },
+          false,
+          ["sign"]
+        );
+      } catch (error) {
+        cryptoKey = null;
       }
     }
 
