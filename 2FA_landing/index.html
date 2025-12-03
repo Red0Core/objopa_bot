@@ -55,26 +55,21 @@
 
     h1 {
       margin: 0;
-      font-size: clamp(18px, 5vw, 20px);
-      letter-spacing: 0.02em;
+      font-size: clamp(17px, 4vw, 19px);
+      letter-spacing: 0.08em;
     }
 
     .pill {
-      padding: 6px 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 12px;
       border-radius: 999px;
       border: 1px solid var(--stroke);
       background: rgba(255, 255, 255, 0.05);
       font-size: 12px;
       letter-spacing: 0.06em;
-    }
-
-    .card {
-      border: 1px solid var(--stroke);
-      border-radius: 14px;
-      padding: 12px;
-      background: rgba(255, 255, 255, 0.03);
-      display: grid;
-      gap: 10px;
     }
 
     .otp-button {
@@ -85,7 +80,7 @@
       padding: 12px;
       color: inherit;
       display: grid;
-      gap: 6px;
+      gap: 8px;
       cursor: pointer;
       transition: transform 120ms ease, border-color 150ms ease;
     }
@@ -97,24 +92,40 @@
     .otp-digits {
       display: flex;
       justify-content: center;
-      gap: 6px;
+      gap: 8px;
       font-weight: 700;
-      font-size: clamp(26px, 9vw, 36px);
-      letter-spacing: 0.08em;
+      font-size: clamp(28px, 10vw, 38px);
+      letter-spacing: 0.12em;
     }
 
     .otp-box {
-      min-width: 34px;
+      min-width: clamp(36px, 8vw, 44px);
       text-align: center;
-      padding: 6px 0;
-      border-radius: 10px;
+      padding: 8px 0;
+      border-radius: 12px;
       background: rgba(255, 255, 255, 0.06);
       border: 1px solid transparent;
+      transition: transform 160ms ease, background 160ms ease, border-color 160ms ease,
+        box-shadow 160ms ease;
+    }
+
+    @keyframes copiedPulse {
+      0% {
+        transform: translateY(0) scale(1);
+      }
+      35% {
+        transform: translateY(-2px) scale(1.02);
+      }
+      100% {
+        transform: translateY(0) scale(1);
+      }
     }
 
     .otp-button.copied .otp-box {
       border-color: var(--green);
-      box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.3);
+      box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.28);
+      background: linear-gradient(135deg, rgba(52, 211, 153, 0.15), rgba(168, 85, 247, 0.08));
+      animation: copiedPulse 420ms ease;
     }
 
     .inline {
@@ -122,7 +133,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      font-size: 13px;
+      font-size: 12px;
       color: var(--muted);
     }
 
@@ -141,17 +152,6 @@
       background: linear-gradient(90deg, var(--accent), var(--accent-2));
       transform-origin: left;
       transition: width 300ms linear;
-    }
-
-    .field {
-      display: grid;
-      gap: 6px;
-    }
-
-    label {
-      font-size: 12px;
-      color: var(--muted);
-      letter-spacing: 0.02em;
     }
 
     input {
@@ -186,48 +186,17 @@
     }
 
     .meta {
-      display: grid;
-      gap: 6px;
       font-size: 12px;
       color: var(--muted);
     }
 
-    .meta-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .copy-toast {
-      justify-self: center;
-      min-width: 160px;
-      padding: 8px 12px;
-      border-radius: 12px;
-      border: 1px solid var(--stroke);
-      background: rgba(52, 211, 153, 0.08);
-      color: var(--green);
-      font-weight: 600;
-      font-size: 13px;
-      text-align: center;
-      opacity: 0;
-      transform: translateY(6px);
-      transition: opacity 180ms ease, transform 180ms ease;
-    }
-
-    .copy-toast.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
     @media (max-width: 380px) {
-      .otp-box {
-        min-width: 30px;
+      .otp-digits {
+        gap: 6px;
+        letter-spacing: 0.1em;
       }
-
-      .meta-row {
-        flex-direction: column;
-        align-items: flex-start;
+      .otp-box {
+        min-width: 34px;
       }
     }
   </style>
@@ -235,53 +204,34 @@
 <body>
   <div class="page">
     <header>
-      <div>
-        <h1>OBJOPA 2FA</h1>
-        <p class="inline" style="margin: 4px 0 0; color: var(--muted);">
-          Минимальный генератор OTP
-        </p>
-      </div>
-      <span class="pill">MINI</span>
+      <h1>OBJOPA</h1>
+      <span class="pill">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--accent);"></span>
+        2FA
+      </span>
     </header>
 
-    <div class="card" aria-live="polite">
-      <button class="otp-button" id="otp" type="button" aria-label="Скопировать код">
-        <div class="inline">
-          <span>Ваш код</span>
-          <span id="remaining">30s</span>
-        </div>
-        <div class="otp-digits"></div>
-        <div class="progress" aria-hidden="true">
-          <span id="timer-fill"></span>
-        </div>
-      </button>
-      <p class="inline" style="margin: 0; font-size: 12px;">
-        Коснитесь кода, чтобы скопировать в буфер обмена.
-      </p>
-      <div class="copy-toast" role="status">Код скопирован</div>
-    </div>
+    <button class="otp-button" id="otp" type="button" aria-label="Скопировать код">
+      <div class="inline">
+        <span>OTP</span>
+        <span id="remaining">30s</span>
+      </div>
+      <div class="otp-digits"></div>
+      <div class="progress" aria-hidden="true">
+        <span id="timer-fill"></span>
+      </div>
+    </button>
 
-    <div class="card">
-      <div class="field">
-        <label for="secret">Секрет в Base32</label>
-        <input id="secret" inputmode="text" autocomplete="one-time-code" placeholder="JBSWY3DPEHPK3PXP" />
-      </div>
-      <button class="ghost" id="sync-btn" type="button">Сравнить время</button>
-      <div class="meta" id="sync-hint">Синхронизация по сети не выполнялась.</div>
-      <div class="meta">
-        <div class="meta-row">
-          <span>Локальный UNIX</span>
-          <strong id="unix-local">—</strong>
-        </div>
-        <div class="meta-row">
-          <span>Сетевой UNIX</span>
-          <strong id="unix-network">—</strong>
-        </div>
-        <div class="meta-row">
-          <span>Разница</span>
-          <strong id="drift">—</strong>
-        </div>
-      </div>
+    <input
+      id="secret"
+      inputmode="text"
+      autocomplete="one-time-code"
+      placeholder="SECRET · BASE32"
+      aria-label="Секрет в Base32"
+    />
+    <div class="inline" style="gap: 10px;">
+      <button class="ghost" id="sync-btn" type="button" style="max-width: 120px;">Время</button>
+      <div class="meta" id="drift" aria-live="polite">—</div>
     </div>
   </div>
 
@@ -290,13 +240,9 @@
     const otpDigits = otpTag.querySelector(".otp-digits");
     const remainingTag = document.getElementById("remaining");
     const timerFill = document.getElementById("timer-fill");
-    const unixTag = document.getElementById("unix-local");
-    const unixGlobalTag = document.getElementById("unix-network");
-    const driftTag = document.getElementById("drift");
     const secretInput = document.getElementById("secret");
     const syncBtn = document.getElementById("sync-btn");
-    const syncHint = document.getElementById("sync-hint");
-    const toast = document.querySelector(".copy-toast");
+    const driftTag = document.getElementById("drift");
 
     let cryptoKey = null;
     let isUpdating = false;
@@ -384,7 +330,6 @@
       isUpdating = true;
       const unixTime = Math.floor(Date.now() / 1000);
       lastLocalUnix = unixTime;
-      unixTag.textContent = unixTime;
       const secondsLeft = 30 - (unixTime % 30);
       remainingTag.textContent = `${secondsLeft}s`;
       timerFill.style.width = `${(secondsLeft / 30) * 100}%`;
@@ -410,39 +355,31 @@
       if (!value || value.includes("-")) return;
       try {
         await navigator.clipboard.writeText(value);
-        toast.classList.add("show");
         otpTag.classList.add("copied");
-        setTimeout(() => toast.classList.remove("show"), 1200);
-        setTimeout(() => otpTag.classList.remove("copied"), 600);
+        setTimeout(() => otpTag.classList.remove("copied"), 640);
       } catch (error) {
-        toast.textContent = "Не удалось скопировать";
-        toast.classList.add("show");
-        setTimeout(() => toast.classList.remove("show"), 1400);
+        otpTag.classList.add("copied");
+        setTimeout(() => otpTag.classList.remove("copied"), 640);
       }
     }
 
     async function fetchNetworkTime() {
       syncBtn.disabled = true;
-      syncBtn.textContent = "Запрос...";
-      syncHint.textContent = "Получаем время из сети";
+      syncBtn.textContent = "...";
       try {
         const response = await fetch("https://worldtimeapi.org/api/ip", { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         const networkUnix = Math.floor(data.unixtime);
-        unixGlobalTag.textContent = networkUnix;
         const currentLocal = lastLocalUnix ?? Math.floor(Date.now() / 1000);
         const drift = currentLocal - networkUnix;
         const signed = drift > 0 ? `+${drift}` : `${drift}`;
         driftTag.textContent = `${signed} сек`;
-        syncHint.textContent = "Сравнение завершено";
       } catch (error) {
-        syncHint.textContent = "Не удалось получить сетевое время";
         driftTag.textContent = "—";
-        unixGlobalTag.textContent = "—";
       } finally {
         syncBtn.disabled = false;
-        syncBtn.textContent = "Сравнить время";
+        syncBtn.textContent = "Время";
       }
     }
 
