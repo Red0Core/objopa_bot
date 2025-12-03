@@ -244,12 +244,25 @@
     const syncBtn = document.getElementById("sync-btn");
     const driftTag = document.getElementById("drift");
 
+    const pathSegments = window.location.pathname.split("/").filter(Boolean);
+    const initialPathSecret = pathSegments.length
+      ? decodeURIComponent(pathSegments[pathSegments.length - 1])
+      : "";
+    const basePathSegments = initialPathSecret
+      ? pathSegments.slice(0, -1)
+      : pathSegments;
+
     let cryptoKey = null;
     let isUpdating = false;
     let lastLocalUnix = null;
     let lastSecret = "";
 
     function extractSecretFromUrl() {
+      const cleanedPathSecret = initialPathSecret.trim();
+      if (cleanedPathSecret) {
+        return cleanedPathSecret.replace(/\s+/g, "");
+      }
+
       const params = new URLSearchParams(window.location.search);
       const otpauth = params.get("otpauth");
       if (!otpauth) return null;
@@ -299,6 +312,18 @@
         cryptoKey = null;
         lastSecret = "";
       }
+    }
+
+    function updateUrlWithSecret(secret) {
+      const url = new URL(window.location.href);
+      const segments = [...basePathSegments];
+
+      if (secret) {
+        segments.push(encodeURIComponent(secret));
+      }
+
+      url.pathname = `/${segments.join("/")}`;
+      window.history.replaceState({}, "", url);
     }
 
     async function generateOtp(unixTime) {
@@ -388,6 +413,7 @@
     secretInput.addEventListener("input", (event) => {
       const value = event.target.value.replace(/[^a-zA-Z2-7\s]/g, "").toUpperCase();
       event.target.value = value;
+      updateUrlWithSecret(value);
       if (value === lastSecret) return;
       prepareKey(value).then(update);
     });
@@ -396,8 +422,10 @@
 
     const initialSecret = extractSecretFromUrl();
     if (initialSecret) {
-      secretInput.value = initialSecret;
-      prepareKey(initialSecret).then(update);
+      const normalized = initialSecret.toUpperCase();
+      secretInput.value = normalized;
+      updateUrlWithSecret(normalized);
+      prepareKey(normalized).then(update);
     }
 
     setInterval(update, 1000);
