@@ -72,15 +72,6 @@
       letter-spacing: 0.06em;
     }
 
-    .card {
-      border: 1px solid var(--stroke);
-      border-radius: 14px;
-      padding: 12px;
-      background: rgba(255, 255, 255, 0.03);
-      display: grid;
-      gap: 10px;
-    }
-
     .otp-button {
       width: 100%;
       border: 1px solid var(--stroke);
@@ -163,11 +154,6 @@
       transition: width 300ms linear;
     }
 
-    .field {
-      display: grid;
-      gap: 6px;
-    }
-
     input {
       width: 100%;
       padding: 10px 12px;
@@ -225,33 +211,27 @@
       </span>
     </header>
 
-    <div class="card" aria-live="polite">
-      <button class="otp-button" id="otp" type="button" aria-label="Скопировать код">
-        <div class="inline">
-          <span>OTP</span>
-          <span id="remaining">30s</span>
-        </div>
-        <div class="otp-digits"></div>
-        <div class="progress" aria-hidden="true">
-          <span id="timer-fill"></span>
-        </div>
-      </button>
-    </div>
+    <button class="otp-button" id="otp" type="button" aria-label="Скопировать код">
+      <div class="inline">
+        <span>OTP</span>
+        <span id="remaining">30s</span>
+      </div>
+      <div class="otp-digits"></div>
+      <div class="progress" aria-hidden="true">
+        <span id="timer-fill"></span>
+      </div>
+    </button>
 
-    <div class="card">
-      <div class="field">
-        <input
-          id="secret"
-          inputmode="text"
-          autocomplete="one-time-code"
-          placeholder="SECRET · BASE32"
-          aria-label="Секрет в Base32"
-        />
-      </div>
-      <div class="inline" style="gap: 10px;">
-        <button class="ghost" id="sync-btn" type="button" style="max-width: 120px;">Время</button>
-        <div class="meta" id="drift" aria-live="polite">—</div>
-      </div>
+    <input
+      id="secret"
+      inputmode="text"
+      autocomplete="one-time-code"
+      placeholder="SECRET · BASE32"
+      aria-label="Секрет в Base32"
+    />
+    <div class="inline" style="gap: 10px;">
+      <button class="ghost" id="sync-btn" type="button" style="max-width: 120px;">Время</button>
+      <div class="meta" id="drift" aria-live="polite">—</div>
     </div>
   </div>
 
