@@ -236,99 +236,113 @@
   </div>
 
   <script>
-    const otpTag = document.getElementById("otp");
-    const otpDigits = otpTag.querySelector(".otp-digits");
-    const remainingTag = document.getElementById("remaining");
-    const timerFill = document.getElementById("timer-fill");
-    const secretInput = document.getElementById("secret");
-    const syncBtn = document.getElementById("sync-btn");
-    const driftTag = document.getElementById("drift");
+    var otpTag = document.getElementById("otp");
+    var otpDigits = otpTag.querySelector(".otp-digits");
+    var remainingTag = document.getElementById("remaining");
+    var timerFill = document.getElementById("timer-fill");
+    var secretInput = document.getElementById("secret");
+    var syncBtn = document.getElementById("sync-btn");
+    var driftTag = document.getElementById("drift");
 
-    const pathSegments = window.location.pathname.split("/").filter(Boolean);
-    const lastSegment = pathSegments[pathSegments.length - 1] ?? "";
-    const hasExtension = lastSegment.includes(".");
-    const initialPathSecret = pathSegments.length && !hasExtension
+    var pathSegments = window.location.pathname.split("/").filter(Boolean);
+    var lastSegment = pathSegments.length ? pathSegments[pathSegments.length - 1] : "";
+    var hasExtension = lastSegment.indexOf(".") !== -1;
+    var initialPathSecret = pathSegments.length && !hasExtension
       ? decodeURIComponent(lastSegment)
       : "";
-    const basePathSegments = initialPathSecret
+    var basePathSegments = initialPathSecret
       ? pathSegments.slice(0, -1)
-      : pathSegments;
+      : pathSegments.slice();
 
-    let cryptoKey = null;
-    let secretBytes = null;
-    let isUpdating = false;
-    let lastLocalUnix = null;
-    let lastSecret = "";
+    var cryptoKey = null;
+    var secretBytes = null;
+    var isUpdating = false;
+    var lastLocalUnix = null;
+    var lastSecret = "";
+
+    function resetSecret() {
+      cryptoKey = null;
+      secretBytes = null;
+      lastSecret = "";
+    }
+
+    function padStart(value, target, padChar) {
+      var str = String(value);
+      while (str.length < target) {
+        str = padChar + str;
+      }
+      return str;
+    }
 
     function extractSecretFromUrl() {
-      const cleanedPathSecret = initialPathSecret.trim();
+      var cleanedPathSecret = initialPathSecret.trim();
       if (cleanedPathSecret) {
         return cleanedPathSecret.replace(/\s+/g, "");
       }
 
-      const params = new URLSearchParams(window.location.search);
-      const otpauth = params.get("otpauth");
+      var params = new URLSearchParams(window.location.search);
+      var otpauth = params.get("otpauth");
       if (!otpauth) return null;
       try {
-        const url = new URL(otpauth);
-        const secret = url.searchParams.get("secret");
-        return secret?.replace(/\s+/g, "") ?? null;
+        var url = new URL(otpauth);
+        var secret = url.searchParams.get("secret");
+        return secret ? secret.replace(/\s+/g, "") : null;
       } catch (error) {
         return null;
       }
     }
 
     function base32ToBytes(base32String) {
-      const base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-      const cleaned = base32String.replace(/\s+/g, "");
-      let bits = "";
-      for (const char of cleaned) {
-        const value = base32Alphabet.indexOf(char);
+      var base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+      var cleaned = base32String.replace(/\s+/g, "");
+      var bits = "";
+      for (var i = 0; i < cleaned.length; i++) {
+        var char = cleaned.charAt(i);
+        var value = base32Alphabet.indexOf(char);
         if (value === -1) continue;
-        bits += value.toString(2).padStart(5, "0");
+        var padded = value.toString(2);
+        while (padded.length < 5) padded = "0" + padded;
+        bits += padded;
       }
-      const bytes = [];
-      for (let i = 0; i + 8 <= bits.length; i += 8) {
-        bytes.push(parseInt(bits.slice(i, i + 8), 2));
+      var bytes = [];
+      for (var j = 0; j + 8 <= bits.length; j += 8) {
+        bytes.push(parseInt(bits.slice(j, j + 8), 2));
       }
       return new Uint8Array(bytes);
     }
 
-    async function prepareKey(secret) {
-      if (!secret) {
-        cryptoKey = null;
-        secretBytes = null;
-        lastSecret = "";
-        return;
-      }
+    function prepareKey(secret) {
+      return new Promise(function (resolve) {
+        if (!secret) {
+          resetSecret();
+          return resolve();
+        }
 
-      const bytes = base32ToBytes(secret);
-      if (!bytes.length) {
-        cryptoKey = null;
-        secretBytes = null;
-        lastSecret = "";
-        return;
-      }
+        var bytes = base32ToBytes(secret);
+        if (!bytes.length) {
+          resetSecret();
+          return resolve();
+        }
 
-      secretBytes = bytes;
-      lastSecret = secret;
+        secretBytes = bytes;
+        lastSecret = secret;
 
-      if (!crypto?.subtle?.importKey) {
-        cryptoKey = null;
-        return;
-      }
+        if (!crypto || !crypto.subtle || !crypto.subtle.importKey) {
+          cryptoKey = null;
+          return resolve();
+        }
 
-      try {
-        cryptoKey = await crypto.subtle.importKey(
-          "raw",
-          bytes,
-          { name: "HMAC", hash: "SHA-1" },
-          false,
-          ["sign"]
-        );
-      } catch (error) {
-        cryptoKey = null;
-      }
+        crypto.subtle
+          .importKey("raw", bytes, { name: "HMAC", hash: "SHA-1" }, false, ["sign"])
+          .then(function (key) {
+            cryptoKey = key;
+            resolve();
+          })
+          .catch(function () {
+            cryptoKey = null;
+            resolve();
+          });
+      });
     }
 
     function leftRotate(value, bits) {
@@ -336,35 +350,35 @@
     }
 
     function sha1(bytes) {
-      const words = [];
-      const ml = bytes.length * 8;
-      for (let i = 0; i < bytes.length; i++) {
+      var words = [];
+      var ml = bytes.length * 8;
+      for (var i = 0; i < bytes.length; i++) {
         words[i >> 2] |= bytes[i] << (24 - (i % 4) * 8);
       }
       words[ml >> 5] |= 0x80 << (24 - (ml % 32));
       words[(((ml + 64) >> 9) << 4) + 15] = ml;
 
-      let h0 = 0x67452301;
-      let h1 = 0xefcdab89;
-      let h2 = 0x98badcfe;
-      let h3 = 0x10325476;
-      let h4 = 0xc3d2e1f0;
+      var h0 = 0x67452301;
+      var h1 = 0xefcdab89;
+      var h2 = 0x98badcfe;
+      var h3 = 0x10325476;
+      var h4 = 0xc3d2e1f0;
 
-      for (let i = 0; i < words.length; i += 16) {
-        const w = words.slice(i, i + 16);
-        for (let t = 16; t < 80; t++) {
+      for (var i = 0; i < words.length; i += 16) {
+        var w = words.slice(i, i + 16);
+        for (var t = 16; t < 80; t++) {
           w[t] = leftRotate((w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16]) >>> 0, 1);
         }
 
-        let a = h0;
-        let b = h1;
-        let c = h2;
-        let d = h3;
-        let e = h4;
+        var a = h0;
+        var b = h1;
+        var c = h2;
+        var d = h3;
+        var e = h4;
 
-        for (let t = 0; t < 80; t++) {
-          let f = 0;
-          let k = 0;
+        for (var t = 0; t < 80; t++) {
+          var f = 0;
+          var k = 0;
           if (t < 20) {
             f = (b & c) | (~b & d);
             k = 0x5a827999;
@@ -379,7 +393,7 @@
             k = 0xca62c1d6;
           }
 
-          const temp = (leftRotate(a, 5) + f + e + k + (w[t] >>> 0)) >>> 0;
+          var temp = (leftRotate(a, 5) + f + e + k + (w[t] >>> 0)) >>> 0;
           e = d;
           d = c;
           c = leftRotate(b, 30);
@@ -394,9 +408,9 @@
         h4 = (h4 + e) >>> 0;
       }
 
-      const result = new Uint8Array(20);
-      const hashParts = [h0, h1, h2, h3, h4];
-      for (let i = 0; i < hashParts.length; i++) {
+      var result = new Uint8Array(20);
+      var hashParts = [h0, h1, h2, h3, h4];
+      for (var i = 0; i < hashParts.length; i++) {
         result[i * 4] = (hashParts[i] >>> 24) & 0xff;
         result[i * 4 + 1] = (hashParts[i] >>> 16) & 0xff;
         result[i * 4 + 2] = (hashParts[i] >>> 8) & 0xff;
@@ -406,27 +420,27 @@
     }
 
     function hmacSha1(key, message) {
-      let keyBytes = key;
+      var keyBytes = key;
       if (keyBytes.length > 64) {
         keyBytes = sha1(keyBytes);
       }
 
-      const paddedKey = new Uint8Array(64);
+      var paddedKey = new Uint8Array(64);
       paddedKey.set(keyBytes);
 
-      const oKeyPad = new Uint8Array(64);
-      const iKeyPad = new Uint8Array(64);
-      for (let i = 0; i < 64; i++) {
+      var oKeyPad = new Uint8Array(64);
+      var iKeyPad = new Uint8Array(64);
+      for (var i = 0; i < 64; i++) {
         oKeyPad[i] = paddedKey[i] ^ 0x5c;
         iKeyPad[i] = paddedKey[i] ^ 0x36;
       }
 
-      const inner = new Uint8Array(64 + message.length);
+      var inner = new Uint8Array(64 + message.length);
       inner.set(iKeyPad, 0);
       inner.set(message, 64);
-      const innerHash = sha1(inner);
+      var innerHash = sha1(inner);
 
-      const outer = new Uint8Array(64 + innerHash.length);
+      var outer = new Uint8Array(64 + innerHash.length);
       outer.set(oKeyPad, 0);
       outer.set(innerHash, 64);
 
@@ -434,57 +448,69 @@
     }
 
     function updateUrlWithSecret(secret) {
-      const url = new URL(window.location.href);
-      const segments = [...basePathSegments];
+      var url = new URL(window.location.href);
+      var segments = basePathSegments.slice();
 
       if (secret) {
         segments.push(encodeURIComponent(secret));
       }
 
-      url.pathname = `/${segments.join("/")}`;
+      url.pathname = "/" + segments.join("/");
       window.history.replaceState({}, "", url);
     }
 
-    async function generateOtp(unixTime) {
-      if (!cryptoKey && !secretBytes) return null;
-      const counter = Math.floor(unixTime / 30);
-      const buffer = new ArrayBuffer(8);
-      const view = new DataView(buffer);
-      view.setUint32(4, counter, false);
-      let hash = null;
+    function generateOtp(unixTime) {
+      return new Promise(function (resolve) {
+        if (!cryptoKey && !secretBytes) return resolve(null);
+        var counter = Math.floor(unixTime / 30);
+        var buffer = new ArrayBuffer(8);
+        var view = new DataView(buffer);
+        view.setUint32(4, counter, false);
 
-      if (cryptoKey) {
-        const signature = await crypto.subtle.sign("HMAC", cryptoKey, buffer);
-        hash = new Uint8Array(signature);
-      } else if (secretBytes) {
-        hash = hmacSha1(secretBytes, new Uint8Array(buffer));
-      }
+        function handleHash(hash) {
+          if (!hash) return resolve(null);
+          var offset = hash[hash.length - 1] & 0x0f;
+          var binary =
+            ((hash[offset] & 0x7f) << 24) |
+            ((hash[offset + 1] & 0xff) << 16) |
+            ((hash[offset + 2] & 0xff) << 8) |
+            (hash[offset + 3] & 0xff);
+          resolve(padStart((binary % 1000000).toString(), 6, "0"));
+        }
 
-      if (!hash) return null;
-      const offset = hash[hash.length - 1] & 0x0f;
-      const binary =
-        ((hash[offset] & 0x7f) << 24) |
-        ((hash[offset + 1] & 0xff) << 16) |
-        ((hash[offset + 2] & 0xff) << 8) |
-        (hash[offset + 3] & 0xff);
-      return (binary % 1_000_000).toString().padStart(6, "0");
+        if (cryptoKey) {
+          crypto.subtle
+            .sign("HMAC", cryptoKey, buffer)
+            .then(function (signature) {
+              handleHash(new Uint8Array(signature));
+            })
+            .catch(function () {
+              resolve(null);
+            });
+        } else if (secretBytes) {
+          handleHash(hmacSha1(secretBytes, new Uint8Array(buffer)));
+        }
+      });
     }
 
     function renderOtp(value) {
-      const digits = value.padStart(6, "-").slice(0, 6).split("");
-      otpDigits.innerHTML = digits
-        .map((digit) => `<span class="otp-box">${digit}</span>`)
+      var digits = padStart(value, 6, "-").slice(0, 6).split("");
+      var html = digits
+        .map(function (digit) {
+          return '<span class="otp-box">' + digit + "</span>";
+        })
         .join("");
+      otpDigits.innerHTML = html;
     }
 
-    async function update() {
+    function update() {
       if (isUpdating) return;
       isUpdating = true;
-      const unixTime = Math.floor(Date.now() / 1000);
+      var unixTime = Math.floor(Date.now() / 1000);
       lastLocalUnix = unixTime;
-      const secondsLeft = 30 - (unixTime % 30);
-      remainingTag.textContent = `${secondsLeft}s`;
-      timerFill.style.width = `${(secondsLeft / 30) * 100}%`;
+      var secondsLeft = 30 - (unixTime % 30);
+      remainingTag.textContent = secondsLeft + "s";
+      timerFill.style.width = secondsLeft / 30 * 100 + "%";
 
       if (!cryptoKey && !secretBytes) {
         renderOtp("------");
@@ -492,53 +518,59 @@
         return;
       }
 
-      try {
-        const otp = await generateOtp(unixTime);
-        renderOtp(otp ?? "------");
-      } catch (error) {
-        renderOtp("------");
-      } finally {
-        isUpdating = false;
-      }
+      generateOtp(unixTime)
+        .then(function (otp) {
+          renderOtp(otp || "------");
+          isUpdating = false;
+        })
+        .catch(function () {
+          renderOtp("------");
+          isUpdating = false;
+        });
     }
 
-    async function copyOtp() {
-      const value = otpDigits.textContent.replace(/\s+/g, "");
-      if (!value || value.includes("-")) return;
-      try {
-        await navigator.clipboard.writeText(value);
-        otpTag.classList.add("copied");
-        setTimeout(() => otpTag.classList.remove("copied"), 640);
-      } catch (error) {
-        otpTag.classList.add("copied");
-        setTimeout(() => otpTag.classList.remove("copied"), 640);
-      }
+    function copyOtp() {
+      var value = otpDigits.textContent.replace(/\s+/g, "");
+      if (!value || value.indexOf("-") !== -1) return;
+      navigator.clipboard
+        .writeText(value)
+        .catch(function () {})
+        .then(function () {
+          otpTag.classList.add("copied");
+          setTimeout(function () {
+            otpTag.classList.remove("copied");
+          }, 640);
+        });
     }
 
-    async function fetchNetworkTime() {
+    function fetchNetworkTime() {
       syncBtn.disabled = true;
       syncBtn.textContent = "...";
-      try {
-        const response = await fetch("https://worldtimeapi.org/api/ip", { cache: "no-store" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        const networkUnix = Math.floor(data.unixtime);
-        const currentLocal = lastLocalUnix ?? Math.floor(Date.now() / 1000);
-        const drift = currentLocal - networkUnix;
-        const signed = drift > 0 ? `+${drift}` : `${drift}`;
-        driftTag.textContent = `${signed} сек`;
-      } catch (error) {
-        driftTag.textContent = "—";
-      } finally {
-        syncBtn.disabled = false;
-        syncBtn.textContent = "Время";
-      }
+      fetch("https://worldtimeapi.org/api/ip", { cache: "no-store" })
+        .then(function (response) {
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          return response.json();
+        })
+        .then(function (data) {
+          var networkUnix = Math.floor(data.unixtime);
+          var currentLocal = lastLocalUnix || Math.floor(Date.now() / 1000);
+          var drift = currentLocal - networkUnix;
+          var signed = drift > 0 ? "+" + drift : String(drift);
+          driftTag.textContent = signed + " сек";
+        })
+        .catch(function () {
+          driftTag.textContent = "—";
+        })
+        .finally(function () {
+          syncBtn.disabled = false;
+          syncBtn.textContent = "Время";
+        });
     }
 
     otpTag.addEventListener("click", copyOtp);
 
-    secretInput.addEventListener("input", (event) => {
-      const value = event.target.value.replace(/[^a-zA-Z2-7\s]/g, "").toUpperCase();
+    secretInput.addEventListener("input", function (event) {
+      var value = event.target.value.replace(/[^a-zA-Z2-7\s]/g, "").toUpperCase();
       event.target.value = value;
       updateUrlWithSecret(value);
       if (value === lastSecret) return;
@@ -547,9 +579,9 @@
 
     syncBtn.addEventListener("click", fetchNetworkTime);
 
-    const initialSecret = extractSecretFromUrl();
+    var initialSecret = extractSecretFromUrl();
     if (initialSecret) {
-      const normalized = initialSecret.toUpperCase();
+      var normalized = initialSecret.toUpperCase();
       secretInput.value = normalized;
       updateUrlWithSecret(normalized);
       prepareKey(normalized).then(update);
