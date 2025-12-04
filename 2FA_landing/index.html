@@ -80,7 +80,7 @@
       padding: 12px;
       color: inherit;
       display: grid;
-      gap: 8px;
+      gap: 10px;
       cursor: pointer;
       transition: transform 120ms ease, border-color 150ms ease;
     }
@@ -89,24 +89,18 @@
       transform: scale(0.98);
     }
 
-    .otp-digits {
-      display: flex;
-      justify-content: center;
-      gap: 8px;
-      font-weight: 700;
-      font-size: clamp(28px, 10vw, 38px);
-      letter-spacing: 0.12em;
-    }
-
-    .otp-box {
-      min-width: clamp(36px, 8vw, 44px);
+    .otp-code {
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 8px 0;
+      height: clamp(64px, 18vw, 82px);
       border-radius: 12px;
-      background: rgba(255, 255, 255, 0.06);
       border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.06);
+      font-weight: 700;
+      font-size: clamp(30px, 12vw, 42px);
+      letter-spacing: 0.18em;
+      font-variant-numeric: tabular-nums;
       transition: transform 160ms ease, background 160ms ease, border-color 160ms ease,
         box-shadow 160ms ease;
     }
@@ -123,7 +117,7 @@
       }
     }
 
-    .otp-button.copied .otp-box {
+    .otp-button.copied .otp-code {
       border-color: var(--green);
       box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.28);
       background: linear-gradient(135deg, rgba(52, 211, 153, 0.15), rgba(168, 85, 247, 0.08));
@@ -193,12 +187,9 @@
     }
 
     @media (max-width: 380px) {
-      .otp-digits {
-        gap: 6px;
-        letter-spacing: 0.1em;
-      }
-      .otp-box {
-        min-width: 34px;
+      .otp-code {
+        letter-spacing: 0.14em;
+        height: 64px;
       }
     }
   </style>
@@ -218,7 +209,7 @@
         <span>OTP</span>
         <span id="remaining">30s</span>
       </div>
-      <div class="otp-digits"></div>
+      <div class="otp-code" aria-live="polite"></div>
       <div class="progress" aria-hidden="true">
         <span id="timer-fill"></span>
       </div>
@@ -239,7 +230,7 @@
 
   <script>
     var otpTag = document.getElementById("otp");
-    var otpDigits = otpTag.querySelector(".otp-digits");
+    var otpDigits = otpTag.querySelector(".otp-code");
     var remainingTag = document.getElementById("remaining");
     var timerFill = document.getElementById("timer-fill");
     var secretInput = document.getElementById("secret");
@@ -496,13 +487,7 @@
     }
 
     function renderOtp(value) {
-      var digits = padStart(value, 6, "-").slice(0, 6).split("");
-      var html = digits
-        .map(function (digit) {
-          return '<span class="otp-box">' + digit + "</span>";
-        })
-        .join("");
-      otpDigits.innerHTML = html;
+      otpDigits.textContent = padStart(value, 6, "-").slice(0, 6);
     }
 
     function update() {
