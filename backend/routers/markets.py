@@ -54,12 +54,8 @@ async def get_forex_rates(base: str, quote: str = "RUB"):
             rate=today,
             changes=ForexChanges(
                 day1=ForexChange(absolute=change_1d[0], percent=change_1d[1]),
-                day7=ForexChange(absolute=change_7d[0], percent=change_7d[1])
-                if change_7d
-                else None,
-                day30=ForexChange(absolute=change_30d[0], percent=change_30d[1])
-                if change_30d
-                else None,
+                day7=ForexChange(absolute=change_7d[0], percent=change_7d[1]) if change_7d else None,
+                day30=ForexChange(absolute=change_30d[0], percent=change_30d[1]) if change_30d else None,
             ),
         )
     raise HTTPException(status_code=500, detail={"error": "Failed to fetch forex data"})
@@ -122,4 +118,3 @@ async def get_cbr_key_rate():
     if result is None:
         raise HTTPException(status_code=500, detail={"error": "Failed to fetch key rate"})
     return result
-

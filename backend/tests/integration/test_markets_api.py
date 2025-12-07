@@ -104,9 +104,7 @@ def test_p2p_endpoint_success(
     mock_p2p_orders.return_value = mock_bybit_response
     mock_offers_by_amount.return_value = mock_offers
     mock_best_offers.return_value = mock_offers
-    mock_generate_output.return_value = (
-        "<b>Лучшие предложения:</b>\n- User1: 95.5 ₽\n- User2: 96.0 ₽"
-    )
+    mock_generate_output.return_value = "<b>Лучшие предложения:</b>\n- User1: 95.5 ₽\n- User2: 96.0 ₽"
 
     # Make request
     data = {"amount": 5000.0, "is_buy": True, "is_fiat": True}
@@ -187,9 +185,7 @@ def test_p2p_endpoint_service_error(mock_p2p_orders, client: TestClient):
         if isinstance(error_data["detail"], dict):
             assert "error" in error_data["detail"]
         else:
-            assert (
-                "error" in error_data["detail"].lower() or "service" in error_data["detail"].lower()
-            )
+            assert "error" in error_data["detail"].lower() or "service" in error_data["detail"].lower()
     else:
         # Custom error format
         assert "error" in error_data or "message" in error_data
@@ -214,9 +210,7 @@ def test_p2p_endpoint_sell_mode(
     mock_p2p_orders.return_value = mock_bybit_response
     mock_offers_by_amount.return_value = mock_offers
     mock_best_offers.return_value = mock_offers
-    mock_generate_output.return_value = (
-        "<b>Лучшие предложения для продажи:</b>\n- User1: 95.5 ₽\n- User2: 96.0 ₽"
-    )
+    mock_generate_output.return_value = "<b>Лучшие предложения для продажи:</b>\n- User1: 95.5 ₽\n- User2: 96.0 ₽"
 
     # Make request with is_buy=False
     data = {"amount": 5000.0, "is_buy": False, "is_fiat": True}
@@ -255,7 +249,7 @@ def mock_alphavantage_response():
 def mock_cbr_response():
     """Мок ответа от ЦБ РФ API - список валют с курсами"""
     from backend.models.markets import CBRValuteItem
-    
+
     return [
         CBRValuteItem(rate=92.5, name="Доллар США", char_code="USD"),
         CBRValuteItem(rate=99.8, name="Евро", char_code="EUR"),
@@ -313,12 +307,10 @@ def test_forex_endpoint_success(
 @pytest.mark.integration
 @patch("backend.services.markets.cbr.fetch_last_date_cbr")
 @patch("backend.services.markets.cbr.fetch_exchanges_rate_on_date")
-def test_cbr_endpoint_success(
-    mock_fetch_rates, mock_fetch_last_date, client: TestClient, mock_cbr_response
-):
+def test_cbr_endpoint_success(mock_fetch_rates, mock_fetch_last_date, client: TestClient, mock_cbr_response):
     """Test CBR rates endpoint happy path"""
     from datetime import date
-    
+
     # Setup mocks
     mock_fetch_last_date.return_value = date(2025, 10, 15)
     mock_fetch_rates.return_value = mock_cbr_response
@@ -331,13 +323,13 @@ def test_cbr_endpoint_success(
     data = response.json()
     assert "rates" in data
     assert len(data["rates"]) == 3
-    
+
     # Проверяем структуру первой валюты
     usd_rate = next(r for r in data["rates"] if r["char_code"] == "USD")
     assert usd_rate["rate"] == 92.5
     assert usd_rate["name"] == "Доллар США"
     assert usd_rate["char_code"] == "USD"
-    
+
     # Проверяем EUR
     eur_rate = next(r for r in data["rates"] if r["char_code"] == "EUR")
     assert eur_rate["rate"] == 99.8
@@ -350,12 +342,10 @@ def test_cbr_endpoint_success(
 
 @pytest.mark.integration
 @patch("backend.services.markets.cbr.fetch_exchanges_rate_on_date")
-def test_cbr_endpoint_with_custom_date(
-    mock_fetch_rates, client: TestClient, mock_cbr_response
-):
+def test_cbr_endpoint_with_custom_date(mock_fetch_rates, client: TestClient, mock_cbr_response):
     """Test CBR rates endpoint with custom date parameter"""
     from datetime import date
-    
+
     # Setup mock
     mock_fetch_rates.return_value = mock_cbr_response
 
@@ -375,12 +365,10 @@ def test_cbr_endpoint_with_custom_date(
 @pytest.mark.integration
 @patch("backend.services.markets.cbr.fetch_last_date_cbr")
 @patch("backend.services.markets.cbr.fetch_exchanges_rate_on_date")
-def test_cbr_endpoint_empty_rates(
-    mock_fetch_rates, mock_fetch_last_date, client: TestClient
-):
+def test_cbr_endpoint_empty_rates(mock_fetch_rates, mock_fetch_last_date, client: TestClient):
     """Test CBR rates endpoint when no rates available"""
     from datetime import date
-    
+
     # Setup mocks to return empty list
     mock_fetch_last_date.return_value = date(2025, 10, 15)
     mock_fetch_rates.return_value = []
@@ -441,7 +429,7 @@ def test_forex_endpoint_error(mock_parse_data, mock_fetch_data, client: TestClie
 def test_cbr_endpoint_error(mock_fetch_rates, mock_fetch_last_date, client: TestClient):
     """Test CBR endpoint when API fails"""
     from datetime import date
-    
+
     # Setup mocks to throw exception
     mock_fetch_last_date.return_value = date(2025, 10, 15)
     mock_fetch_rates.side_effect = Exception("CBR API unavailable")

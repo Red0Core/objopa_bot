@@ -160,9 +160,7 @@ def categorize_all_offers(data: BybitP2PResponse) -> dict[str, list[Offer]]:
     return categories
 
 
-def get_offers_by_amount(
-    data: BybitP2PResponse, amount: float, is_fiat: bool = False
-) -> list[Offer]:
+def get_offers_by_amount(data: BybitP2PResponse, amount: float, is_fiat: bool = False) -> list[Offer]:
     """
     Функция для категоризации офферов по исполняемому объему
     """
@@ -315,13 +313,9 @@ if __name__ == "__main__":
     print(html_output)
 
     offers = get_offers_by_amount(data, 40000, True)
-    html_output = generate_amount_html_output(
-        get_only_best_offers_by_valid_makers(offers), 40000, True
-    )
+    html_output = generate_amount_html_output(get_only_best_offers_by_valid_makers(offers), 40000, True)
     print(html_output)
 
     offers = get_offers_by_amount(data, 500, False)
-    html_output = generate_amount_html_output(
-        get_only_best_offers_by_valid_makers(offers), 500, False
-    )
+    html_output = generate_amount_html_output(get_only_best_offers_by_valid_makers(offers), 500, False)
     print(html_output)

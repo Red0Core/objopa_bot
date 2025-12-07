@@ -56,7 +56,9 @@ def set_csrf_token(token: str | None) -> None:
 
 TWITTER_REGEX = re.compile(r"https?://(?:www\.)?(?:x|twitter)\.com/[^/]+/status/(?P<id>\d+)")
 
-BEARER_TOKEN = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+BEARER_TOKEN = (
+    "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+)
 
 TWITTER_RESULT_BY_REST_ID_QUERY_DEFAULT = "gbBo18jnmlP-Na0tVYgiZA"
 
@@ -145,9 +147,7 @@ class TwitterGQLResolver:
     async def _set_cache(self, payload: dict) -> None:
         try:
             redis: Redis = await get_redis()
-            await redis.set(
-                self.CACHE_KEY, json.dumps(payload, separators=(",", ":")), ex=self.CACHE_TTL
-            )
+            await redis.set(self.CACHE_KEY, json.dumps(payload, separators=(",", ":")), ex=self.CACHE_TTL)
         except Exception as e:  # noqa: BLE001
             logger.debug(f"QID cache write failed: {e}")
 
@@ -165,7 +165,7 @@ class TwitterGQLResolver:
             html,
         )
         return m.group(1) if m else None
-    
+
     @staticmethod
     def _parse_bearer(text: str) -> str | None:
         """Return Bearer token value (without the 'Bearer ' prefix), prefer the longest match."""
@@ -192,8 +192,7 @@ class TwitterGQLResolver:
 
         fs = []
         mfs = re.search(
-            r'operationName:"%s".{0,500}?metadata:\{[^}]*featureSwitches:\[(?P<list>[^\]]*)\]'
-            % re.escape(op_name),
+            r'operationName:"%s".{0,500}?metadata:\{[^}]*featureSwitches:\[(?P<list>[^\]]*)\]' % re.escape(op_name),
             js,
             flags=re.DOTALL,
         )
@@ -202,8 +201,7 @@ class TwitterGQLResolver:
 
         ft = []
         mft = re.search(
-            r'operationName:"%s".{0,500}?metadata:\{[^}]*fieldToggles:\[(?P<list>[^\]]*)\]'
-            % re.escape(op_name),
+            r'operationName:"%s".{0,500}?metadata:\{[^}]*fieldToggles:\[(?P<list>[^\]]*)\]' % re.escape(op_name),
             js,
             flags=re.DOTALL,
         )
@@ -211,7 +209,6 @@ class TwitterGQLResolver:
             ft = re.findall(r'"([^"]+)"', mft.group("list"))
 
         return qid, fs, ft
-
 
     @staticmethod
     def _parse_initial_state_features(html: str) -> dict:
@@ -554,7 +551,12 @@ async def download_twitter_media(
                     await resolver.invalidate()
                     spec = await resolver.get_spec(session, html)
                     if not spec:
-                        return [], [], None, "Не удалось обновить параметры GraphQL (auth token failed, guest token failed)"
+                        return (
+                            [],
+                            [],
+                            None,
+                            "Не удалось обновить параметры GraphQL (auth token failed, guest token failed)",
+                        )
                     params["features"] = json.dumps(spec.features, separators=(",", ":"))
                     params["fieldToggles"] = json.dumps(spec.field_toggles, separators=(",", ":"))
                     data, guest_err = await fetch(spec, False)
@@ -562,13 +564,23 @@ async def download_twitter_media(
                         logger.error(f"Guest request failed after refresh: {guest_err}")
                         set_auth_token(None)
                         set_csrf_token(None)
-                        return [], [], None, "Ошибка доступа к Twitter (auth token failed, guest token failed). Обновите токены"
+                        return (
+                            [],
+                            [],
+                            None,
+                            "Ошибка доступа к Twitter (auth token failed, guest token failed). Обновите токены",
+                        )
                     used_guest = True
                 else:
                     logger.error(f"Guest request failed: {guest_err}")
                     set_auth_token(None)
                     set_csrf_token(None)
-                    return [], [], None, "Ошибка доступа к Twitter (auth token failed, guest token failed). Обновите токены"
+                    return (
+                        [],
+                        [],
+                        None,
+                        "Ошибка доступа к Twitter (auth token failed, guest token failed). Обновите токены",
+                    )
             else:
                 used_guest = True
         else:
@@ -588,9 +600,7 @@ async def download_twitter_media(
     # If no media on the main node, try quoted/retweeted nodes
     def pick_media_node(node: dict) -> dict:
         legacy = node.get("legacy", {}) if isinstance(node, dict) else {}
-        media = (
-            legacy.get("extended_entities", {}) or legacy.get("entities", {})
-        ).get("media", [])
+        media = (legacy.get("extended_entities", {}) or legacy.get("entities", {})).get("media", [])
         if media:
             return node
         for alt_key in ("quoted_status_result", "retweeted_status_result"):
@@ -605,26 +615,12 @@ async def download_twitter_media(
     result = pick_media_node(result)
 
     screen_name = (
-        (
-            result.get("core", {})
-            .get("user_results", {})
-            .get("result", {})
-            .get("legacy", {})
-            .get("screen_name")
-        )
-        or (
-            result.get("core", {})
-            .get("user_results", {})
-            .get("result", {})
-            .get("core", {})
-            .get("screen_name")
-        )
+        (result.get("core", {}).get("user_results", {}).get("result", {}).get("legacy", {}).get("screen_name"))
+        or (result.get("core", {}).get("user_results", {}).get("result", {}).get("core", {}).get("screen_name"))
         or ""
     )
     full_text = result.get("legacy", {}).get("full_text", "")
-    caption_text = (
-        f"{full_text}\n[{screen_name}](https://x.com/{screen_name})" if screen_name else full_text
-    )
+    caption_text = f"{full_text}\n[{screen_name}](https://x.com/{screen_name})" if screen_name else full_text
     caption = telegramify_markdown.markdownify(caption_text)
 
     media_items = result.get("legacy", {}).get("extended_entities", {}).get("media", [])

@@ -9,9 +9,7 @@ from lxml import html
 from core.config import DOWNLOADS_DIR
 from core.logger import logger
 
-SPOTIFY_TRACK_REGEX = re.compile(
-    r"^(?:https?://)?(?:open\.)?spotify\.com/track/[A-Za-z0-9]+(?:\S+)?$"
-)
+SPOTIFY_TRACK_REGEX = re.compile(r"^(?:https?://)?(?:open\.)?spotify\.com/track/[A-Za-z0-9]+(?:\S+)?$")
 SPOTIFY_TRACK_ID_RE = re.compile(r"(?:https?://)?(?:open\.)?spotify\.com/track/([A-Za-z0-9]+)")
 
 SPOTIFY_BASE = "https://open.spotify.com/track"
@@ -37,8 +35,7 @@ def parse_track_html(html_text: str) -> dict:
 
     # Универсальный artist: music:musician_description может быть и в name, и в property
     artist = tree.xpath(
-        'string(//meta[@name="music:musician_description" or '
-        '@property="music:musician_description"]/@content)'
+        'string(//meta[@name="music:musician_description" or @property="music:musician_description"]/@content)'
     )
     artist = artist.strip() if artist else None
 
@@ -147,9 +144,7 @@ def download_spotify_track(track_id: str, base_dir: Path = DOWNLOADS_DIR) -> Tra
     meta = parse_track_html(html)
 
     stream_url = get_stream_url(track_id)
-    full_stream_url = (
-        f"{BACKEND_SPOTIFY_DOWNLOAD_BASE}{stream_url}" if stream_url.startswith("/") else stream_url
-    )
+    full_stream_url = f"{BACKEND_SPOTIFY_DOWNLOAD_BASE}{stream_url}" if stream_url.startswith("/") else stream_url
 
     # имена файлов
     safe_title = (meta["title"] or track_id).replace("/", "_")

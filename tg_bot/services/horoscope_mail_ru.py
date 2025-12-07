@@ -27,7 +27,5 @@ def format_horoscope(horoscope: dict[str, str]) -> str:
     Форматирует гороскоп в удобочитаемый вид.
     """
     return (
-        f"{horoscope['sign']}{horoscope['emoji']}:\n"
-        f"{horoscope['daily']}\n"
-        f"Финансовый гороскоп: {horoscope['finance']}"
+        f"{horoscope['sign']}{horoscope['emoji']}:\n{horoscope['daily']}\nФинансовый гороскоп: {horoscope['finance']}"
     )

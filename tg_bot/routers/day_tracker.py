@@ -72,13 +72,9 @@ async def handle_tracking(message: Message):
                 duration = int(now - info["start"])
                 days, rem = divmod(duration, 86400)
                 hours = rem // 3600
-                reply.append(
-                    f"• <b>{track_name}</b>: <code>{days}д {hours}ч</code>{' — ' + desc if desc else ''}"
-                )
+                reply.append(f"• <b>{track_name}</b>: <code>{days}д {hours}ч</code>{' — ' + desc if desc else ''}")
             else:
-                reply.append(
-                    f"• <b>{track_name}</b>: <i>неактивен</i>{' — ' + desc if desc else ''}"
-                )
+                reply.append(f"• <b>{track_name}</b>: <i>неактивен</i>{' — ' + desc if desc else ''}")
 
         await message.reply("\n".join(reply), parse_mode="HTML")
         return
@@ -146,9 +142,7 @@ async def handle_tracking(message: Message):
                 await message.answer(i, parse_mode="MarkdownV2")
         except Exception as e:
             print(f"[GPT STOP] Ошибка: {e}")
-        await message.reply(
-            f"🛑 Трекер <b>{name}</b> остановлен и записан в историю.", parse_mode="HTML"
-        )
+        await message.reply(f"🛑 Трекер <b>{name}</b> остановлен и записан в историю.", parse_mode="HTML")
 
     elif action == "stats":
         if name not in trackers or "start" not in trackers[name]:

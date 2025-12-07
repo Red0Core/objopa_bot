@@ -83,5 +83,6 @@ class CBRValuteItem(BaseModel):
     name: str
     char_code: str
 
+
 class CBRResponse(BaseModel):
     rates: Sequence[CBRValuteItem]

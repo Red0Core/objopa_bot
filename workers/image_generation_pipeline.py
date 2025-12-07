@@ -30,9 +30,7 @@ class ImageGenerationPipeline(BasePipeline):
         """
         Запуск пайплайна генерации изображений.
         """
-        logger.info(
-            f"ImageGenerationPipeline: {self.task_id}, prompts: {self.image_prompts}, user_id: {self.user_id}"
-        )
+        logger.info(f"ImageGenerationPipeline: {self.task_id}, prompts: {self.image_prompts}, user_id: {self.user_id}")
 
         # Генерация изображений с выбором пользователем
         try:
@@ -44,9 +42,7 @@ class ImageGenerationPipeline(BasePipeline):
             )
         except Exception as e:
             logger.exception(f"Ошибка при генерации изображений: {e}", exc_info=True)
-            await self.worker_status_manager.clear_worker_selected_images(
-                self.worker_status_manager.worker_id
-            )
+            await self.worker_status_manager.clear_worker_selected_images(self.worker_status_manager.worker_id)
 
     async def generate_images_with_selection(self) -> list[Path]:
         """
@@ -56,9 +52,7 @@ class ImageGenerationPipeline(BasePipeline):
             list[Path]: Список локальных путей к выбранным изображениям.
         """
         # Генерация и загрузка изображений на сервак
-        current_local_paths: list[list[Path]] = await self.image_generator.generate(
-            self.image_prompts
-        )
+        current_local_paths: list[list[Path]] = await self.image_generator.generate(self.image_prompts)
         current_server_paths: list[list[str]] = await self._upload_groups(current_local_paths)
         logger.info(f"Server paths: {current_server_paths}\nLocal paths: {current_local_paths}")
 
@@ -70,9 +64,7 @@ class ImageGenerationPipeline(BasePipeline):
         while None in final_chosen_local_paths:
             # Фаза выбора изображений
             for idx, server_group in enumerate(current_server_paths):
-                logger.info(
-                    f"Task ID: {self.task_id}; User ID: {self.user_id}; Server Group: {server_group}"
-                )
+                logger.info(f"Task ID: {self.task_id}; User ID: {self.user_id}; Server Group: {server_group}")
                 if final_chosen_local_paths[idx] is None:
                     # Отправляем уведомление с выбором изображений
                     image_selection_task_id = await self.send_one_group_of_image(server_group)
@@ -113,9 +105,7 @@ class ImageGenerationPipeline(BasePipeline):
                 final_local_paths.append(path)
 
         # Сохраняем выбранные изображения в Redis для текущего воркера
-        await self.worker_status_manager.clear_worker_selected_images(
-            self.worker_status_manager.worker_id
-        )
+        await self.worker_status_manager.clear_worker_selected_images(self.worker_status_manager.worker_id)
         await self.worker_status_manager.save_worker_selected_images(
             self.worker_status_manager.worker_id, final_local_paths
         )
@@ -128,9 +118,7 @@ class ImageGenerationPipeline(BasePipeline):
         for group in local_paths_groups:
             if group:
                 group_tasks = [upload_file_to_backend(image_path) for image_path in group]
-                all_upload_tasks.append(
-                    asyncio.gather(*group_tasks)
-                )  # Оборачиваем в газер для будущего await
+                all_upload_tasks.append(asyncio.gather(*group_tasks))  # Оборачиваем в газер для будущего await
             else:
                 # Добавляем "пустую" корутину, чтобы сохранить структуру
                 all_upload_tasks.append(asyncio.sleep(0, result=[]))
@@ -142,9 +130,7 @@ class ImageGenerationPipeline(BasePipeline):
             )
             return server_paths_groups
         except Exception as upload_err:
-            logger.error(
-                f"Критическая ошибка при массовой загрузке изображений: {upload_err}", exc_info=True
-            )
+            logger.error(f"Критическая ошибка при массовой загрузке изображений: {upload_err}", exc_info=True)
             # Пробрасываем ошибку, чтобы прервать пайплайн
             raise RuntimeError("Ошибка загрузки изображений") from upload_err
 

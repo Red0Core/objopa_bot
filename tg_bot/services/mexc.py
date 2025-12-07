@@ -68,9 +68,7 @@ async def get_new_activities():
                 activity_name = activity.get("activityName", "N/A")
                 introduction = activity.get("introduction", "Разделите..")
                 start_time = datetime.fromtimestamp(activity.get("startTime", 0) / 1000)
-                end_time = datetime.fromtimestamp(activity.get("endTime", 0) / 1000).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
+                end_time = datetime.fromtimestamp(activity.get("endTime", 0) / 1000).strftime("%Y-%m-%d %H:%M:%S")
                 apply_num = activity.get("applyNum", "N/A")
                 detail_url = f"https://www.mexc.com/ru-RU/mx-activity/deposit-gain-coins/detail/{activity_id}?utm_source=mexc&utm_medium=airdroptokenhomepage&utm_campaign=airdroptoken"
 

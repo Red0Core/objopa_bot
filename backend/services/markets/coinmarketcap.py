@@ -93,16 +93,16 @@ def format_crypto_price(data: Sequence[CoinData], amount_of_tokens: float = 0.0)
 
         # Выводит сумму баксов по прайсу токена
         if amount_of_tokens > 0:
-            message = f"{message}{amount_of_tokens:.5f} * {price:.5f} = <code>{(amount_of_tokens * price):,.5f}</code>💲"
+            message = (
+                f"{message}{amount_of_tokens:.5f} * {price:.5f} = <code>{(amount_of_tokens * price):,.5f}</code>💲"
+            )
 
         output = f"{output}\n{message}"
 
     return output or "Ошибка: данные о криптовалюте отсутствуют."
 
 
-def filter_tickers(
-    data: list[CoinData], file_path: Path = COINMARKETCAP_WHITELIST
-) -> Sequence[CoinData]:
+def filter_tickers(data: list[CoinData], file_path: Path = COINMARKETCAP_WHITELIST) -> Sequence[CoinData]:
     """
     Фильтрует список тикеров на основе заданных условий.
 

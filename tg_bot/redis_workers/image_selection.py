@@ -55,9 +55,7 @@ async def poll_image_selection(bot: Bot):
                 # Ряд с кнопками выбора изображений (1, 2, 3, 4)
                 image_buttons_row = []
                 for i in range(len(relative_paths)):  # Должно быть 4 итерации
-                    button = InlineKeyboardButton(
-                        text=f"{i + 1}", callback_data=f"select_image:{task_id}:{i}"
-                    )
+                    button = InlineKeyboardButton(text=f"{i + 1}", callback_data=f"select_image:{task_id}:{i}")
                     image_buttons_row.append(button)
                 selection_buttons_rows.append(image_buttons_row)
 
@@ -79,9 +77,7 @@ async def poll_image_selection(bot: Bot):
                         start = time.time()
                         msgs = await bot.send_media_group(chat_id=user_id, media=media)  # type: ignore
                         for msg in msgs:
-                            await r.lpush(
-                                f"delete:tg_messages_id:{user_id}:{task_id}", msg.message_id
-                            )  # type: ignore
+                            await r.lpush(f"delete:tg_messages_id:{user_id}:{task_id}", msg.message_id)  # type: ignore
                         await bot.send_message(
                             chat_id=user_id,
                             text="Выберите одно изображение:",
@@ -93,9 +89,7 @@ async def poll_image_selection(bot: Bot):
                         )
                         break
                     except (TelegramNetworkError, TelegramRetryAfter) as e:
-                        logger.warning(
-                            f"Ошибка Telegram: {e}. Повтор отправки через {2**retry} секунд..."
-                        )
+                        logger.warning(f"Ошибка Telegram: {e}. Повтор отправки через {2**retry} секунд...")
                         await asyncio.sleep(2**retry)
 
             except Exception as e:

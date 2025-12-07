@@ -20,21 +20,15 @@ class AnimationGenerationPipeline(BasePipeline):
         """
         Запуск пайплайна генерации анимаций.
         """
-        local_paths = await self.worker_status_manager.get_worker_selected_images(
-            self.worker_status_manager.worker_id
-        )
+        local_paths = await self.worker_status_manager.get_worker_selected_images(self.worker_status_manager.worker_id)
         if not local_paths:
             logger.error("No local paths found for animation generation.")
-            await send_notification(
-                "Нет локальных изображений для генерации анимаций.", str(self.user_id)
-            )
+            await send_notification("Нет локальных изображений для генерации анимаций.", str(self.user_id))
             raise ValueError("No local paths found for animation generation.")
 
         # Фаза генерации видео с использованием выбранных путей локальных изображений
         await self.animation_generator.generate(local_paths, self.animation_prompts)
-        await self.worker_status_manager.set_worker_animations_ready_flag(
-            self.worker_status_manager.worker_id, True
-        )
+        await self.worker_status_manager.set_worker_animations_ready_flag(self.worker_status_manager.worker_id, True)
 
         # Отправляем уведомление о завершении генерации
         logger.success(f"Animation generation completed for task {self.task_id}")
@@ -53,8 +47,6 @@ class SetAnimationsForcePipeline(BasePipeline):
         """
         Запуск пайплайна установки флага наличия анимаций.
         """
-        await self.worker_status_manager.set_worker_animations_ready_flag(
-            self.worker_status_manager.worker_id, True
-        )
+        await self.worker_status_manager.set_worker_animations_ready_flag(self.worker_status_manager.worker_id, True)
         logger.success(f"Force animation generation flag set for task {self.task_id}")
         await send_notification("Флаг наличия анимаций установлен.", str(self.user_id))

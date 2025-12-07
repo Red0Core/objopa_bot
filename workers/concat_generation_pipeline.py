@@ -27,9 +27,7 @@ def create_zip_archive(files_to_archive: list[Path], output_zip_path: Path) -> b
         with zipfile.ZipFile(output_zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             for item_path in files_to_archive:
                 if not item_path.exists():
-                    logger.warning(
-                        f"Предупреждение: Путь не существует и будет пропущен: {item_path}"
-                    )
+                    logger.warning(f"Предупреждение: Путь не существует и будет пропущен: {item_path}")
                     continue
 
                 if item_path.is_file():
@@ -40,9 +38,7 @@ def create_zip_archive(files_to_archive: list[Path], output_zip_path: Path) -> b
                 elif item_path.is_dir():
                     # Добавляем содержимое директории рекурсивно
                     logger.info(f"Добавление директории: {item_path}")
-                    for file_in_dir in item_path.rglob(
-                        "*"
-                    ):  # rglob('*') находит все файлы и поддиректории
+                    for file_in_dir in item_path.rglob("*"):  # rglob('*') находит все файлы и поддиректории
                         if file_in_dir.is_file():
                             # arcname здесь важен для сохранения структуры директорий внутри архива.
                             # file_in_dir.relative_to(item_path.parent) создаст относительный путь
@@ -51,9 +47,7 @@ def create_zip_archive(files_to_archive: list[Path], output_zip_path: Path) -> b
                             # используйте file_in_dir.relative_to(item_path)
                             archive_path = file_in_dir.relative_to(item_path.parent)
                             zipf.write(file_in_dir, arcname=archive_path)
-                            logger.info(
-                                f"  Добавлен файл из директории: {file_in_dir} как {archive_path}"
-                            )
+                            logger.info(f"  Добавлен файл из директории: {file_in_dir} как {archive_path}")
                         # Можно добавить обработку пустых директорий, если это необходимо,
                         # но обычно zipfile не добавляет пустые директории явно,
                         # они создаются при добавлении файлов в них.

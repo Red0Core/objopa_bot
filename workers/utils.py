@@ -10,12 +10,8 @@ from core.logger import logger
 async def send_notification(text: str, send_to: str) -> None:
     try:
         async with AsyncClient() as session:
-            session.headers.update(
-                {"accept": "application/json", "Content-Type": "application/json"}
-            )
-            req = await session.post(
-                f"{BACKEND_ROUTE}/notify", json={"text": text, "send_to": send_to}
-            )
+            session.headers.update({"accept": "application/json", "Content-Type": "application/json"})
+            req = await session.post(f"{BACKEND_ROUTE}/notify", json={"text": text, "send_to": send_to})
             req.raise_for_status()
         logger.info(f"Уведомление отправлено: {text} для {send_to}")
     except Exception as e:
@@ -60,9 +56,7 @@ async def upload_file_to_backend(
                 files = {"file": (file_name, file_data, "application/octet-stream")}
 
                 async with AsyncClient(timeout=60.0) as client:
-                    logger.debug(
-                        f"Попытка {attempt + 1}/{max_retries}: Загрузка файла {file_name}..."
-                    )
+                    logger.debug(f"Попытка {attempt + 1}/{max_retries}: Загрузка файла {file_name}...")
                     response = await client.post(
                         f"{backend_url}/worker/upload{'-video' if is_video else ''}{'-archive' if is_archive else ''}",
                         files=files,
@@ -81,9 +75,7 @@ async def upload_file_to_backend(
         # --- Обработка ошибок, при которых стоит повторить ---
         except (TimeoutException, NetworkError) as e:
             last_exception = e
-            logger.warning(
-                f"Попытка {attempt + 1}/{max_retries} не удалась (сетевая ошибка/таймаут): {e}"
-            )
+            logger.warning(f"Попытка {attempt + 1}/{max_retries} не удалась (сетевая ошибка/таймаут): {e}")
         except HTTPStatusError as e:
             last_exception = e
             # Повторяем только при серверных ошибках (5xx)
@@ -113,6 +105,4 @@ async def upload_file_to_backend(
 
     # Если цикл завершился без return, значит все попытки не удались
     logger.error(f"Не удалось загрузить файл {file_path.name} после {max_retries} попыток.")
-    raise RuntimeError(
-        f"Не удалось загрузить файл {file_path.name} после {max_retries} попыток"
-    ) from last_exception
+    raise RuntimeError(f"Не удалось загрузить файл {file_path.name} после {max_retries} попыток") from last_exception

@@ -123,7 +123,7 @@ async def current_p2p_bybit_orders(message: Message):
     if symbol not in ["BUY", "SELL"]:
         await message.reply(
             "Укажите покупку или продажу тейкером. Пример: /p2p buy | /p2p sell | /p2p buy 1000 USDT | /p2p buy 1000 RUB",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         return
 
@@ -134,10 +134,7 @@ async def current_p2p_bybit_orders(message: Message):
             amount = float(args[2])
             is_fiat = args[3].upper() == "RUB"
     except (ValueError, IndexError):
-        await message.reply(
-            "Укажите сумму и валюту. Пример: /p2p buy 1000 USDT | /p2p buy 1000 RUB",
-            parse_mode="HTML"
-         )
+        await message.reply("Укажите сумму и валюту. Пример: /p2p buy 1000 USDT | /p2p buy 1000 RUB", parse_mode="HTML")
         return
 
     # Получаем данные из p2p

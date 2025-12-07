@@ -37,6 +37,7 @@ SOAP_ENVELOPE_LATEST_DATETIME = """<?xml version="1.0" encoding="utf-8"?>
   </soap12:Body>
 </soap12:Envelope>"""
 
+
 async def fetch_key_rate_latest(window_days: int = 1) -> dict | None:
     """
     Возвращает последнюю запись вида:
@@ -45,7 +46,7 @@ async def fetch_key_rate_latest(window_days: int = 1) -> dict | None:
     """
     redis = await get_redis()
     cache_key = "cbr:key_rate"
-    
+
     # Проверяем кеш
     try:
         cached = await redis.get(cache_key)
@@ -57,13 +58,11 @@ async def fetch_key_rate_latest(window_days: int = 1) -> dict | None:
             return data
     except Exception as e:
         logger.warning(f"Redis get error for {cache_key}: {e}")
-    
+
     end = date.today()
     start = end - timedelta(days=window_days)
 
-    headers = {
-        "Content-Type": "text/xml; charset=utf-8"
-    }
+    headers = {"Content-Type": "text/xml; charset=utf-8"}
     body = SOAP_ENVELOPE_KEYRATE.format(from_dt=start.isoformat(), to_dt=end.isoformat())
 
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -72,14 +71,14 @@ async def fetch_key_rate_latest(window_days: int = 1) -> dict | None:
         xml = resp.text
 
     root = ET.fromstring(xml)
-    
+
     # Ищем KeyRate, игнорируя namespace
     keyrates = None
     for elem in root.iter():
         if elem.tag.endswith("KeyRate"):
             keyrates = elem
             break
-    
+
     if keyrates is None:
         logger.warning("Could not find KeyRate in CBR response")
         return None
@@ -89,7 +88,7 @@ async def fetch_key_rate_latest(window_days: int = 1) -> dict | None:
     for elem in keyrates.iter():
         if elem.tag.endswith("KR"):
             rows.append(elem)
-    
+
     if not rows:
         logger.warning("No KR rows found in KeyRate response")
         return None
@@ -98,13 +97,13 @@ async def fetch_key_rate_latest(window_days: int = 1) -> dict | None:
     for r in rows:
         dt_txt = None
         rate_txt = None
-        
+
         for child in r:
             if child.tag.endswith("DT"):
                 dt_txt = (child.text or "").strip()
             elif child.tag.endswith("Rate"):
                 rate_txt = (child.text or "").strip()
-        
+
         if not dt_txt or not rate_txt:
             continue
         # DT приходит с таймзоной, '2025-10-16T00:00:00'
@@ -123,7 +122,7 @@ async def fetch_key_rate_latest(window_days: int = 1) -> dict | None:
     out.sort(key=lambda x: x[0])
     last_date, last_rate = out[-1]
     result = {"date": last_date, "key_rate": last_rate}
-    
+
     # Кешируем на 2 дня (172800 секунд)
     try:
         # Сериализуем в JSON (date -> string)
@@ -132,15 +131,16 @@ async def fetch_key_rate_latest(window_days: int = 1) -> dict | None:
         logger.debug(f"CBR key rate cached: {last_rate}% on {last_date}")
     except Exception as e:
         logger.warning(f"Redis setex error for {cache_key}: {e}")
-    
+
     return result
+
 
 async def fetch_last_date_cbr() -> date:
     """Возвращает дату последнего обновления курсов ЦБ с кешированием (TTL 10 минут)."""
     redis = await get_redis()
     cache_key = "cbr:last_date"
     latest_date = date.today()
-    
+
     # Проверяем кеш
     try:
         cached = await redis.get(cache_key)
@@ -149,17 +149,15 @@ async def fetch_last_date_cbr() -> date:
             return date.fromisoformat(cached)
     except Exception as e:
         logger.warning(f"Redis get error for {cache_key}: {e}")
-    
+
     # Запрашиваем у ЦБ
-    headers = {
-        "Content-Type": "text/xml; charset=utf-8"
-    }
+    headers = {"Content-Type": "text/xml; charset=utf-8"}
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(SOAP_URL, headers=headers, content=SOAP_ENVELOPE_LATEST_DATETIME)
         resp.raise_for_status()
         xml = resp.text
-    
+
     root = ET.fromstring(xml)
     # Ищем GetLatestDateTimeResult напрямую, игнорируя namespace
     latest_dt_txt = None
@@ -167,26 +165,27 @@ async def fetch_last_date_cbr() -> date:
         if elem.tag.endswith("GetLatestDateTimeResult"):
             latest_dt_txt = (elem.text or "").strip()
             break
-    
+
     if not latest_dt_txt:
         logger.warning("Could not parse CBR last date from XML")
         return latest_date
-    
+
     logger.debug(f"CBR returned last date: {latest_dt_txt}")
     try:
         latest_date = datetime.fromisoformat(latest_dt_txt).date()
     except ValueError as e:
         logger.warning(f"Could not parse date {latest_dt_txt}: {e}")
         pass
-    
+
     # Кешируем на 10 минут (600 секунд)
     try:
         await redis.setex(cache_key, 600, latest_date.isoformat())
         logger.debug(f"CBR last date cached: {latest_date}")
     except Exception as e:
         logger.warning(f"Redis setex error for {cache_key}: {e}")
-    
+
     return latest_date
+
 
 async def fetch_exchanges_rate_on_date(on_date: date) -> list[CBRValuteItem]:
     """Возвращает список курсов валют на заданную дату с кешированием (TTL 1 час).
@@ -199,7 +198,7 @@ async def fetch_exchanges_rate_on_date(on_date: date) -> list[CBRValuteItem]:
     """
     redis = await get_redis()
     cache_key = f"cbr:rates:{on_date.isoformat()}"
-    
+
     # Проверяем кеш
     try:
         cached = await redis.get(cache_key)
@@ -210,40 +209,40 @@ async def fetch_exchanges_rate_on_date(on_date: date) -> list[CBRValuteItem]:
             return [CBRValuteItem(**item) for item in data]
     except Exception as e:
         logger.warning(f"Redis get error for {cache_key}: {e}")
-    
+
     # Запрашиваем у ЦБ
-    headers = {
-        "Content-Type": "text/xml; charset=utf-8"
-    }
-    
+    headers = {"Content-Type": "text/xml; charset=utf-8"}
+
     async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(SOAP_URL, headers=headers, content=SOAP_ENVELOPE_CURS_ON_DATE.format(on_date=on_date.isoformat()))
+        resp = await client.post(
+            SOAP_URL, headers=headers, content=SOAP_ENVELOPE_CURS_ON_DATE.format(on_date=on_date.isoformat())
+        )
         resp.raise_for_status()
         xml = resp.text
 
     root = ET.fromstring(xml)
-    
+
     # Ищем ValuteData, игнорируя namespace
     valute_data = None
     for elem in root.iter():
         if elem.tag.endswith("ValuteData"):
             valute_data = elem
             break
-    
+
     if valute_data is None:
         logger.warning(f"Could not find ValuteData in CBR response for {on_date}")
         return []
-    
+
     valutes: list[CBRValuteItem] = []
     # Ищем все ValuteCursOnDate элементы
     for valute in valute_data.iter():
         if not valute.tag.endswith("ValuteCursOnDate"):
             continue
-            
+
         rate = None
         name = None
         code = None
-        
+
         for child in valute:
             if child.tag.endswith("VunitRate"):
                 rate = child.text
@@ -251,15 +250,11 @@ async def fetch_exchanges_rate_on_date(on_date: date) -> list[CBRValuteItem]:
                 name = child.text
             elif child.tag.endswith("VchCode"):
                 code = child.text
-        
+
         if not rate or not name or not code:
             continue
-            
-        valutes.append(CBRValuteItem(
-            rate=float(rate.replace(",", ".")),
-            name=name.strip(),
-            char_code=code.strip()
-        ))
+
+        valutes.append(CBRValuteItem(rate=float(rate.replace(",", ".")), name=name.strip(), char_code=code.strip()))
 
     # Кешируем на 2 дня (172800 секунд)
     try:

@@ -52,10 +52,7 @@ def filter_history():
     """Отбираем текстовые сообщения за последние CONTEXT_MINUTES"""
     now = datetime.datetime.now(datetime.timezone.utc)
     cutoff = now - datetime.timedelta(minutes=CONTEXT_MINUTES)
-    return [
-        m for m in chat_history
-        if m["timestamp"] >= cutoff and m["text"].strip()
-    ]
+    return [m for m in chat_history if m["timestamp"] >= cutoff and m["text"].strip()]
 
 
 async def ask_gemma(history):
@@ -67,12 +64,12 @@ async def ask_gemma(history):
             "instruction": (
                 "Проанализируй чат, выбери сообщения для ответа. "
                 "Ответь в формате JSON с ключом 'replies'. "
-                "Если не хочешь отвечать, верни {\"replies\": []}."
-            )
+                'Если не хочешь отвечать, верни {"replies": []}.'
+            ),
         },
         "temperature": 0.7,
         "max_tokens": 2000,
-        "stop": ["</s>"]
+        "stop": ["</s>"],
     }
 
     async with aiohttp.ClientSession() as session:
@@ -101,6 +98,7 @@ async def process_and_reply():
 
     try:
         import json
+
         parsed = json.loads(gemma_answer)
     except Exception:
         print("❌ Ошибка парсинга ответа Gemma:", gemma_answer)
@@ -117,17 +115,20 @@ async def process_and_reply():
 async def on_message(msg: Message):
     """Сохраняем текстовые сообщения в историю"""
     if msg.text and not msg.text.startswith("/") and msg.from_user:
-        chat_history.append({
-            "id": msg.message_id,
-            "from": msg.from_user.full_name or "Unknown",
-            "from_id": msg.from_user.id,
-            "text": msg.text,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc)
-        })
+        chat_history.append(
+            {
+                "id": msg.message_id,
+                "from": msg.from_user.full_name or "Unknown",
+                "from_id": msg.from_user.id,
+                "text": msg.text,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc),
+            }
+        )
         print(f"📥 Сообщение от {msg.from_user.full_name or 'Unknown'}: {msg.text}")
 
     # Раз в 1 сообщение пробуем сгенерировать ответ (MVP)
     await process_and_reply()
+
 
 async def init_chat_history():
     """Получает последние 30 минут сообщений из чата для инициализации истории"""
@@ -135,13 +136,14 @@ async def init_chat_history():
         # Получаем историю сообщений за последние 30 минут
         now = datetime.datetime.now(datetime.timezone.utc)
         cutoff = now - datetime.timedelta(minutes=30)
-        
+
         # Пропускаем инициализацию истории, так как get_updates конфликтует с polling
         # История будет формироваться из новых сообщений
         print("✅ Инициализация истории чата пропущена (будет формироваться из новых сообщений)")
-        
+
     except Exception as e:
         print(f"❌ Ошибка при загрузке истории чата: {e}")
+
 
 async def main():
     await init_chat_history()

@@ -177,12 +177,8 @@ async def submit_scenario_task(scenario: ScenarioInput):
 
         # Задачу в очередь Redis
         redis = await get_redis()
-        await redis.rpush(
-            "hailuo_tasks", task_data.model_dump_json()
-        )  # Используем ту же очередь #type:ignore
-        logger.info(
-            f"New video generation task from scenario submitted: {task_id} for user {scenario.user_id}"
-        )
+        await redis.rpush("hailuo_tasks", task_data.model_dump_json())  # Используем ту же очередь #type:ignore
+        logger.info(f"New video generation task from scenario submitted: {task_id} for user {scenario.user_id}")
 
     except Exception as e:
         logger.exception(f"Error processing scenario task {task_id}: {e}")  # Логируем с traceback
@@ -413,17 +409,13 @@ async def upload_worker_archive(
                 await out_file.write(chunk)
                 file_size += len(chunk)
     except Exception as e:
-        logger.error(
-            f"Error saving worker archive '{original_filename}' to '{archive_save_path}': {e}"
-        )
+        logger.error(f"Error saving worker archive '{original_filename}' to '{archive_save_path}': {e}")
         # Attempt to clean up partially written file if an error occurs
         if archive_save_path.exists():
             try:
                 os.unlink(archive_save_path)
             except Exception as unlink_e:
-                logger.error(
-                    f"Error cleaning up partial archive '{archive_save_path}' during save error: {unlink_e}"
-                )
+                logger.error(f"Error cleaning up partial archive '{archive_save_path}' during save error: {unlink_e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not save archive file.",
@@ -449,9 +441,7 @@ async def download_worker_archive(filename: str):
     file_path = WORKER_ARCHIVES_DIR / filename
 
     if not file_path.is_file():  # Check if the file exists and is a file
-        logger.warning(
-            f"Worker archive not found for download: '{filename}' at expected path '{file_path}'"
-        )
+        logger.warning(f"Worker archive not found for download: '{filename}' at expected path '{file_path}'")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive not found.")
 
     # For archives, 'application/octet-stream' is a safe default.

@@ -49,9 +49,33 @@ whitelist = load_whitelist()
 SUPPORTED_MIMES = {
     "document": ["text/plain", "application/pdf"],
     "photo": ["image/jpeg", "image/png", "image/webp"],
-    "audio": ["audio/aac", "audio/flac", "audio/mp3", "audio/m4a", "audio/mpeg", "audio/mpga", "audio/mp4", "audio/opus", "audio/pcm", "audio/wav", "audio/webm"],
-    "video": ["video/x-flv", "video/quicktime", "video/mpeg", "video/mpegps", "video/mpg", "video/mp4", "video/webm", "video/wmv", "video/3gpp", "video/avi"]
+    "audio": [
+        "audio/aac",
+        "audio/flac",
+        "audio/mp3",
+        "audio/m4a",
+        "audio/mpeg",
+        "audio/mpga",
+        "audio/mp4",
+        "audio/opus",
+        "audio/pcm",
+        "audio/wav",
+        "audio/webm",
+    ],
+    "video": [
+        "video/x-flv",
+        "video/quicktime",
+        "video/mpeg",
+        "video/mpegps",
+        "video/mpg",
+        "video/mp4",
+        "video/webm",
+        "video/wmv",
+        "video/3gpp",
+        "video/avi",
+    ],
 }
+
 
 # --- Хендлер для команды /ask ---
 @router.message(Command("ask"))
@@ -69,7 +93,7 @@ async def handle_ask_gpt(message: Message):
 
         # 2. Определяем, откуда брать файл: из ответа на сообщение или из самого сообщения
         source_message = message.reply_to_message if message.reply_to_message else message
-        
+
         # 2.1. Если есть ответ на сообщение, добавляем его текст в контекст
         replied_text = ""
         if message.reply_to_message:
@@ -77,7 +101,7 @@ async def handle_ask_gpt(message: Message):
                 replied_text = message.reply_to_message.text
             elif message.reply_to_message.caption:
                 replied_text = message.reply_to_message.caption
-        
+
         # Формируем итоговый промпт
         final_prompt_text = ""
         if replied_text:
@@ -92,22 +116,28 @@ async def handle_ask_gpt(message: Message):
             file_obj_to_download = source_message.document
             current_file_mime_type = file_obj_to_download.mime_type
             if current_file_mime_type not in SUPPORTED_MIMES["document"]:
-                await message.answer(f"Извините, для /ask я поддерживаю только текстовые (.txt) и PDF (.pdf) файлы. Тип файла: {current_file_mime_type}.")
+                await message.answer(
+                    f"Извините, для /ask я поддерживаю только текстовые (.txt) и PDF (.pdf) файлы. Тип файла: {current_file_mime_type}."
+                )
                 return
         elif source_message.photo:
-            file_obj_to_download = source_message.photo[-1] # Берем самую большую версию фото
-            current_file_mime_type = "image/jpeg" # Примерный MIME-тип для фото
+            file_obj_to_download = source_message.photo[-1]  # Берем самую большую версию фото
+            current_file_mime_type = "image/jpeg"  # Примерный MIME-тип для фото
         elif source_message.audio:
             file_obj_to_download = source_message.audio
             current_file_mime_type = file_obj_to_download.mime_type
             if current_file_mime_type not in SUPPORTED_MIMES["audio"]:
-                await message.answer(f"Извините, для /ask я поддерживаю только определенные аудиоформаты. Тип файла: {current_file_mime_type}.")
+                await message.answer(
+                    f"Извините, для /ask я поддерживаю только определенные аудиоформаты. Тип файла: {current_file_mime_type}."
+                )
                 return
         elif source_message.video:
             file_obj_to_download = source_message.video
             current_file_mime_type = file_obj_to_download.mime_type
             if current_file_mime_type not in SUPPORTED_MIMES["video"]:
-                await message.answer(f"Извините, для /ask я поддерживаю только определенные видеоформаты. Тип файла: {current_file_mime_type}.")
+                await message.answer(
+                    f"Извините, для /ask я поддерживаю только определенные видеоформаты. Тип файла: {current_file_mime_type}."
+                )
                 return
 
         # 4. Если файл найден, скачиваем его и подготавливаем для Gemini
@@ -115,11 +145,11 @@ async def handle_ask_gpt(message: Message):
             # Создаем временный файл для сохранения документа
             with tempfile.NamedTemporaryFile(delete=False, dir=STORAGE_DIR) as temp_file:
                 temp_file_path = Path(temp_file.name)
-            
+
             await message.bot.download(file_obj_to_download, destination=temp_file_path)
             gemini_files_to_add.append(GeminiFile(file_path=temp_file_path, mime_type=current_file_mime_type))
             logger.info(f"Downloaded file for /ask: {temp_file_path} (MIME: {current_file_mime_type})")
-            
+
             # Если явный текстовый промпт не был задан, формируем его по умолчанию
             if not ask_command_text:
                 default_prompt = ""
@@ -131,13 +161,15 @@ async def handle_ask_gpt(message: Message):
                     default_prompt = "Проанализируй это видео."
                 elif source_message.document:
                     default_prompt = "Проанализируй этот документ."
-                else: # Fallback
+                else:  # Fallback
                     default_prompt = "Проанализируй прикрепленный файл."
                 final_prompt_text += default_prompt
 
         # 5. Финальная проверка: есть ли что-либо для отправки в модель?
         if not final_prompt_text.strip() and not gemini_files_to_add:
-            await message.answer("Использование: /ask <ваш вопрос> или ответьте на документ/фото/аудио/видео с /ask <ваш вопрос>")
+            await message.answer(
+                "Использование: /ask <ваш вопрос> или ответьте на документ/фото/аудио/видео с /ask <ваш вопрос>"
+            )
             return
 
         # 6. Добавляем все собранные файлы в AI_CLIENT (GeminiModel instance)
@@ -184,7 +216,7 @@ async def start_session(message: Message):
         chat_model = GeminiChatModel(api_key=GEMINI_API_KEY)
         text_input = message.text.split(maxsplit=1) if message.text else ""
         system_prompt = text_input[1] if len(text_input) > 1 else ""
-        
+
         chat_model.new_chat(system_prompt)
         await chat_manager.create_chat(chat_id, chat_model)
 
@@ -196,6 +228,7 @@ async def start_session(message: Message):
     else:
         await message.answer("Вы уже в чате. Продолжайте диалог.")
 
+
 # --- Хендлер для команды /stopchat ---
 @router.message(Command("stopchat"))
 async def stop_session(message: Message):
@@ -205,6 +238,7 @@ async def stop_session(message: Message):
     if await chat_manager.get_chat(chat_id):
         await chat_manager.remove_chat(chat_id)
         await message.answer("Чат остановлен!")
+
 
 # --- Хендлер для команды /add_me_as ---
 @router.message(Command("add_me_as"))
@@ -218,9 +252,8 @@ async def add_user_to_whitelist(message: Message):
         whitelist[message.chat.id] = {}
     whitelist[message.chat.id][message.from_user.id] = custom_name
     await save_whitelist(whitelist)
-    await message.reply(
-        f"Пользователь '{custom_name}' (ID: {message.from_user.id}) добавлен в белый список."
-    )
+    await message.reply(f"Пользователь '{custom_name}' (ID: {message.from_user.id}) добавлен в белый список.")
+
 
 # --- Хендлер для обработки сообщений в чате (текст, документы, фото, аудио, видео) ---
 @router.message(
@@ -293,9 +326,7 @@ async def handle_gpt_chat(message: Message):
                 temp_file_path = Path(temp_file.name)
 
             await message.bot.download(file_obj_to_download, destination=temp_file_path)
-            current_message_gemini_files.append(
-                GeminiFile(file_path=temp_file_path, mime_type=current_file_mime_type)
-            )
+            current_message_gemini_files.append(GeminiFile(file_path=temp_file_path, mime_type=current_file_mime_type))
             logger.info(f"Downloaded file for chat: {temp_file_path} (MIME: {current_file_mime_type})")
 
         # Если нет ни текста, ни прикрепленных файлов в текущем сообщении, пропускаем
@@ -329,9 +360,7 @@ async def handle_gpt_chat(message: Message):
             # 2. Формируем итоговый промпт с учетом контекста из ответа
             prompt_text_for_model = ""
             if replied_text:
-                prompt_text_for_model += (
-                    f"Контекст из предыдущего сообщения:\n---\n{replied_text}\n---\n\n"
-                )
+                prompt_text_for_model += f"Контекст из предыдущего сообщения:\n---\n{replied_text}\n---\n\n"
 
             prompt_text_for_model += text_content.strip()
 

@@ -3,8 +3,8 @@
 For any changes to this repository run the following commands on the Python files you modified:
 
 ```
-ruff format <files>
-ruff check <files>
+ruff format --line-length 120 <files>
+ruff check --fix <files>
 python -m py_compile <files>
 ```
 

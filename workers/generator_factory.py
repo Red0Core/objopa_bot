@@ -77,9 +77,7 @@ class DummyImageGenerator(ImageGenerator):
     Генерирует реальные изображения для каждого промпта.
     """
 
-    async def generate(
-        self, prompts: list[str], indices_to_generate: list[int] | None = None
-    ) -> list[list[Path]]:
+    async def generate(self, prompts: list[str], indices_to_generate: list[int] | None = None) -> list[list[Path]]:
         """
         Возвращает реальные изображения, сгенерированные через dummyimage.com
 
@@ -186,9 +184,7 @@ class DemoAnimationsGenerator(AnimationsGenerator):
     async def generate(self, images: list[Path], prompts: list[str]) -> Path:
         """Возвращает тестовый путь к анимациям"""
         logger.info("Используется демо-генератор анимаций")
-        logger.info(
-            f"Виртуальное создание анимаций из {len(images)} изображений с {len(prompts)} промптами"
-        )
+        logger.info(f"Виртуальное создание анимаций из {len(images)} изображений с {len(prompts)} промптами")
 
         return DEMO_STORAGE_DIR
 
@@ -223,9 +219,7 @@ class GeneratorFactory:
             return RealImageGenerator()
         except ImportError:
             # Если не удалось, используем демо-реализацию с dummyimage.com
-            logger.warning(
-                "Реальный генератор изображений не найден, используется DummyImageGenerator"
-            )
+            logger.warning("Реальный генератор изображений не найден, используется DummyImageGenerator")
             return DummyImageGenerator()
 
     @staticmethod

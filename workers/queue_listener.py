@@ -50,9 +50,7 @@ class QueueListener:
         logger.info("Начинаем получать задачи...")
         # Уведомление о запуске лучше отправить до основного цикла
         try:
-            await send_notification(
-                f"Воркер запущен у {WHO_LAUNCHED_WORKER}. Жду задачи...", CHAT_ID
-            )
+            await send_notification(f"Воркер запущен у {WHO_LAUNCHED_WORKER}. Жду задачи...", CHAT_ID)
         except Exception as notify_err:
             logger.error(f"Не удалось отправить уведомление о запуске: {notify_err}")
 
@@ -67,9 +65,7 @@ class QueueListener:
                 loop.add_signal_handler(s, lambda s=s: asyncio.create_task(self.shutdown(s)))
             except NotImplementedError:
                 # add_signal_handler может быть не реализован на Windows для всех сигналов
-                logger.warning(
-                    f"Не удалось добавить обработчик для сигнала {s}. Возможно, Windows?"
-                )
+                logger.warning(f"Не удалось добавить обработчик для сигнала {s}. Возможно, Windows?")
 
         while not self.shutdown_requested:
             try:
@@ -83,9 +79,7 @@ class QueueListener:
                 _, task_data = task_json
                 try:
                     task = json.loads(task_data)
-                    if datetime.now(timezone.utc) - datetime.fromisoformat(
-                        task["created_at"]
-                    ) > timedelta(hours=3):
+                    if datetime.now(timezone.utc) - datetime.fromisoformat(task["created_at"]) > timedelta(hours=3):
                         logger.info(f"Задача {task['task_id']} устарела (> 3 часа). Пропускаю.")
                         continue
                     await send_notification(
@@ -97,9 +91,7 @@ class QueueListener:
                     if NEED_TO_RETURN_TO_QUEUE and task_data.get("type") != "video_generation":
                         await redis.rpush(self.queue_name, task_data)  # type: ignore
                         logger.info("Задача помещена обратно в очередь.")
-                    logger.info(
-                        "Не удалось получить блокировку. Таймаут минута. (Можно выключить софт если не нужно)"
-                    )
+                    logger.info("Не удалось получить блокировку. Таймаут минута. (Можно выключить софт если не нужно)")
                     await asyncio.sleep(60)
                 except Exception as e:
                     if NEED_TO_RETURN_TO_QUEUE and task_data.get("type") != "video_generation":
@@ -135,9 +127,7 @@ class QueueListener:
         try:
             # Используем небольшой таймаут на отправку
             async with asyncio.timeout(10):
-                await send_notification(
-                    f"Воркер остановлен сигналом {sig.name} у {WHO_LAUNCHED_WORKER}", CHAT_ID
-                )
+                await send_notification(f"Воркер остановлен сигналом {sig.name} у {WHO_LAUNCHED_WORKER}", CHAT_ID)
             logger.info("Уведомление об остановке отправлено.")
         except asyncio.TimeoutError:
             logger.error("Не удалось отправить уведомление об остановке (таймаут).")
