@@ -1,21 +1,16 @@
-import re
 import traceback
 from pathlib import Path
 
-import telegramify_markdown
 from yt_dlp import YoutubeDL
 
 from core.config import DOWNLOADS_DIR
 from core.logger import logger
 from tg_bot.utils.cookies_manager import cookies_manager
 
-MAX_SIZE_MB = 50
+MAX_SIZE_MB = 200  # 200 MB limit for better compression
 MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
-IP_PATTERN = re.compile(r"https?://[^/]*\b(?:\d{1,3}\.){3}\d{1,3}\b")
-
-
-def has_ip_in_url(url: str) -> bool:
-    return bool(IP_PATTERN.search(url))
+MAX_HEIGHT = 1440  # 2K max resolution
+MIN_HEIGHT = 480  # Minimum height to avoid very low-res videos
 
 
 async def download_with_ytdlp(
@@ -83,18 +78,24 @@ async def download_with_ytdlp(
                 video_formats = [
                     fmt
                     for fmt in formats
-                    if fmt.get("vcodec") != "none" and fmt.get("height") and not has_ip_in_url(fmt.get("url", ""))
+                    if fmt.get("vcodec") != "none"
+                    and fmt.get("height")
+                    and fmt.get("height") <= MAX_HEIGHT
+                    and fmt.get("height") >= MIN_HEIGHT
                 ]
 
-                # Sort by quality
+                # Sort by quality (best first)
                 video_formats.sort(
                     key=lambda f: (f.get("height", 0), f.get("tbr") if f.get("tbr") is not None else 0), reverse=True
                 )
+                max_resolution = video_formats[0].get("resolution") or f"{video_formats[0].get('height')}p" if video_formats else None
 
                 for fmt in video_formats:
                     size = estimate_size(fmt)
-                    logger.info(f"Format: {fmt}, Estimated size: {size} bytes")
-                    if 0 < size <= MAX_SIZE_BYTES and fmt.get("height", 0) >= 480:
+                    logger.info(
+                        f"Trying format: {fmt['format_id']} - {fmt.get('height')}p, estimated size: {size / (1024 * 1024):.1f} MB"
+                    )
+                    if 0 < size <= MAX_SIZE_BYTES:
                         # Use format selectors that work well with YouTube Shorts
                         format_selector = (
                             f"{fmt['format_id']}+bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[ext=aac]/bestaudio"
@@ -113,32 +114,16 @@ async def download_with_ytdlp(
                         entries = downloaded["entries"] if "entries" in downloaded else [downloaded]
                         for entry in entries:
                             files.append(Path(ydl.prepare_filename(entry)))
+
+                        # Add video info to title for clearly indicating cookies usage and for changing custom downloader type
+                        if with_cookies:
+                            resolution = fmt.get("resolution") or f"{fmt.get('height')}p"
+                            title = f"{title} (used={resolution};max={max_resolution})cookies_used" if title else "Media cookies_used"
                         return True
 
-                # Если ни один формат не прошел по весу
+                # Если ни один формат не прошел по размеру или разрешению
                 title = info.get("title", "Video")
-                lines = [f"*❌ File too large to download\\. Available formats:*\n{title}\n"]
-
-                # То мы собираем информацию о всех форматах и выбираем лучший по битрейту на каждом разрешении по высоте
-                best_bitrate_on_resolutions = dict()
-                for f in video_formats:
-                    size_est = estimate_size(f)
-                    height = int(f.get("height", 0))
-                    best_bitrate_on_resolutions[height] = max(best_bitrate_on_resolutions.get(height, 0), size_est)
-
-                # Формируем список с информацией о лучших форматах
-                for f in video_formats:
-                    size_est = estimate_size(f)
-                    height = int(f.get("height", 0))
-                    if size_est != best_bitrate_on_resolutions.get(height, 0):
-                        continue
-                    format_id = f.get("format_id", "")
-                    resolution = f.get("resolution", str(height) + "p")
-                    url_fmt = f.get("url", "")
-                    size_mb = round(size_est / (1024 * 1024), 2) if size_est else "?"
-                    lines.append(f"{format_id} - {resolution} (~{size_mb} MB): [Link]({url_fmt})")
-
-                error = telegramify_markdown.markdownify("\n".join(lines))
+                error = f"❌ No suitable format found for {title}. All available formats exceed {MAX_SIZE_MB}MB or {MAX_HEIGHT}p limit."
                 return False
 
         except Exception as e:
@@ -171,7 +156,6 @@ async def download_with_ytdlp(
     if use_cookies:
         # Сначала с cookies, потом без
         if await _download_attempt(with_cookies=True):
-            title = f"{title}cookies_used" if title else "Media with cookies"
             return files, title, error
 
     # Потом без cookies
