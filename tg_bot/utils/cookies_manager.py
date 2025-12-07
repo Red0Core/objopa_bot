@@ -147,7 +147,7 @@ class CookiesManager:
                     continue
                 site_name = key.replace("cookies:", "").lower()
                 timestamp_key = f"{key}:timestamp"
-                timestamp = redis_client.get(timestamp_key)
+                timestamp = await redis_client.get(timestamp_key)
                 result[site_name] = timestamp if timestamp else "unknown"
             return result
         except Exception as e:

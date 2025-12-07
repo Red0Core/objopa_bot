@@ -74,7 +74,7 @@ async def download_with_ytdlp(
                         return fmt["filesize"]
                     if "filesize_approx" in fmt and fmt["filesize_approx"]:
                         return fmt["filesize_approx"]
-                    if "tbr" in fmt and fmt["tbr"] is not None and duration:
+                    if "tbr" in fmt and fmt["tbr"] is not None and duration and duration > 0:
                         return int((fmt["tbr"] * 1000 / 8) * duration)
                     return 0
 
@@ -144,7 +144,7 @@ async def download_with_ytdlp(
             # Проверяем, нужны ли cookies
             if with_cookies:
                 # Уже пробовали с cookies, возвращаем ошибку
-                logger.error(f"Download with cookies failed: {e}")
+                logger.exception(f"Download with cookies failed: {e}")
                 return False
 
             # Если ошибка содержит намёк на cookies

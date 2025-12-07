@@ -76,6 +76,12 @@ class DownloaderManager:
         # Проверяем, является ли URL кастомной платформой
         is_custom_platform = INSTAGRAM_REGEX.match(url) or TWITTER_REGEX.match(url)
 
+        # Проиритет для кукисов, если это инстаграмм
+        if use_cookies and INSTAGRAM_REGEX.match(url):
+            cookies_yt_dlp_result = await self._try_ytdlp(url, use_cookies=True)
+            if cookies_yt_dlp_result.success:
+                return cookies_yt_dlp_result
+
         # Попытка 1: Кастомные скачиватели
         custom_result = await self._try_custom_downloaders(url)
         if custom_result.success:

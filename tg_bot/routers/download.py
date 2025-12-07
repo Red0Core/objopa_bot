@@ -549,7 +549,7 @@ async def set_twitter_cookies_only_admin_acc(message: Message, command: CommandO
 async def set_cookies_handler(message: Message):
     """Устанавливает cookies файл для сайта (только MAIN_ACC)."""
     if message.from_user.id != MAIN_ACC:
-        await message.answer(telegramify_markdown.markdownify("❌ ЗАПРЕЩЕНО ВАМ!!!"), parse_mode="MarkdownV2")
+        await message.answer(telegramify_markdown.markdownify(f"❌ ЗАПРЕЩЕНО ВАМ!!! {message.from_user.id}"), parse_mode="MarkdownV2")
         return
 
     if not message.document:

@@ -38,7 +38,7 @@ DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_BOT = get_required_env("TOKEN_BOT")
 OBZHORA_CHAT_ID = get_required_env("OBZHORA_CHAT_ID")  # Используется в личных целях
 ZA_IDEU_CHAT_ID = get_required_env("ZA_IDEU_CHAT_ID")  # Используется в личных целях
-MAIN_ACC = get_required_env("MAIN_ACC")  # Используется для проверки запуска бота
+MAIN_ACC = int(get_required_env("MAIN_ACC"))  # Используется для проверки запуска бота
 MEXC_JSON_FILE = STORAGE_DIR / "mexc_activities.json"
 
 GIFS_ID = {
