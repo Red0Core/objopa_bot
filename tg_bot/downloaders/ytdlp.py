@@ -171,6 +171,7 @@ async def download_with_ytdlp(
     if use_cookies:
         # Сначала с cookies, потом без
         if await _download_attempt(with_cookies=True):
+            title = f"{title}cookies_used" if title else "Media with cookies"
             return files, title, error
 
     # Потом без cookies

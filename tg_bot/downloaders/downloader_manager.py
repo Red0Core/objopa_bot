@@ -21,6 +21,7 @@ from .ytdlp import download_with_ytdlp
 class DownloaderType(Enum):
     CUSTOM = "custom"
     YTDLP = "yt-dlp"
+    YTDLP_COOKIES = "yt-dlp_cookies"
     GALLERY_DL = "gallery-dl"
     SPOTIFY = "spotify"
     TWITTER = "twitter"
@@ -235,7 +236,9 @@ class DownloaderManager:
                         files=video_files,
                         caption=caption,
                         error=None,
-                        downloader_used=DownloaderType.YTDLP,
+                        downloader_used=DownloaderType.YTDLP_COOKIES
+                        if caption and caption.endswith("cookies_used")
+                        else DownloaderType.YTDLP,
                     )
                 else:
                     # Если нет видео файлов, продолжаем с gallery-dl
