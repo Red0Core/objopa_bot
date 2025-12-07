@@ -2,9 +2,8 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Optional, cast
 
-from requests import session
-
 from core.logger import logger
+
 from .gpt import AIChatInterface
 
 

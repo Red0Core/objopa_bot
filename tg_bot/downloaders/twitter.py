@@ -1,11 +1,11 @@
+import asyncio
 import json
-import random
 import os
+import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Tuple
-import asyncio
 
 import telegramify_markdown
 from curl_cffi.requests import AsyncSession
@@ -540,7 +540,7 @@ async def download_twitter_media(
         data, auth_err = await fetch(spec, True)
         if data is None:
             if auth_err and ("not authorized" in auth_err or "Could not authenticate you" in auth_err):
-                logger.error(f"AUTH TOKEN and CT0 is old or invalid. Trying guest token...")
+                logger.error("AUTH TOKEN and CT0 is old or invalid. Trying guest token...")
             else:
                 logger.warning(f"Auth request failed: {auth_err}. Trying guest token")
             data, guest_err = await fetch(spec, False)

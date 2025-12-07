@@ -1,3 +1,5 @@
+import datetime as dt
+
 from fastapi import APIRouter, HTTPException
 
 from backend.models.markets import (
@@ -11,7 +13,6 @@ from backend.models.markets import (
     PriceResponse,
 )
 from backend.services.markets import alphavantage, bybit_p2p, cbr, coinmarketcap, exchanges
-import datetime as dt
 
 router = APIRouter(prefix="/markets", tags=["markets"])
 

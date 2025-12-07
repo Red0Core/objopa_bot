@@ -39,6 +39,7 @@ TOKEN_BOT = get_required_env("TOKEN_BOT")
 OBZHORA_CHAT_ID = get_required_env("OBZHORA_CHAT_ID")  # Используется в личных целях
 ZA_IDEU_CHAT_ID = get_required_env("ZA_IDEU_CHAT_ID")  # Используется в личных целях
 MAIN_ACC = int(get_required_env("MAIN_ACC"))  # Используется для проверки запуска бота
+COOKIES_ALLOW_USERS_ID = [int(i) for i in get_required_env("COOKIES_ALLOW_USERS_ID").split(",")]
 MEXC_JSON_FILE = STORAGE_DIR / "mexc_activities.json"
 
 GIFS_ID = {

@@ -2,8 +2,6 @@ import asyncio
 import platform
 
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 from aiogram.fsm.strategy import FSMStrategy
 
 from core.config import TOKEN_BOT

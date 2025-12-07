@@ -1,3 +1,4 @@
+from .downloader_manager import DownloaderType, DownloadResult, downloader_manager
 from .gallery_dl import download_with_gallery_dl
 from .instagram import INSTAGRAM_REGEX, download_instagram_media
 from .twitter import (
@@ -7,7 +8,6 @@ from .twitter import (
     set_csrf_token,
 )
 from .ytdlp import download_with_ytdlp
-from .downloader_manager import downloader_manager, DownloadResult, DownloaderType
 
 __all__ = [
     "INSTAGRAM_REGEX",

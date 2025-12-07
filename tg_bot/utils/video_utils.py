@@ -3,6 +3,7 @@
 """
 
 import asyncio
+import subprocess
 import time
 import traceback
 from dataclasses import dataclass
@@ -75,17 +76,14 @@ class VideoProcessor:
             # Команда для получения информации о видео
             cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(video_path)]
 
-            process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
+            # Используем asyncio.to_thread для Windows совместимости
+            result = await asyncio.to_thread(lambda: self._run_ffprobe(cmd))
 
-            stdout, stderr = await process.communicate()
-
-            if process.returncode != 0:
-                logger.error(f"ffprobe failed for {video_path}: {stderr.decode()}")
+            if result is None:
                 return None
 
-            data = json.loads(stdout.decode())
+            stdout, returncode = result
+            data = json.loads(stdout)
             format_info = data.get("format", {})
             video_stream = None
 
@@ -145,6 +143,22 @@ class VideoProcessor:
             logger.debug(f"Full traceback: {traceback.format_exc()}")
             return None
 
+    @staticmethod
+    def _run_ffprobe(cmd: list[str], timeout: int = 30, strip_output: bool = False) -> Optional[tuple[str, int] | str]:
+        """Вспомогательный метод для запуска ffprobe в потоке"""
+        try:
+            process = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            if process.returncode == 0:
+                output = process.stdout.strip() if strip_output else process.stdout
+                return output if strip_output else (output, process.returncode)
+            return None
+        except subprocess.TimeoutExpired:
+            logger.error(f"ffprobe timeout for command: {cmd}")
+            return None
+        except Exception as e:
+            logger.error(f"Error running ffprobe: {e}")
+            return None
+
     async def check_faststart(self, video_path: Path) -> bool:
         """
         Проверяет, включен ли faststart для видео файла.
@@ -171,17 +185,11 @@ class VideoProcessor:
                 str(video_path),
             ]
 
-            format_process = await asyncio.create_subprocess_exec(
-                *format_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-
-            format_stdout, _ = await format_process.communicate()
-
-            if format_process.returncode != 0:
-                logger.warning(f"Could not determine format for {video_path.name}")
-                return True
-
-            format_name = format_stdout.decode().strip().lower()
+            # Используем asyncio.to_thread для Windows совместимости
+            result = await asyncio.to_thread(lambda: self._run_ffprobe(format_cmd, timeout=10, strip_output=True))
+            if not result:
+                return False
+            format_name = result.lower()
 
             # Faststart применим только к MP4 контейнерам
             if "mp4" not in format_name and "mov" not in format_name:
@@ -212,6 +220,7 @@ class VideoProcessor:
 
         except Exception as e:
             logger.error(f"Error checking faststart for {video_path}: {e}")
+            logger.debug(f"Full traceback: {traceback.format_exc()}")
             return True
 
     async def convert_to_faststart(
@@ -245,28 +254,35 @@ class VideoProcessor:
 
             logger.info(f"Converting {input_path.name} to faststart format...")
 
-            process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
+            # Используем asyncio.to_thread для Windows совместимости
+            success, error = await asyncio.to_thread(lambda: self._run_ffmpeg(cmd))
 
-            stdout, stderr = await process.communicate()
-
-            if process.returncode == 0:
+            if success:
                 logger.success(f"Successfully converted {input_path.name} to faststart")
                 return True, output_path, None
             else:
-                error_msg = stderr.decode()
-                logger.error(f"FFmpeg conversion failed: {error_msg}")
-                return False, None, f"FFmpeg error: {error_msg}"
+                logger.error(f"FFmpeg conversion failed: {error}")
+                return False, None, f"FFmpeg error: {error}"
 
-        except FileNotFoundError:
-            error_msg = "FFmpeg not found. Please install FFmpeg to use video optimization."
-            logger.error(error_msg)
-            return False, None, error_msg
         except Exception as e:
             error_msg = f"Error during video conversion: {str(e)}"
             logger.error(error_msg)
             return False, None, error_msg
+
+    @staticmethod
+    def _run_ffmpeg(cmd: list[str], timeout: int = 300) -> Tuple[bool, Optional[str]]:
+        """Вспомогательный метод для запуска ffmpeg в потоке"""
+        try:
+            process = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            if process.returncode == 0:
+                return True, None
+            return False, process.stderr
+        except subprocess.TimeoutExpired:
+            return False, f"FFmpeg operation timed out after {timeout}s"
+        except FileNotFoundError:
+            return False, "FFmpeg not found. Please install FFmpeg."
+        except Exception as e:
+            return False, str(e)
 
     async def optimize_video_for_telegram(
         self, video_path: Path, max_size_mb: Optional[int] = None, quality_profile: str = "medium"
@@ -351,23 +367,12 @@ class VideoProcessor:
 
             logger.info(f"Starting optimization with {timeout}s timeout...")
 
-            try:
-                process = await asyncio.wait_for(
-                    asyncio.create_subprocess_exec(
-                        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-                    ),
-                    timeout=timeout,
-                )
-
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-
-            except asyncio.TimeoutError:
-                logger.error(f"Video optimization timed out after {timeout}s")
-                return False, None, f"Optimization timed out after {timeout}s"
+            # Используем asyncio.to_thread для Windows совместимости
+            success, error = await asyncio.to_thread(lambda: self._run_ffmpeg(cmd, int(timeout)))
 
             processing_time = time.time() - start_time
 
-            if process.returncode == 0:
+            if success:
                 new_size_mb = output_path.stat().st_size / (1024 * 1024)
                 compression_ratio = (video_info.size_mb - new_size_mb) / video_info.size_mb * 100
 
@@ -383,9 +388,8 @@ class VideoProcessor:
 
                 return True, output_path, warning
             else:
-                error_msg = stderr.decode()
-                logger.error(f"Video optimization failed: {error_msg}")
-                return False, None, f"FFmpeg error: {error_msg}"
+                logger.error(f"Video optimization failed: {error}")
+                return False, None, f"FFmpeg error: {error}"
 
         except Exception as e:
             error_msg = f"Error during video optimization: {str(e)}"

@@ -6,8 +6,8 @@
 import asyncio
 from typing import Optional
 
-from core.redis_client import get_redis
 from core.logger import logger
+from core.redis_client import get_redis
 
 
 class InstagramUserAgentService:

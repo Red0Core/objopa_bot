@@ -1,13 +1,12 @@
 import asyncio
 import traceback
-from pathlib import Path
 
 import telegramify_markdown
 from aiogram import Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import FSInputFile, Message
 
-from core.config import DOWNLOADS_DIR, MAIN_ACC, STORAGE_DIR
+from core.config import COOKIES_ALLOW_USERS_ID, DOWNLOADS_DIR, STORAGE_DIR
 from core.logger import logger
 from core.redis_client import Redis, get_redis
 from tg_bot.downloaders import (
@@ -529,7 +528,7 @@ async def set_twitter_cookies_only_admin_acc(message: Message, command: CommandO
     if (
         message.from_user is None
         or not message.from_user.id
-        or (message.from_user.id != MAIN_ACC and message.chat.type != "private")
+        or (message.from_user.id not in COOKIES_ALLOW_USERS_ID and message.chat.type != "private")
     ):
         await message.answer(telegramify_markdown.markdownify("❌ ЗАПРЕЩЕНО ВАМ!!!"), parse_mode="MarkdownV2")
         return
@@ -548,8 +547,8 @@ async def set_twitter_cookies_only_admin_acc(message: Message, command: CommandO
 @router.message(Command("set_cookies"))
 async def set_cookies_handler(message: Message):
     """Устанавливает cookies файл для сайта (только MAIN_ACC)."""
-    if message.from_user.id != MAIN_ACC:
-        await message.answer(telegramify_markdown.markdownify(f"❌ ЗАПРЕЩЕНО ВАМ!!! {message.from_user.id}"), parse_mode="MarkdownV2")
+    if message.from_user.id not in COOKIES_ALLOW_USERS_ID:
+        await message.answer(telegramify_markdown.markdownify("❌ ЗАПРЕЩЕНО ВАМ!!!"), parse_mode="MarkdownV2")
         return
 
     if not message.document:
@@ -616,7 +615,7 @@ async def set_cookies_handler(message: Message):
 @router.message(Command("list_cookies"))
 async def list_cookies_handler(message: Message):
     """Показывает доступные cookies (только MAIN_ACC)."""
-    if message.from_user.id != MAIN_ACC:
+    if message.from_user.id not in COOKIES_ALLOW_USERS_ID:
         await message.answer(telegramify_markdown.markdownify("❌ ЗАПРЕЩЕНО ВАМ!!!"), parse_mode="MarkdownV2")
         return
 
@@ -636,7 +635,7 @@ async def list_cookies_handler(message: Message):
 @router.message(Command("delete_cookies"))
 async def delete_cookies_handler(message: Message, command: CommandObject):
     """Удаляет cookies для сайта (только MAIN_ACC)."""
-    if message.from_user.id != MAIN_ACC:
+    if message.from_user.id not in COOKIES_ALLOW_USERS_ID:
         await message.answer(telegramify_markdown.markdownify("❌ ЗАПРЕЩЕНО ВАМ!!!"), parse_mode="MarkdownV2")
         return
 

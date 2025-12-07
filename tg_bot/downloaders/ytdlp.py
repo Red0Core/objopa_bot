@@ -74,8 +74,9 @@ async def download_with_ytdlp(
                         return fmt["filesize"]
                     if "filesize_approx" in fmt and fmt["filesize_approx"]:
                         return fmt["filesize_approx"]
-                    if "tbr" in fmt and fmt["tbr"] is not None and duration and duration > 0:
-                        return int((fmt["tbr"] * 1000 / 8) * duration)
+                    tbr = fmt.get("tbr")
+                    if tbr is not None and duration and duration > 0:
+                        return int((tbr * 1000 / 8) * duration)
                     return 0
 
                 # Check if this is a YouTube Shorts or similar with separate video/audio streams
@@ -86,7 +87,9 @@ async def download_with_ytdlp(
                 ]
 
                 # Sort by quality
-                video_formats.sort(key=lambda f: (f.get("height", 0), f.get("tbr", 0)), reverse=True)
+                video_formats.sort(
+                    key=lambda f: (f.get("height", 0), f.get("tbr") if f.get("tbr") is not None else 0), reverse=True
+                )
 
                 for fmt in video_formats:
                     size = estimate_size(fmt)

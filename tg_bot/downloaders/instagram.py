@@ -5,7 +5,7 @@ from pathlib import Path
 import instaloader
 from curl_cffi.requests import AsyncSession
 
-from core.config import DOWNLOADS_DIR, STORAGE_DIR, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
+from core.config import DOWNLOADS_DIR, INSTAGRAM_PASSWORD, INSTAGRAM_USERNAME, STORAGE_DIR
 from core.logger import logger
 from tg_bot.services.instagram_ua_service import instagram_ua_service
 
