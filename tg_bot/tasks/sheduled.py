@@ -129,7 +129,7 @@ async def check_cbr_update(bot):
 async def on_startup(bot):
     for coro in (
         scheduled_message(bot),
-        send_daily_horoscope_for_brothers(bot),
+        #send_daily_horoscope_for_brothers(bot),
         send_daily_tracker_messages(bot),
         cleanup_downloads(bot),
         check_cbr_update(bot),
