@@ -88,7 +88,11 @@ async def download_with_ytdlp(
                 video_formats.sort(
                     key=lambda f: (f.get("height", 0), f.get("tbr") if f.get("tbr") is not None else 0), reverse=True
                 )
-                max_resolution = video_formats[0].get("resolution") or f"{video_formats[0].get('height')}p" if video_formats else None
+                max_resolution = (
+                    video_formats[0].get("resolution") or f"{video_formats[0].get('height')}p"
+                    if video_formats
+                    else None
+                )
 
                 for fmt in video_formats:
                     size = estimate_size(fmt)
@@ -118,7 +122,11 @@ async def download_with_ytdlp(
                         # Add video info to title for clearly indicating cookies usage and for changing custom downloader type
                         if with_cookies:
                             resolution = fmt.get("resolution") or f"{fmt.get('height')}p"
-                            title = f"{title} (used={resolution};max={max_resolution})cookies_used" if title else "Media cookies_used"
+                            title = (
+                                f"{title} (used={resolution};max={max_resolution})cookies_used"
+                                if title
+                                else "Media cookies_used"
+                            )
                         return True
 
                 # Если ни один формат не прошел по размеру или разрешению

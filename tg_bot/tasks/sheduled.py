@@ -35,20 +35,6 @@ def daily_schedule(hour=13, minute=0):
     return decorator
 
 
-def hourly_schedule():
-    """Decorator for tasks that should run every hour"""
-
-    def decorator(func):
-        async def wrapper(bot, *args, **kwargs):
-            while True:
-                await func(bot, *args, **kwargs)
-                await asyncio.sleep(3600)  # 1 hour
-
-        return wrapper
-
-    return decorator
-
-
 @daily_schedule(hour=6, minute=0)
 async def send_daily_horoscope_for_brothers(bot):
     zodiac_map = {"taurus": "телец", "pisces": "рыбы", "libra": "весы"}
@@ -82,54 +68,78 @@ async def cleanup_downloads(bot):
         logger.info(f"Cleaned {removed} files from downloads")
 
 
-@hourly_schedule()
 async def check_cbr_update(bot):
     """
-    Проверяет каждый час появление новой даты в ЦБ РФ.
+    Проверяет обновление курсов ЦБ РФ:
+    - До 17:00 МСК: каждый час
+    - С 17:00 до 19:00 МСК: каждые 3 минуты
     При обновлении отправляет уведомление с курсами.
     """
+    from datetime import timezone
+
     from core.redis_client import get_redis
     from tg_bot.routers.currencies import build_cbr_message
 
     redis_key = "cbr:notified_date"
+    moscow_tz = timezone(timedelta(hours=3))  # Moscow UTC+3
+    check_interval = 3600
 
-    try:
-        async with httpx.AsyncClient() as session:
-            # Получаем последнюю дату
-            response = await session.get(f"{BACKEND_ROUTE}/markets/cbr/last-date")
-            response.raise_for_status()
-            current_date = response.json()["date"]
+    while True:
+        try:
+            # Определяем текущее московское время
+            moscow_now = datetime.now(moscow_tz)
+            current_hour = moscow_now.hour
 
-            # Проверяем Redis - отправляли ли уже уведомление для этой даты
-            redis = await get_redis()
-            last_notified = await redis.get(redis_key)
+            # Определяем интервал проверки
+            if current_hour < 17:
+                # До 17:00 - каждый час
+                check_interval = 3600  # 1 час
+            elif current_hour < 19:
+                # С 17:00 до 19:00 - каждые 3 минуты
+                check_interval = 180  # 3 минуты
+            else:
+                # После 19:00 - каждый час до следующего дня
+                check_interval = 3600
 
-            if last_notified != current_date:
-                # Новая дата! Отправляем уведомление
-                logger.info(f"New CBR date detected: {current_date} (was: {last_notified})")
+            async with httpx.AsyncClient() as session:
+                # Получаем последнюю дату
+                response = await session.get(f"{BACKEND_ROUTE}/markets/cbr/last-date")
+                response.raise_for_status()
+                current_date = response.json()["date"]
 
-                # Используем стандартную функцию для формирования сообщения
-                # Показываем только основные валюты: USD, EUR, CNY
-                message = await build_cbr_message(requested_codes=["USD", "EUR", "CNY", "BYN"])
+                # Проверяем Redis - отправляли ли уже уведомление для этой даты
+                redis = await get_redis()
+                last_notified = await redis.get(redis_key)
 
-                # Добавляем заголовок уведомления
-                message = f"🔔 <b>Обновление курсов ЦБ РФ</b>\n\n{message}"
+                if last_notified != current_date:
+                    # Новая дата! Отправляем уведомление
+                    logger.info(f"New CBR date detected: {current_date} (was: {last_notified})")
 
-                # Отправляем в чат
-                await bot.send_message(OBZHORA_CHAT_ID, message, parse_mode="html")
+                    # Используем стандартную функцию для формирования сообщения
+                    # Показываем только основные валюты: USD, EUR, CNY
+                    message = await build_cbr_message(requested_codes=["USD", "EUR", "CNY", "BYN"])
 
-                # Сохраняем дату в Redis
-                await redis.set(redis_key, current_date)
-                logger.info(f"CBR update notification sent for {current_date}")
+                    # Добавляем заголовок уведомления
+                    message = f"🔔 <b>Обновление курсов ЦБ РФ</b>\n\n{message}"
 
-    except Exception as e:
-        logger.error(f"Error in check_cbr_update: {e}")
+                    # Отправляем в чат
+                    await bot.send_message(OBZHORA_CHAT_ID, message, parse_mode="html")
+
+                    # Сохраняем дату в Redis
+                    await redis.set(redis_key, current_date)
+                    logger.info(f"CBR update notification sent for {current_date}")
+
+        except Exception as e:
+            logger.error(f"Error in check_cbr_update: {e}")
+
+        # Ждём до следующей проверки
+        await asyncio.sleep(check_interval)
 
 
 async def on_startup(bot):
     for coro in (
         scheduled_message(bot),
-        #send_daily_horoscope_for_brothers(bot),
+        # send_daily_horoscope_for_brothers(bot),
         send_daily_tracker_messages(bot),
         cleanup_downloads(bot),
         check_cbr_update(bot),
