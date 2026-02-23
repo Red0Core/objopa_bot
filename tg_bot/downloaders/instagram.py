@@ -150,8 +150,9 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
 
         bot_loader = await get_instaloader_session()
 
-        post = await asyncio.to_thread(instaloader.Post.from_shortcode, bot_loader.context, shortcode)
-        await asyncio.to_thread(bot_loader.download_post, post, DOWNLOADS_DIR)
+        loop = asyncio.get_event_loop()
+        post = await loop.run_in_executor(None, instaloader.Post.from_shortcode, bot_loader.context, shortcode)
+        await loop.run_in_executor(None, bot_loader.download_post, post, DOWNLOADS_DIR)
 
         return shortcode, None
 

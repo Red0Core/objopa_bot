@@ -76,8 +76,9 @@ class VideoProcessor:
             # Команда для получения информации о видео
             cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(video_path)]
 
-            # Используем asyncio.to_thread для Windows совместимости
-            result = await asyncio.to_thread(lambda: self._run_ffprobe(cmd))
+            # Используем run_in_executor для Windows совместимости
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self._run_ffprobe, cmd)
 
             if result is None:
                 return None
@@ -185,9 +186,12 @@ class VideoProcessor:
                 str(video_path),
             ]
 
-            # Используем asyncio.to_thread для Windows совместимости
-            result = await asyncio.to_thread(lambda: self._run_ffprobe(format_cmd, timeout=10, strip_output=True))
-            if not result:
+            # Используем run_in_executor для Windows совместимости
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, lambda: self._run_ffprobe(format_cmd, timeout=10, strip_output=True)
+            )
+            if not result or not isinstance(result, str):
                 return False
             format_name = result.lower()
 
@@ -254,8 +258,9 @@ class VideoProcessor:
 
             logger.info(f"Converting {input_path.name} to faststart format...")
 
-            # Используем asyncio.to_thread для Windows совместимости
-            success, error = await asyncio.to_thread(lambda: self._run_ffmpeg(cmd))
+            # Используем run_in_executor для Windows совместимости
+            loop = asyncio.get_event_loop()
+            success, error = await loop.run_in_executor(None, self._run_ffmpeg, cmd, 300)
 
             if success:
                 logger.success(f"Successfully converted {input_path.name} to faststart")
@@ -273,16 +278,32 @@ class VideoProcessor:
     def _run_ffmpeg(cmd: list[str], timeout: int = 300) -> Tuple[bool, Optional[str]]:
         """Вспомогательный метод для запуска ffmpeg в потоке"""
         try:
+            logger.debug(f"Running FFmpeg command: {' '.join(cmd[:5])}... (timeout: {timeout}s)")
             process = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+            logger.debug(f"FFmpeg finished with returncode: {process.returncode}")
+
             if process.returncode == 0:
                 return True, None
-            return False, process.stderr
+
+            # Логируем ошибку для отладки
+            error_msg = process.stderr.strip() if process.stderr else f"FFmpeg failed with code {process.returncode}"
+            if process.stdout:
+                logger.debug(f"FFmpeg stdout: {process.stdout[:500]}")
+            if process.stderr:
+                logger.debug(f"FFmpeg stderr: {process.stderr[:500]}")
+
+            return False, error_msg or "FFmpeg failed without error message"
+
         except subprocess.TimeoutExpired:
+            logger.warning(f"FFmpeg timeout after {timeout}s")
             return False, f"FFmpeg operation timed out after {timeout}s"
         except FileNotFoundError:
+            logger.error("FFmpeg executable not found in PATH")
             return False, "FFmpeg not found. Please install FFmpeg."
         except Exception as e:
-            return False, str(e)
+            logger.error(f"Unexpected error running FFmpeg: {type(e).__name__}: {e}")
+            return False, f"Unexpected error: {type(e).__name__}: {str(e)}"
 
     async def optimize_video_for_telegram(
         self, video_path: Path, max_size_mb: Optional[int] = None, quality_profile: str = "medium"
@@ -294,10 +315,28 @@ class VideoProcessor:
             max_size_mb = self.config.max_size_mb
 
         try:
+            # Проверяем доступность FFmpeg
+            try:
+                ffmpeg_check = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, timeout=5)
+                if ffmpeg_check.returncode != 0:
+                    logger.error("FFmpeg is not available or not working properly")
+                    return False, None, "FFmpeg is not available"
+            except Exception as e:
+                logger.error(f"FFmpeg check failed: {e}")
+                return False, None, f"FFmpeg check failed: {str(e)}"
             # Получаем информацию о видео
             video_info = await self.get_video_info(video_path)
             if not video_info:
                 return False, None, "Could not analyze video file"
+
+            # Логируем системные ресурсы для отладки
+            try:
+                import psutil
+
+                mem = psutil.virtual_memory()
+                logger.info(f"System resources: RAM {mem.percent:.1f}% used ({mem.available / (1024**3):.1f}GB free)")
+            except ImportError:
+                pass  # psutil не установлен
 
             logger.info(
                 f"Analyzing {video_path.name}: {video_info.size_mb:.1f}MB, "
@@ -366,11 +405,20 @@ class VideoProcessor:
             timeout = min(300, max(60, video_info.duration * 2))  # Адаптивный таймаут
 
             logger.info(f"Starting optimization with {timeout}s timeout...")
+            logger.info(f"FFmpeg command preview: {' '.join(str(x) for x in cmd[:15])}...")
 
-            # Используем asyncio.to_thread для Windows совместимости
-            success, error = await asyncio.to_thread(lambda: self._run_ffmpeg(cmd, int(timeout)))
+            # Используем run_in_executor для Windows совместимости
+            loop = asyncio.get_event_loop()
+
+            try:
+                success, error = await loop.run_in_executor(None, self._run_ffmpeg, cmd, int(timeout))
+            except Exception as e:
+                logger.error(f"Executor error during FFmpeg execution: {type(e).__name__}: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                return False, None, f"Executor error: {type(e).__name__}: {str(e)}"
 
             processing_time = time.time() - start_time
+            logger.debug(f"FFmpeg processing completed in {processing_time:.1f}s (success={success})")
 
             if success:
                 new_size_mb = output_path.stat().st_size / (1024 * 1024)
@@ -388,8 +436,10 @@ class VideoProcessor:
 
                 return True, output_path, warning
             else:
-                logger.error(f"Video optimization failed: {error}")
-                return False, None, f"FFmpeg error: {error}"
+                error_detail = error or "No error message from FFmpeg"
+                logger.error(f"Video optimization failed: {error_detail}")
+                logger.error(f"FFmpeg command was: {' '.join(str(x) for x in cmd[:10])}")
+                return False, None, f"FFmpeg error: {error_detail}"
 
         except Exception as e:
             error_msg = f"Error during video optimization: {str(e)}"

@@ -33,7 +33,8 @@ async def download_with_gallery_dl(
         subprocess.run(cmd, check=False)
 
     try:
-        await asyncio.to_thread(_download)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _download)
         for p in tmp.iterdir():
             if p.is_file():
                 dest = download_path / p.name
