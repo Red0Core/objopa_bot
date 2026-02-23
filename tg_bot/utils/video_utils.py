@@ -3,6 +3,7 @@
 """
 
 import asyncio
+import os
 import subprocess
 import time
 import traceback
@@ -44,7 +45,7 @@ class OptimizationConfig:
     quality_profiles = {
         "high": {"crf": 20, "preset": "medium"},
         "medium": {"crf": 23, "preset": "medium"},
-        "fast": {"crf": 26, "preset": "fast"},
+        "fast": {"crf": 26, "preset": "faster"},
         "ultrafast": {"crf": 30, "preset": "ultrafast"},
     }
 
@@ -276,27 +277,64 @@ class VideoProcessor:
 
     @staticmethod
     def _run_ffmpeg(cmd: list[str], timeout: int = 300) -> Tuple[bool, Optional[str]]:
-        """Вспомогательный метод для запуска ffmpeg в потоке"""
+        """Вспомогательный метод для запуска ffmpeg в отдельной группе процессов"""
+
+        def setup_process_group():
+            """Setup new process group and make FFmpeg killable first by OOM"""
+            try:
+                # Create new process group (isolate from parent)
+                os.setpgrp()
+
+                # Set OOM score (higher = more likely to be killed)
+                # Python bot will have default (0), FFmpeg gets 500
+                with open("/proc/self/oom_score_adj", "w") as f:
+                    f.write("500")
+            except Exception:
+                # Not critical if fails (Windows, permissions, etc)
+                pass
+
         try:
-            logger.debug(f"Running FFmpeg command: {' '.join(cmd[:5])}... (timeout: {timeout}s)")
-            process = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            logger.debug(f"Running FFmpeg in isolated process group (timeout: {timeout}s)")
 
-            logger.debug(f"FFmpeg finished with returncode: {process.returncode}")
+            # Use Popen for more control
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                preexec_fn=setup_process_group,  # Isolate FFmpeg
+            )
 
-            if process.returncode == 0:
+            # Wait with timeout
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+                returncode = process.returncode
+            except subprocess.TimeoutExpired:
+                # Kill entire process group (not just FFmpeg)
+                try:
+                    os.killpg(os.getpgid(process.pid), 9)
+                except Exception:
+                    process.kill()  # Fallback
+                process.communicate()  # Clean up
+                logger.warning(f"FFmpeg timeout after {timeout}s")
+                return False, f"FFmpeg operation timed out after {timeout}s"
+
+            logger.debug(f"FFmpeg finished with returncode: {returncode}")
+
+            if returncode == 0:
                 return True, None
 
             # Логируем ошибку для отладки
             # Check for SIGKILL (OOM killer)
-            if process.returncode == -9:
+            if returncode == -9:
                 logger.error("FFmpeg was killed by system (likely OOM). Try smaller video or add more RAM/swap")
                 return False, "FFmpeg killed by system (out of memory). Video too large for available RAM."
 
-            error_msg = process.stderr.strip() if process.stderr else f"FFmpeg failed with code {process.returncode}"
-            if process.stdout:
-                logger.debug(f"FFmpeg stdout: {process.stdout[:500]}")
-            if process.stderr:
-                logger.debug(f"FFmpeg stderr: {process.stderr[:500]}")
+            error_msg = stderr.strip() if stderr else f"FFmpeg failed with code {returncode}"
+            if stdout:
+                logger.debug(f"FFmpeg stdout: {stdout[:500]}")
+            if stderr:
+                logger.debug(f"FFmpeg stderr: {stderr[:500]}")
 
             return False, error_msg or "FFmpeg failed without error message"
 
@@ -311,7 +349,7 @@ class VideoProcessor:
             return False, f"Unexpected error: {type(e).__name__}: {str(e)}"
 
     async def optimize_video_for_telegram(
-        self, video_path: Path, max_size_mb: Optional[int] = None, quality_profile: str = "medium"
+        self, video_path: Path, max_size_mb: Optional[int] = None, quality_profile: str = "fast"
     ) -> Tuple[bool, Optional[Path], Optional[str]]:
         """
         Оптимизирует видео для отправки в Telegram с интеллектуальной адаптацией качества.
@@ -356,8 +394,6 @@ class VideoProcessor:
                 logger.info(f"Video {video_path.name} is already optimized")
                 return True, video_path, None
 
-            quality_profile = "fast"
-
             # Создаем команду оптимизации
             output_path = video_path.parent / f"{video_path.stem}_optimized{video_path.suffix}"
             cmd = self._get_ffmpeg_command_base().copy()
@@ -376,6 +412,8 @@ class VideoProcessor:
                         profile["preset"],
                         "-crf",
                         str(profile["crf"]),
+                        "-pix_fmt",
+                        "yuv420p10le",
                         "-b:v",
                         f"{target_bitrate_kbps}k",
                         "-maxrate",
