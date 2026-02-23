@@ -7,7 +7,7 @@ from core.config import DOWNLOADS_DIR
 from core.logger import logger
 from tg_bot.utils.cookies_manager import cookies_manager
 
-MAX_SIZE_MB = 200  # 200 MB soft limit
+MAX_SIZE_MB = 49  # 49 MB (Telegram limit is 50MB)
 MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 MAX_HEIGHT = 1440  # 2K max resolution
 MIN_HEIGHT = 480  # Minimum height

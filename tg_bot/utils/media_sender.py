@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 from typing import cast
 
@@ -123,14 +124,25 @@ class MediaSender:
         for idx, video in enumerate(videos):
             video_path = video
 
-            # Оптимизация
+            # Check if optimization is enabled via env var
+            if os.getenv("ENABLE_VIDEO_OPTIMIZATION", "false").lower() == "false":
+                logger.debug("Video optimization disabled via ENABLE_VIDEO_OPTIMIZATION=false")
+                optimize = False
+            
+            # Оптимизация (отключена - качаем сразу < 50MB)
             if optimize:
-                try:
-                    success, optimized, _ = await video_processor.optimize_video_for_telegram(video)
-                    if success and optimized:
-                        video_path = optimized
-                except Exception as e:
-                    logger.warning(f"Video optimization failed: {e}")
+                file_size_mb = video_path.stat().st_size / (1024 * 1024)
+                # Оптимизируем только если файл > 50MB (что не должно случиться)
+                if file_size_mb > 50:
+                    logger.info(f"Video {file_size_mb:.1f}MB > 50MB, optimizing...")
+                    try:
+                        success, optimized, _ = await video_processor.optimize_video_for_telegram(video)
+                        if success and optimized:
+                            video_path = optimized
+                    except Exception as e:
+                        logger.warning(f"Video optimization failed: {e}")
+                else:
+                    logger.info(f"Video {file_size_mb:.1f}MB < 50MB, skipping optimization")
 
             # Caption только на последнее видео
             video_caption = caption if idx == len(videos) - 1 and caption else None
