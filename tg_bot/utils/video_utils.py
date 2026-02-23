@@ -356,13 +356,7 @@ class VideoProcessor:
                 logger.info(f"Video {video_path.name} is already optimized")
                 return True, video_path, None
 
-            # Выбираем профиль качества на основе размера файла
-            if video_info.size_mb > max_size_mb * 2:
-                quality_profile = "fast"
-            elif video_info.size_mb > max_size_mb * 1.5:
-                quality_profile = "medium"
-            else:
-                quality_profile = "high"
+            quality_profile = "fast"
 
             # Создаем команду оптимизации
             output_path = video_path.parent / f"{video_path.stem}_optimized{video_path.suffix}"
@@ -377,7 +371,7 @@ class VideoProcessor:
                 cmd.extend(
                     [
                         "-c:v",
-                        "libx264",
+                        "libx265",
                         "-preset",
                         profile["preset"],
                         "-crf",
