@@ -42,7 +42,7 @@ class OptimizationConfig:
 
     # Прогрессивные настройки качества
     quality_profiles = {
-        "high": {"crf": 20, "preset": "slow"},
+        "high": {"crf": 20, "preset": "medium"},
         "medium": {"crf": 23, "preset": "medium"},
         "fast": {"crf": 26, "preset": "fast"},
         "ultrafast": {"crf": 30, "preset": "ultrafast"},
@@ -287,6 +287,11 @@ class VideoProcessor:
                 return True, None
 
             # Логируем ошибку для отладки
+            # Check for SIGKILL (OOM killer)
+            if process.returncode == -9:
+                logger.error("FFmpeg was killed by system (likely OOM). Try smaller video or add more RAM/swap")
+                return False, "FFmpeg killed by system (out of memory). Video too large for available RAM."
+
             error_msg = process.stderr.strip() if process.stderr else f"FFmpeg failed with code {process.returncode}"
             if process.stdout:
                 logger.debug(f"FFmpeg stdout: {process.stdout[:500]}")
