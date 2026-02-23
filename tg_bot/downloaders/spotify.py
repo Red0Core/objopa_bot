@@ -78,13 +78,16 @@ def get_stream_url(track_id: str) -> str:
 
 
 def download_binary(url: str, out_path: Path):
-    resp = requests.get(url, impersonate="chrome", stream=True)
-    resp.raise_for_status()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("wb") as f:
-        for chunk in resp.iter_content(8192):
-            if chunk:
-                f.write(chunk)
+    try:
+        resp = requests.get(url, impersonate="chrome", stream=True)
+        resp.raise_for_status()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("wb") as f:
+            for chunk in resp.iter_content(8192):
+                if chunk:
+                    f.write(chunk)
+    except Exception:
+        logger.exception(f"Failed to download binary: {url}")
 
 
 def mux_audio_with_cover(
