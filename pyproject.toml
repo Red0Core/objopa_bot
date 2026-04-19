@@ -22,7 +22,7 @@ dependencies = [
     "redis[hiredis]>=6.4.0",
     "sympy>=1.14.0",
     "telegramify-markdown>=0.5.1",
-    "ujson>=5.11.0",
+    "ujson>=5.12.0",
     "uvloop>=0.21.0 ; sys_platform == 'linux'",
     "websockets>=15.0.1",
     "wolframalpha>=5.1.3",
