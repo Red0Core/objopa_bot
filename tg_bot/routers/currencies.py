@@ -138,33 +138,46 @@ async def get_cbr_rates_handler(message: Message):
 async def convert_currency_handler(message: Message):
     """
     Конвертер валют через курсы ЦБ РФ.
-    Примеры: /rate 5 USD RUB, /rate 100 EUR USD, /rate 50 USD EUR
-    По дефолту без второй команды в RUB
+
+    Примеры:
+    /rate 5 USD
+    /rate 5 USD RUB
+    /rate 5 BYN USD RUB EUR
+
+    Если валюты назначения не указаны, по дефолту конвертирует в RUB.
     """
     if not message.text:
         await message.reply(
-            markdownify("❌ Использование: /rate <сумма> <из валюты> <в валюту>\nПример: /rate 5 USD RUB")
+            markdownify(
+                "❌ Использование: /rate <сумма> <из валюты> <в валюту...>\n"
+                "Пример: /rate 5 BYN USD RUB EUR"
+            )
         )
         return
 
     parts = message.text.split()
-    if len(parts) < 3 or len(parts) > 4:
+
+    if len(parts) < 3:
         await message.reply(
             markdownify(
                 "❌ Неверный формат!\n"
-                "Использование: /rate <сумма> <из валюты> <в валюту (по дефолту в рубли)>\n"
-                "Пример: /rate 5 USD EUR"
+                "Использование: /rate <сумма> <из валюты> <в валюту...>\n"
+                "Пример: /rate 5 BYN USD RUB EUR\n"
+                "Если валюту назначения не указать: /rate 5 USD → RUB"
             )
         )
         return
 
     try:
-        amount = float(parts[1])
+        amount = float(parts[1].replace(",", "."))
         from_currency = parts[2].upper()
-        to_currency = parts[3].upper() if len(parts) == 4 else "RUB"
+        to_currencies = [currency.upper() for currency in parts[3:]] or ["RUB"]
     except ValueError:
         await message.reply(markdownify("❌ Сумма должна быть числом!"))
         return
+
+    # Убираем дубликаты, но сохраняем порядок
+    to_currencies = list(dict.fromkeys(to_currencies))
 
     try:
         async with httpx.AsyncClient() as session:
@@ -176,45 +189,57 @@ async def convert_currency_handler(message: Message):
                 await message.reply("Нет данных для конвертации")
                 return
 
-            # Создаем словарь для быстрого поиска
             rates_dict = {item["char_code"]: item for item in data["rates"]}
 
-            # Проверяем наличие валют
             if from_currency != "RUB" and from_currency not in rates_dict:
                 await message.reply(markdownify(f"❌ Валюта {from_currency} не найдена в ЦБ РФ"))
                 return
 
-            if to_currency != "RUB" and to_currency not in rates_dict:
-                await message.reply(markdownify(f"❌ Валюта {to_currency} не найдена в ЦБ РФ"))
+            not_found = [
+                currency
+                for currency in to_currencies
+                if currency != "RUB" and currency not in rates_dict
+            ]
+
+            if not_found:
+                await message.reply(
+                    markdownify(f"❌ Валюты не найдены в ЦБ РФ: {', '.join(not_found)}")
+                )
                 return
 
-            # Конвертация через рубли
-            # Сначала переводим from_currency в рубли
             if from_currency == "RUB":
                 amount_in_rub = amount
             else:
                 amount_in_rub = amount * rates_dict[from_currency]["rate"]
 
-            # Затем из рублей в to_currency
-            if to_currency == "RUB":
-                result = amount_in_rub
-            else:
-                result = amount_in_rub / rates_dict[to_currency]["rate"]
-
-            # Формируем красивое сообщение
             output = "💱 <b>Конвертация валют</b>\n\n"
-            output += (
-                f"<code>{amount:.2f}</code> <b>{from_currency}</b> = <code>{result:.2f}</code> <b>{to_currency}</b>\n\n"
-            )
+            output += f"<code>{amount:.2f}</code> <b>{from_currency}</b>:\n"
 
-            # Добавляем информацию о курсах
+            results: list[str] = []
+
+            for to_currency in to_currencies:
+                if to_currency == "RUB":
+                    result = amount_in_rub
+                else:
+                    result = amount_in_rub / rates_dict[to_currency]["rate"]
+
+                output += f"→ <code>{result:.2f}</code> <b>{to_currency}</b>\n"
+                results.append(f"{result:.2f} {to_currency}")
+
+            output += "\n"
+
             if from_currency != "RUB":
                 output += f"Курс {from_currency}: {rates_dict[from_currency]['rate']:.4f} ₽\n"
-            if to_currency != "RUB":
-                output += f"Курс {to_currency}: {rates_dict[to_currency]['rate']:.4f} ₽\n"
+
+            for to_currency in to_currencies:
+                if to_currency != "RUB":
+                    output += f"Курс {to_currency}: {rates_dict[to_currency]['rate']:.4f} ₽\n"
 
             await message.reply(output, parse_mode="html")
-            logger.info(f"Конвертация: {amount} {from_currency} → {result:.2f} {to_currency}")
+
+            logger.info(
+                f"Конвертация: {amount} {from_currency} → {', '.join(results)}"
+            )
 
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 400:
@@ -224,7 +249,6 @@ async def convert_currency_handler(message: Message):
     except Exception:
         logger.error(f"Ошибка при конвертации валют: {traceback.format_exc()}")
         await message.reply("Произошла ошибка при конвертации")
-
 
 @router.message(Command("rub"))
 async def get_forex_rub_rates_handler(message: Message):
