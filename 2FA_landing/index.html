@@ -434,13 +434,11 @@
     function fetchNetworkTime() {
       syncBtn.disabled = true;
       syncBtn.textContent = "...";
-      fetch("https://worldtimeapi.org/api/ip", { cache: "no-store" })
+      fetch(window.location.href, { method: "HEAD", cache: "no-store" })
         .then(function (response) {
-          if (!response.ok) throw new Error("HTTP " + response.status);
-          return response.json();
-        })
-        .then(function (data) {
-          var networkUnix = Math.floor(data.unixtime);
+          var dateHeader = response.headers.get("Date");
+          if (!dateHeader) throw new Error("No Date header");
+          var networkUnix = Math.floor(new Date(dateHeader).getTime() / 1000);
           var currentLocal = lastLocalUnix || Math.floor(Date.now() / 1000);
           var drift = currentLocal - networkUnix;
           var signed = drift > 0 ? "+" + drift : String(drift);
