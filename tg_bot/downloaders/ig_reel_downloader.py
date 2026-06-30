@@ -4,8 +4,8 @@ import re
 from pathlib import Path
 from typing import Optional, Tuple
 
-from curl_cffi.requests import AsyncSession, ExtraFingerprints
-from curl_cffi.requests.exceptions import RequestException
+from httpcloak import Session
+from httpcloak.client import HTTPCloakError
 
 from core.config import DOWNLOADS_DIR
 from core.logger import logger
@@ -63,16 +63,19 @@ async def _extract_from_html(text: str) -> Tuple[Optional[str], Optional[str]]:
 
 
 async def _download_file(url: str, filepath: Path) -> bool:
-    """Downloads a file using curl_cffi to bypass blocks"""
+    """Downloads a file using httpcloak to bypass blocks"""
     try:
-        async with AsyncSession(impersonate="chrome124") as session:
-            resp = await session.get(url)
+        session = Session(preset="chrome-149")
+        try:
+            resp = await session.get_async(url)
             if resp.status_code == 200:
                 filepath.write_bytes(resp.content)
                 return True
             else:
                 logger.error(f"Failed to download video, status code: {resp.status_code}")
                 return False
+        finally:
+            session.close()
     except Exception as e:
         logger.error(f"Error downloading file: {e}")
         return False
@@ -106,49 +109,29 @@ async def download_reel(url: str, cookies_path: Optional[str] = None) -> Downloa
 
     # STRATEGY 1: No Cookies
     try:
-        # Construct custom fingerprint matching the requested profile (HTTP/2 + modern TLS features)
-        # Note: ExtraFingerprints might not be fully supported in all curl_cffi older versions, so we wrap it
-        fp = None
+        # We use run_in_executor for the context manager or just initialize session carefully
+        session = Session(preset="chrome-149")
         try:
-            fp = ExtraFingerprints(
-                tls_signature_algorithms=[
-                    "ecdsa_secp256r1_sha256",
-                    "rsa_pss_rsae_sha256",
-                    "rsa_pkcs1_sha256",
-                    "ecdsa_secp384r1_sha384",
-                    "rsa_pss_rsae_sha384",
-                    "rsa_pkcs1_sha384",
-                    "rsa_pss_rsae_sha512",
-                    "rsa_pkcs1_sha512",
-                ],
-                tls_cert_compression="brotli",
-            )
-        except Exception:
-            pass
-
-        kwargs = {"impersonate": "chrome124"}
-        if fp:
-            kwargs["extra_fp"] = fp
-
-        async with AsyncSession(**kwargs) as session:
             # 1. Try normal URL
             logger.info(f"Trying to fetch Instagram Reel without cookies: {url}")
-            resp = await session.get(url, headers=headers)
+            resp = await session.get_async(url, headers=headers)
             video_url, caption = await _extract_from_html(resp.text)
 
             # 2. Try embed URL as fallback
             if not video_url:
                 logger.info(f"Video URL not found on main page, trying embed page for {shortcode}")
                 embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
-                resp_embed = await session.get(embed_url, headers=headers)
+                resp_embed = await session.get_async(embed_url, headers=headers)
 
                 embed_video_url, embed_caption = await _extract_from_html(resp_embed.text)
                 if embed_video_url:
                     video_url = embed_video_url
                 if embed_caption and not caption:
                     caption = embed_caption
+        finally:
+            session.close()
 
-    except RequestException as e:
+    except HTTPCloakError as e:
         logger.error(f"Error fetching Instagram without cookies: {e}")
 
     # STRATEGY 2: Cookie Fallback
@@ -157,15 +140,23 @@ async def download_reel(url: str, cookies_path: Optional[str] = None) -> Downloa
         try:
             cj = http.cookiejar.MozillaCookieJar(cookies_path)
             cj.load(ignore_discard=True, ignore_expires=True)
-            cookies = {cookie.name: cookie.value for cookie in cj}
+            # Format cookies for httpcloak
+            httpcloak_cookies = []
+            for cookie in cj:
+                httpcloak_cookies.append(
+                    {"name": cookie.name, "value": cookie.value, "domain": cookie.domain, "path": cookie.path}
+                )
 
-            kwargs_cookie = {"impersonate": "chrome124", "cookies": cookies}
-            if "fp" in locals() and fp:
-                kwargs_cookie["extra_fp"] = fp
+            session = Session(preset="chrome-149")
+            try:
+                # Add cookies manually to session
+                for cookie in httpcloak_cookies:
+                    session.set_cookie(cookie["domain"], cookie["name"], cookie["value"], cookie["path"])
 
-            async with AsyncSession(**kwargs_cookie) as session:
-                resp = await session.get(url, headers=headers)
+                resp = await session.get_async(url, headers=headers)
                 video_url, caption = await _extract_from_html(resp.text)
+            finally:
+                session.close()
         except Exception as e:
             logger.error(f"Error in cookie fallback: {e}")
 
