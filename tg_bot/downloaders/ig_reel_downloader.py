@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Optional, Tuple
 
-from curl_cffi.requests import AsyncSession
+from curl_cffi.requests import AsyncSession, ExtraFingerprints
 from curl_cffi.requests.exceptions import RequestException
 
 from core.config import DOWNLOADS_DIR
@@ -91,11 +91,6 @@ async def download_reel(url: str, cookies_path: Optional[str] = None) -> Downloa
 
     shortcode = shortcode_match.group(1)
 
-    # Note: `curl_cffi` requires TLS 1.2 to inject custom ja3 params right now,
-    # but the `chrome124` impersonate sets up a modern fingerprint (including HTTP/2, TLS 1.3, etc.)
-    # which effectively accomplishes the same block bypass for Instagram natively.
-    # Therefore, we rely on `impersonate="chrome124"` instead of forcing custom JA3 which currently throws errors.
-
     headers = {
         "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -111,7 +106,31 @@ async def download_reel(url: str, cookies_path: Optional[str] = None) -> Downloa
 
     # STRATEGY 1: No Cookies
     try:
-        async with AsyncSession(impersonate="chrome124") as session:
+        # Construct custom fingerprint matching the requested profile (HTTP/2 + modern TLS features)
+        # Note: ExtraFingerprints might not be fully supported in all curl_cffi older versions, so we wrap it
+        fp = None
+        try:
+            fp = ExtraFingerprints(
+                tls_signature_algorithms=[
+                    "ecdsa_secp256r1_sha256",
+                    "rsa_pss_rsae_sha256",
+                    "rsa_pkcs1_sha256",
+                    "ecdsa_secp384r1_sha384",
+                    "rsa_pss_rsae_sha384",
+                    "rsa_pkcs1_sha384",
+                    "rsa_pss_rsae_sha512",
+                    "rsa_pkcs1_sha512",
+                ],
+                tls_cert_compression="brotli",
+            )
+        except Exception:
+            pass
+
+        kwargs = {"impersonate": "chrome124"}
+        if fp:
+            kwargs["extra_fp"] = fp
+
+        async with AsyncSession(**kwargs) as session:
             # 1. Try normal URL
             logger.info(f"Trying to fetch Instagram Reel without cookies: {url}")
             resp = await session.get(url, headers=headers)
@@ -140,7 +159,11 @@ async def download_reel(url: str, cookies_path: Optional[str] = None) -> Downloa
             cj.load(ignore_discard=True, ignore_expires=True)
             cookies = {cookie.name: cookie.value for cookie in cj}
 
-            async with AsyncSession(impersonate="chrome124", cookies=cookies) as session:
+            kwargs_cookie = {"impersonate": "chrome124", "cookies": cookies}
+            if "fp" in locals() and fp:
+                kwargs_cookie["extra_fp"] = fp
+
+            async with AsyncSession(**kwargs_cookie) as session:
                 resp = await session.get(url, headers=headers)
                 video_url, caption = await _extract_from_html(resp.text)
         except Exception as e:
