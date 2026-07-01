@@ -184,7 +184,8 @@ async def download_with_ytdlp(
                     pass
 
     # Try download
-    if use_cookies and await _download_attempt(with_cookies=True):
+    if use_cookies:
+        await _download_attempt(with_cookies=True)
         return files, title, error
 
     if await _download_attempt(with_cookies=False):

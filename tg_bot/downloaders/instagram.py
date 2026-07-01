@@ -1,21 +1,17 @@
 import asyncio
 import html
 import json
-import os
 import re
 import secrets
 import shutil
-import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import httpcloak
-from yt_dlp import YoutubeDL
 
-from core.config import DOWNLOADS_DIR, INSTAGRAM_PASSWORD, INSTAGRAM_USERNAME
+from core.config import DOWNLOADS_DIR
 from core.logger import logger
 from tg_bot.utils.cookies_manager import cookies_manager
 
@@ -27,21 +23,20 @@ INSTAGRAM_APP_ID = "936619743392459"
 REQUEST_TIMEOUT = 20
 SHORTCODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".webm")
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
-FALLBACK_MEDIA_EXTENSIONS = VIDEO_EXTENSIONS + IMAGE_EXTENSIONS
-FALLBACK_RETRIES = 3
+REQUEST_RETRIES = 3
 CHROME_149_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 )
-HTTPCLOAK_DEFAULT_PRESET = "chrome-149-windows"
-HTTPCLOAK_CUSTOM_PRESET_NAME = "instagram-chrome149"
-HTTPCLOAK_FALLBACK_PRESET = "chrome-latest"
-HTTPCLOAK_USER_AGENT_ENV = "INSTAGRAM_HTTPCLOAK_USER_AGENT"
-HTTPCLOAK_PRESET_ENV = "INSTAGRAM_HTTPCLOAK_PRESET"
-HTTPCLOAK_PRESET_JSON_ENV = "INSTAGRAM_HTTPCLOAK_PRESET_JSON"
-HTTPCLOAK_PRESET_FILE_ENV = "INSTAGRAM_HTTPCLOAK_PRESET_FILE"
-HTTPCLOAK_JA3_ENV = "INSTAGRAM_HTTPCLOAK_JA3"
-HTTPCLOAK_AKAMAI_ENV = "INSTAGRAM_HTTPCLOAK_AKAMAI"
+INSTAGRAM_HTTP_PRESET_NAME = "instagram-chrome149"
+INSTAGRAM_HTTP_PRESET_JSON = json.dumps(
+    {
+        "version": 1,
+        "preset": {
+            "name": INSTAGRAM_HTTP_PRESET_NAME,
+            "extends": "chrome-149-windows",
+        },
+    }
+)
 
 
 class InstagramDownloadError(Exception):
@@ -93,7 +88,7 @@ class InstagramHttpSession:
         self._session = httpcloak.Session(
             preset=preset,
             timeout=REQUEST_TIMEOUT,
-            retry=FALLBACK_RETRIES,
+            retry=REQUEST_RETRIES,
             prefer_ipv4=True,
             http_version="auto",
         )
@@ -172,97 +167,13 @@ class InstagramHttpSession:
         return normalized
 
 
-class QuietYtdlpLogger:
-    def debug(self, message: str) -> None:
-        pass
-
-    def warning(self, message: str) -> None:
-        logger.debug(f"yt-dlp warning: {message}")
-
-    def error(self, message: str) -> None:
-        logger.debug(f"yt-dlp error: {message}")
-
-
-_httpcloak_preset_name: str | None = None
-
-
 def get_httpcloak_preset_name() -> str:
-    global _httpcloak_preset_name
-    if _httpcloak_preset_name:
-        return _httpcloak_preset_name
-
-    custom_preset = _load_custom_httpcloak_preset()
-    if custom_preset:
-        _httpcloak_preset_name = custom_preset
-        return custom_preset
-
-    requested_preset = os.getenv(HTTPCLOAK_PRESET_ENV, HTTPCLOAK_DEFAULT_PRESET).strip() or HTTPCLOAK_DEFAULT_PRESET
-    base_preset = _first_available_httpcloak_preset(requested_preset)
-    preset_name = _register_instagram_httpcloak_preset(base_preset)
-    _httpcloak_preset_name = preset_name
-    return preset_name
-
-
-def _load_custom_httpcloak_preset() -> str | None:
-    preset_json = os.getenv(HTTPCLOAK_PRESET_JSON_ENV)
-    preset_file = os.getenv(HTTPCLOAK_PRESET_FILE_ENV)
-
-    if preset_file:
-        try:
-            preset_json = Path(preset_file).read_text(encoding="utf-8")
-        except Exception as exc:
-            logger.warning(f"Failed to read Instagram HTTPCloak preset file: {exc}")
-
-    if not preset_json:
-        return None
-
-    return _load_httpcloak_preset_json(preset_json, HTTPCLOAK_CUSTOM_PRESET_NAME)
-
-
-def _first_available_httpcloak_preset(requested_preset: str) -> str:
     try:
-        httpcloak.describe_preset(requested_preset)
-        return requested_preset
-    except Exception as exc:
-        logger.warning(
-            f"HTTPCloak preset {requested_preset!r} is not available ({exc}); using {HTTPCLOAK_FALLBACK_PRESET!r}"
-        )
-        return HTTPCLOAK_FALLBACK_PRESET
-
-
-def _register_instagram_httpcloak_preset(base_preset: str) -> str:
-    try:
-        preset_json = httpcloak.describe_preset(base_preset)
-    except Exception as exc:
-        logger.warning(f"Failed to describe HTTPCloak preset {base_preset!r}: {exc}; using preset directly")
-        return base_preset
-
-    return _load_httpcloak_preset_json(preset_json, HTTPCLOAK_CUSTOM_PRESET_NAME, force_name=True)
-
-
-def _load_httpcloak_preset_json(preset_json: str, fallback_name: str, *, force_name: bool = False) -> str:
-    spec = json.loads(preset_json)
-    preset = spec.setdefault("preset", {})
-    preset_name = fallback_name if force_name else str(preset.get("name") or fallback_name)
-    preset["name"] = preset_name
-
-    ja3 = os.getenv(HTTPCLOAK_JA3_ENV)
-    if ja3:
-        preset["tls"] = {"ja3": ja3}
-
-    akamai = os.getenv(HTTPCLOAK_AKAMAI_ENV)
-    if akamai:
-        http2 = preset.setdefault("http2", {})
-        http2["akamai"] = akamai
-
-    serialized = json.dumps(spec)
-    try:
-        httpcloak.load_preset_from_json(serialized)
+        return httpcloak.load_preset_from_json(INSTAGRAM_HTTP_PRESET_JSON)
     except Exception as exc:
         if "already" not in str(exc).lower() and "exist" not in str(exc).lower():
-            raise
-
-    return preset_name
+            logger.warning(f"Failed to register Instagram HTTPCloak preset: {exc}")
+        return INSTAGRAM_HTTP_PRESET_NAME
 
 
 class InstagramWebDownloader:
@@ -282,13 +193,7 @@ class InstagramWebDownloader:
                     session.load_netscape_cookies(cookies_path)
 
                 shortcode, canonical_url = await self._resolve_shortcode(session, url)
-                try:
-                    post = await self._load_post(session, shortcode, canonical_url)
-                except (InstagramAuthRequiredError, InstagramNoMediaError) as exc:
-                    fallback_post = await self._download_authenticated_fallback(canonical_url, shortcode, download_path)
-                    if fallback_post:
-                        return fallback_post
-                    raise exc
+                post = await self._load_post(session, shortcode, canonical_url)
 
                 if not post.media:
                     raise InstagramNoMediaError("Instagram did not expose downloadable media for this post.")
@@ -312,254 +217,6 @@ class InstagramWebDownloader:
         except Exception as exc:
             logger.debug(f"Saved Instagram cookies are not available for HTTPCloak session: {exc}")
             return None
-
-    async def _download_authenticated_fallback(
-        self,
-        canonical_url: str,
-        shortcode: str,
-        download_path: Path,
-    ) -> InstagramPost | None:
-        cookies_path = await cookies_manager.get_cookies("instagram")
-        credentials = self._configured_credentials()
-
-        if not cookies_path and not credentials:
-            return None
-
-        fallback_prefix = f".{shortcode}_yt_{secrets.token_hex(4)}"
-
-        ydl_opts = {
-            "outtmpl": str(download_path / f"{fallback_prefix}_%(id)s.%(ext)s"),
-            "extractor_retries": FALLBACK_RETRIES,
-            "file_access_retries": FALLBACK_RETRIES,
-            "logger": QuietYtdlpLogger(),
-            "merge_output_format": "mp4",
-            "noplaylist": True,
-            "quiet": True,
-            "noprogress": True,
-            "no_warnings": True,
-            "retries": FALLBACK_RETRIES,
-            "fragment_retries": FALLBACK_RETRIES,
-            "socket_timeout": 30,
-            "extractor_args": {"generic": ["impersonate=chrome"]},
-            "postprocessor_args": {"ffmpeg": ["-movflags", "faststart"]},
-        }
-
-        if cookies_path:
-            ydl_opts["cookiefile"] = str(cookies_path)
-            logger.info("Using saved Instagram cookies for media fallback")
-        elif credentials:
-            username, password = credentials
-            ydl_opts["username"] = username
-            ydl_opts["password"] = password
-            logger.info("Using configured Instagram credentials for media fallback")
-
-        info: dict[str, Any] | None = None
-        last_error: Exception | None = None
-        for attempt in range(1, FALLBACK_RETRIES + 1):
-            try:
-                info = await asyncio.to_thread(self._run_ytdlp_download, canonical_url, ydl_opts)
-                last_error = None
-                break
-            except Exception as exc:
-                last_error = exc
-                self._cleanup_temp_files(self._files_for_shortcode(download_path, fallback_prefix))
-                message = self._clean_ytdlp_error(str(exc))
-                logger.warning(f"Instagram media fallback attempt {attempt}/{FALLBACK_RETRIES} failed: {message}")
-                if attempt < FALLBACK_RETRIES and self._is_retryable_download_error(message):
-                    await asyncio.sleep(attempt * 2)
-                    continue
-                break
-
-        if last_error:
-            message = self._clean_ytdlp_error(str(last_error))
-            gallery_error = await asyncio.to_thread(
-                self._run_gallery_dl_download,
-                canonical_url,
-                download_path,
-                fallback_prefix,
-                cookies_path,
-                credentials,
-            )
-            if gallery_error:
-                if cookies_path and cookies_path.exists():
-                    cookies_path.unlink(missing_ok=True)
-                raise InstagramDownloadError(
-                    f"fallback через авторизацию не смог скачать медиа: yt-dlp: {message}; gallery-dl: {gallery_error}"
-                ) from last_error
-
-            last_error = None
-
-        files = self._files_for_shortcode(download_path, fallback_prefix)
-        media_files = [file_path for file_path in files if file_path.suffix.lower() in FALLBACK_MEDIA_EXTENSIONS]
-        non_media_files = [file_path for file_path in files if file_path not in media_files]
-        self._cleanup_temp_files(non_media_files)
-
-        if not media_files:
-            self._cleanup_temp_files(files)
-            if cookies_path and cookies_path.exists():
-                cookies_path.unlink(missing_ok=True)
-            raise InstagramNoMediaError("fallback через cookies завершился без медиафайлов.")
-
-        caption = self._caption_from_ytdlp_info(info)
-        self._cleanup_old_files(download_path, shortcode)
-        media_files = self._move_fallback_files(media_files, download_path, shortcode)
-
-        if caption:
-            (download_path / f"{shortcode}.txt").write_text(caption, encoding="utf-8")
-
-        if cookies_path and cookies_path.exists():
-            cookies_path.unlink(missing_ok=True)
-
-        return InstagramPost(
-            shortcode=shortcode,
-            canonical_url=canonical_url,
-            caption=caption,
-            media=[
-                InstagramMedia(
-                    url=file_path.as_uri(), is_video=file_path.suffix.lower() in VIDEO_EXTENSIONS, index=index
-                )
-                for index, file_path in enumerate(media_files, start=1)
-            ],
-        )
-
-    def _run_ytdlp_download(self, url: str, ydl_opts: dict[str, Any]) -> dict[str, Any] | None:
-        with YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
-            return ydl.extract_info(url, download=True)  # type: ignore[no-any-return]
-
-    def _run_gallery_dl_download(
-        self,
-        url: str,
-        download_path: Path,
-        fallback_prefix: str,
-        cookies_path: Path | None,
-        credentials: tuple[str, str] | None,
-    ) -> str | None:
-        tmp_dir = download_path / f"{fallback_prefix}_gallery"
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "gallery_dl",
-            "--no-colors",
-            "--no-part",
-            "--force-ipv4",
-            "--retries",
-            str(FALLBACK_RETRIES),
-            "--http-timeout",
-            "30",
-            "-D",
-            str(tmp_dir),
-        ]
-
-        if cookies_path:
-            cmd.extend(("--cookies", str(cookies_path)))
-            logger.info("Trying gallery-dl Instagram fallback with saved cookies")
-        elif credentials:
-            username, password = credentials
-            cmd.extend(("--username", username, "--password", password))
-            logger.info("Trying gallery-dl Instagram fallback with configured credentials")
-
-        cmd.append(url)
-
-        try:
-            completed = subprocess.run(
-                cmd,
-                capture_output=True,
-                check=False,
-                encoding="utf-8",
-                errors="replace",
-                text=True,
-                timeout=180,
-            )
-        except Exception as exc:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-            return self._clean_ytdlp_error(str(exc))
-
-        output = (completed.stderr or completed.stdout or "").strip()
-        if completed.returncode != 0:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-            return self._clean_ytdlp_error(output or f"exit code {completed.returncode}")
-
-        moved_count = 0
-        for source_path in sorted(tmp_dir.rglob("*")):
-            if not source_path.is_file():
-                continue
-
-            suffix = source_path.suffix.lower()
-            target_path = download_path / f"{fallback_prefix}_gallery_{moved_count + 1:02d}{suffix}"
-            shutil.move(str(source_path), target_path)
-            moved_count += 1
-
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-        if moved_count == 0:
-            return "gallery-dl finished without files"
-
-        return None
-
-    def _configured_credentials(self) -> tuple[str, str] | None:
-        username = (INSTAGRAM_USERNAME or "").strip()
-        password = (INSTAGRAM_PASSWORD or "").strip()
-        if not username or username.lower() == "username" or not password:
-            return None
-        return username, password
-
-    def _files_for_shortcode(self, download_path: Path, shortcode: str) -> list[Path]:
-        return [
-            file_path
-            for file_path in download_path.iterdir()
-            if file_path.is_file() and file_path.name.startswith(shortcode) and not file_path.name.endswith(".part")
-        ]
-
-    def _move_fallback_files(self, files: list[Path], download_path: Path, shortcode: str) -> list[Path]:
-        moved_files: list[Path] = []
-
-        for index, source_path in enumerate(sorted(files), start=1):
-            suffix = source_path.suffix.lower() or ".mp4"
-            file_name = f"{shortcode}{suffix}" if len(files) == 1 else f"{shortcode}_{index:02d}{suffix}"
-            final_path = download_path / file_name
-            shutil.move(str(source_path), final_path)
-            moved_files.append(final_path)
-
-        return moved_files
-
-    def _cleanup_temp_files(self, files: list[Path]) -> None:
-        for file_path in files:
-            file_path.unlink(missing_ok=True)
-
-    def _caption_from_ytdlp_info(self, info: dict[str, Any] | None) -> str | None:
-        if not info:
-            return None
-
-        for key in ("description", "title"):
-            value = info.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-
-        return None
-
-    def _clean_ytdlp_error(self, error: str) -> str:
-        cleaned = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", error)
-        cleaned = re.sub(r"\s+", " ", cleaned.replace("\r", " ").replace("\n", " ")).strip()
-        if cleaned.startswith("ERROR:"):
-            cleaned = cleaned.removeprefix("ERROR:").strip()
-        return cleaned[:300] + "..." if len(cleaned) > 300 else cleaned
-
-    def _is_retryable_download_error(self, error: str) -> bool:
-        error_lower = error.lower()
-        return any(
-            marker in error_lower
-            for marker in (
-                "failed to resolve",
-                "getaddrinfo failed",
-                "temporary failure",
-                "timed out",
-                "timeout",
-                "connection aborted",
-                "connection reset",
-            )
-        )
 
     async def _resolve_shortcode(self, session: InstagramHttpSession, url: str) -> tuple[str, str]:
         match = re.search(r"/(p|reel|tv)/([\w-]+)", url)
@@ -1182,7 +839,7 @@ async def init_instaloader() -> InstagramWebDownloader:
     The public name is kept for backwards compatibility with existing routers.
     """
     http_preset = get_httpcloak_preset_name()
-    user_agent = os.getenv(HTTPCLOAK_USER_AGENT_ENV, CHROME_149_USER_AGENT).strip() or CHROME_149_USER_AGENT
+    user_agent = CHROME_149_USER_AGENT
     logger.info(f"Initializing custom Instagram downloader with UA: {user_agent[:50]}...")
     logger.info(f"Initializing Instagram HTTPCloak session with preset: {http_preset}")
 

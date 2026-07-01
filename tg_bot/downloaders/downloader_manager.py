@@ -51,8 +51,8 @@ class DownloaderManager:
 
         Порядок попыток:
         1. Кастомные скачиватели (Instagram, Twitter) - строгий режим
-        2. yt-dlp (для видео контента) - только если не кастомная платформа
-        3. gallery-dl (для изображений) - только если не кастомная платформа
+        2. yt-dlp (для видео контента)
+        3. gallery-dl (для изображений)
         """
         return await self._download_media_impl(url, use_cookies=False)
 
@@ -69,16 +69,17 @@ class DownloaderManager:
 
         Порядок попыток:
         1. Кастомные скачиватели (Instagram, Twitter) - строгий режим
-        2. yt-dlp (для видео контента) - только если не кастомная платформа
-        3. gallery-dl (для изображений) - только если не кастомная платформа
+        2. yt-dlp (для видео контента)
+        3. gallery-dl (для изображений)
         """
         self.download_attempts = []
 
         # Проверяем, является ли URL кастомной платформой
-        is_custom_platform = INSTAGRAM_REGEX.match(url) or TWITTER_REGEX.match(url)
+        is_instagram = INSTAGRAM_REGEX.match(url)
+        is_custom_platform = is_instagram or TWITTER_REGEX.match(url)
 
         # Проиритет для кукисов, если это инстаграмм
-        if use_cookies and INSTAGRAM_REGEX.match(url):
+        if use_cookies and is_instagram:
             cookies_yt_dlp_result = await self._try_ytdlp(url, use_cookies=True)
             if cookies_yt_dlp_result.success:
                 return cookies_yt_dlp_result
@@ -88,18 +89,30 @@ class DownloaderManager:
         if custom_result.success:
             return custom_result
 
+        if is_instagram:
+            ytdlp_result = await self._try_ytdlp(url, use_cookies=True)
+            if ytdlp_result.success:
+                return ytdlp_result
+
+            gallery_result = await self._try_gallery_dl(url, use_cookies=True)
+            if gallery_result.success:
+                return gallery_result
+
+            attempts_summary = "\n".join(self.download_attempts)
+            return DownloadResult(success=False, files=[], caption=None, error=attempts_summary, downloader_used=None)
+
         # Если это кастомная платформа и она не сработала - не пробуем другие методы
         if is_custom_platform:
             logger.warning(f"Custom platform failed for {url}, not trying other methods - {custom_result}")
             return custom_result  # Возвращаем ошибку кастомного скачивателя
 
-        # Попытка 2: yt-dlp для видео контента (только для не-кастомных платформ)
+        # Попытка 2: yt-dlp для видео контента
         ytdlp_result = await self._try_ytdlp(url, use_cookies=use_cookies)
         if ytdlp_result.success:
             return ytdlp_result
 
-        # Попытка 3: gallery-dl для изображений (только для не-кастомных платформ)
-        gallery_result = await self._try_gallery_dl(url)
+        # Попытка 3: gallery-dl для изображений
+        gallery_result = await self._try_gallery_dl(url, use_cookies=use_cookies)
         if gallery_result.success:
             return gallery_result
 
@@ -285,11 +298,11 @@ class DownloaderManager:
             # Если ошибка не распознана, возвращаем укороченную версию
             return error[:100] + "..." if len(error) > 100 else error
 
-    async def _try_gallery_dl(self, url: str) -> DownloadResult:
+    async def _try_gallery_dl(self, url: str, use_cookies: bool = False) -> DownloadResult:
         """Пробует gallery-dl."""
         try:
-            logger.info(f"Attempting gallery-dl download for: {url}")
-            files, caption, error = await download_with_gallery_dl(url)
+            logger.info(f"Attempting gallery-dl download for: {url} (use_cookies={use_cookies})")
+            files, caption, error = await download_with_gallery_dl(url, use_cookies=use_cookies)
 
             if files:
                 self.download_attempts.append("gallery-dl: Success")
