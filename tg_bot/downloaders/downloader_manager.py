@@ -4,18 +4,39 @@
 """
 
 import traceback
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
+from typing import List, Optional
 
 from core.logger import logger
-from tg_bot.utils.cookies_manager import cookies_manager
 
-from .downloader_types import DownloaderType, DownloadResult
 from .gallery_dl import download_with_gallery_dl
-from .ig_reel_downloader import download_reel
 from .instagram import INSTAGRAM_REGEX, download_instagram_media
 from .spotify import SPOTIFY_TRACK_REGEX, TrackInfo, download_spotify_track, extract_track_id
 from .twitter import TWITTER_REGEX, download_twitter_media
 from .ytdlp import download_with_ytdlp
+
+
+class DownloaderType(Enum):
+    CUSTOM = "custom"
+    YTDLP = "yt-dlp"
+    YTDLP_COOKIES = "yt-dlp_cookies"
+    GALLERY_DL = "gallery-dl"
+    SPOTIFY = "spotify"
+    TWITTER = "twitter"
+    INSTAGRAM = "instagram"
+
+
+@dataclass
+class DownloadResult:
+    """Результат скачивания медиа."""
+
+    success: bool
+    files: List[Path]
+    caption: Optional[str] = None
+    error: Optional[str] = None
+    downloader_used: Optional[DownloaderType] = None
 
 
 class DownloaderManager:
@@ -92,26 +113,6 @@ class DownloaderManager:
         """Пробует кастомные скачиватели."""
         try:
             if INSTAGRAM_REGEX.match(url):
-                site_name = cookies_manager.get_site_name(url)
-                cookies_path: Path | None = await cookies_manager.get_cookies(site_name)
-                if cookies_path:
-                    logger.info(f"Using cookies for {site_name}")
-                else:
-                    logger.info(f"No cookies available for {site_name}")
-                result = await download_reel(
-                    url=url, cookies_path=cookies_path
-                )  # Попытка скачать как reel, если обычный метод не сработал
-                if result.success:
-                    if ".txt" in [f.suffix.lower() for f in result.files]:
-                        # Если есть .txt файл, удаляем его из списка файлов и читаем caption
-                        caption_file = next(f for f in result.files if f.suffix.lower() == ".txt")
-                        caption = caption_file.read_text(encoding="utf-8")
-                        result.caption = caption
-                        result.files = [f for f in result.files if f != caption_file]
-                    return result
-                else:
-                    self.download_attempts.append(f"Instagram Reel: {result.error or 'Unknown error'}")
-
                 logger.info(f"Attempting Instagram download for: {url}")
                 shortcode, error = await download_instagram_media(url)
 
@@ -139,6 +140,7 @@ class DownloaderManager:
                             error=None,
                             downloader_used=DownloaderType.INSTAGRAM,
                         )
+
                 self.download_attempts.append(f"Instagram: {error or 'Unknown error'}")
 
             elif TWITTER_REGEX.match(url):

@@ -10,16 +10,17 @@ from httpcloak.client import HTTPCloakError
 
 from core.config import DOWNLOADS_DIR
 from core.logger import logger
-from tg_bot.downloaders.downloader_types import DownloaderType, DownloadResult
+from tg_bot.downloaders.downloader_manager import DownloaderType, DownloadResult
 
 
-def _extract_from_html(text: str) -> Tuple[list[list[str]], Optional[str]]:
-    """Extracts video URLs (sorted by quality) and caption from Instagram HTML.
-    Returns a list of lists, where each sublist represents a video and contains URLs sorted by quality."""
+def _extract_from_html(text: str) -> Tuple[list[list[str]], list[str], Optional[str]]:
+    """Extracts video URLs (sorted by quality), image URLs, and caption from Instagram HTML."""
     import json
 
     # List of lists, each sublist is a video's qualities
     video_urls_lists = []
+    # List of image URLs
+    image_urls_clean = []
     caption = None
 
     # 1. Try meta tags for caption
@@ -27,38 +28,55 @@ def _extract_from_html(text: str) -> Tuple[list[list[str]], Optional[str]]:
     if meta_desc:
         caption = html.unescape(meta_desc.group(1))
 
-    # 2. Extract from video_versions which contains the best quality videos
+    # 2. Extract from video_versions and image_versions2
     scripts = re.findall(r'<script type="application/json"[^>]*>(.*?)</script>', text, re.DOTALL)
 
-    # Instagram can have multiple videos in a carousel, so we collect URLs from each video_versions object
-    extracted_urls_sets = []
+    extracted_video_urls_sets = []
+    extracted_image_urls_set = set()
 
     for script in scripts:
-        if "video_versions" in script:
+        if "video_versions" in script or "image_versions2" in script:
             try:
                 data = json.loads(script)
 
-                def search_urls(obj):
+                def search_media(obj):
                     if isinstance(obj, dict):
+                        # Video parsing
                         if "video_versions" in obj:
                             versions = obj["video_versions"]
                             if versions:
-                                # Get all qualities sorted by width
                                 sorted_versions = sorted(versions, key=lambda x: x.get("width", 0) or 0, reverse=True)
                                 current_vid_urls = []
                                 for v in sorted_versions:
                                     if "url" in v and v["url"] not in current_vid_urls:
                                         current_vid_urls.append(v["url"])
-                                if current_vid_urls and current_vid_urls not in extracted_urls_sets:
-                                    extracted_urls_sets.append(current_vid_urls)
+                                if current_vid_urls and current_vid_urls not in extracted_video_urls_sets:
+                                    extracted_video_urls_sets.append(current_vid_urls)
                                     video_urls_lists.append(current_vid_urls)
+
+                        # Image parsing (often used in carousels alongside or instead of videos)
+                        if "image_versions2" in obj and "candidates" in obj["image_versions2"]:
+                            candidates = obj["image_versions2"]["candidates"]
+                            if candidates:
+                                # Get highest quality image
+                                best = sorted(
+                                    candidates,
+                                    key=lambda x: (x.get("width", 0) or 0) * (x.get("height", 0) or 0),
+                                    reverse=True,
+                                )
+                                if best and "url" in best[0]:
+                                    url = best[0]["url"]
+                                    if url not in extracted_image_urls_set:
+                                        extracted_image_urls_set.add(url)
+                                        image_urls_clean.append(url)
+
                         for v in obj.values():
-                            search_urls(v)
+                            search_media(v)
                     elif isinstance(obj, list):
                         for v in obj:
-                            search_urls(v)
+                            search_media(v)
 
-                search_urls(data)
+                search_media(data)
             except Exception:
                 pass
 
@@ -71,18 +89,24 @@ def _extract_from_html(text: str) -> Tuple[list[list[str]], Optional[str]]:
     # 4. Try embed json structures if all else failed
     if not video_urls_lists:
         for match in re.finditer(r'"video_url":"(.*?)"', text):
-            video_urls_lists.append([match.group(1).replace("\\/", "/")])
+            video_urls_lists.append([match.group(1).replace("\/", "/")])
             break
 
         if not video_urls_lists:
-            for match in re.finditer(r'VideoURL\\":\\"(.*?)\\"', text):
-                video_urls_lists.append([match.group(1).replace("\\/", "/")])
+            for match in re.finditer(r"VideoURL\":\"(.*?)\"", text):
+                video_urls_lists.append([match.group(1).replace("\/", "/")])
                 break
 
         if not video_urls_lists:
-            for match in re.finditer(r'video_url\\":\\"(.*?)\\"', text):
-                video_urls_lists.append([match.group(1).replace("\\/", "/")])
+            for match in re.finditer(r"video_url\":\"(.*?)\"", text):
+                video_urls_lists.append([match.group(1).replace("\/", "/")])
                 break
+
+    # 5. Fallback for main image if no videos and no images extracted from JSON
+    if not video_urls_lists and not image_urls_clean:
+        meta_image = re.search(r'<meta property="og:image" content="([^"]+)"', text)
+        if meta_image:
+            image_urls_clean.append(html.unescape(meta_image.group(1)))
 
     if not caption:
         caption_match = re.search(r"\"node\":\{\"text\":\"(.*?)\"", text)
@@ -94,20 +118,30 @@ def _extract_from_html(text: str) -> Tuple[list[list[str]], Optional[str]]:
                 caption = raw_caption
 
     # Final fix for any remaining unicode escapes in URLs
-    final_urls = []
+    final_video_urls = []
     for quality_list in video_urls_lists:
         clean_q_list = []
         for u in quality_list:
-            u = u.replace("\\u0026", "&")
-            u = u.replace("\\/", "/")
-            while "\\/" in u:
-                u = u.replace("\\/", "/")
-            while "\\u0026" in u:
-                u = u.replace("\\u0026", "&")
+            u = u.replace("\u0026", "&")
+            u = u.replace("\/", "/")
+            while "\/" in u:
+                u = u.replace("\/", "/")
+            while "\u0026" in u:
+                u = u.replace("\u0026", "&")
             clean_q_list.append(u)
-        final_urls.append(clean_q_list)
+        final_video_urls.append(clean_q_list)
 
-    return final_urls, caption
+    final_image_urls = []
+    for u in image_urls_clean:
+        u = u.replace("\u0026", "&")
+        u = u.replace("\/", "/")
+        while "\/" in u:
+            u = u.replace("\/", "/")
+        while "\u0026" in u:
+            u = u.replace("\u0026", "&")
+        final_image_urls.append(u)
+
+    return final_video_urls, final_image_urls, caption
 
 
 async def _download_file(url: str, filepath: Path, session: Optional[Session] = None) -> bool:
@@ -134,7 +168,7 @@ async def _download_file(url: str, filepath: Path, session: Optional[Session] = 
         return False
 
 
-async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadResult:
+async def download_reel(url: str, cookies_path: Optional[str] = None) -> DownloadResult:
     """
     Downloads an Instagram Reel by URL.
     Attempts without cookies first, falls back to cookies if provided.
@@ -158,6 +192,7 @@ async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadR
     }
 
     video_urls = []
+    image_urls = []
     caption = None
 
     # STRATEGY 1: No Cookies
@@ -168,7 +203,7 @@ async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadR
             # 1. Try normal URL
             logger.info(f"Trying to fetch Instagram Reel without cookies: {url}")
             resp = await session.get_async(url, headers=headers)
-            video_urls, caption = _extract_from_html(resp.text)
+            video_urls, image_urls, caption = _extract_from_html(resp.text)
 
             # 2. Try embed URL as fallback
             if not video_urls:
@@ -176,9 +211,11 @@ async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadR
                 embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
                 resp_embed = await session.get_async(embed_url, headers=headers)
 
-                embed_video_urls, embed_caption = _extract_from_html(resp_embed.text)
+                embed_video_urls, embed_image_urls, embed_caption = _extract_from_html(resp_embed.text)
                 if embed_video_urls:
                     video_urls = embed_video_urls
+                if embed_image_urls and not image_urls:
+                    image_urls = embed_image_urls
                 if embed_caption and not caption:
                     caption = embed_caption
         finally:
@@ -188,7 +225,7 @@ async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadR
         logger.error(f"Error fetching Instagram without cookies: {e}")
 
     # STRATEGY 2: Cookie Fallback
-    if not video_urls and cookies_path and cookies_path.exists():
+    if not video_urls and not image_urls and cookies_path and Path(cookies_path).exists():
         logger.info("Falling back to authenticated request using cookies")
         try:
             cj = http.cookiejar.MozillaCookieJar(cookies_path)
@@ -200,24 +237,24 @@ async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadR
                     {"name": cookie.name, "value": cookie.value, "domain": cookie.domain, "path": cookie.path}
                 )
 
-            session = Session(preset="chrome-latest-windows")
+            session = Session(preset="chrome-149")
             try:
                 # Add cookies manually to session
                 for cookie in httpcloak_cookies:
-                    session.set_cookie(cookie["name"], cookie["value"], domain=cookie["domain"], path=cookie["path"])
+                    session.cookies.set(cookie["name"], cookie["value"], domain=cookie["domain"], path=cookie["path"])
 
                 resp = await session.get_async(url, headers=headers)
-                video_urls, caption = _extract_from_html(resp.text)
+                video_urls, image_urls, caption = _extract_from_html(resp.text)
             finally:
                 session.close()
         except Exception as e:
             logger.error(f"Error in cookie fallback: {e}")
 
-    if not video_urls:
+    if not video_urls and not image_urls:
         return DownloadResult(
             success=False,
             files=[],
-            error="Failed to extract video URL",
+            error="Failed to extract media URLs",
             downloader_used=DownloaderType.CUSTOM,
         )
 
@@ -225,12 +262,14 @@ async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadR
     DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
     files_to_return = []
 
-    session = Session(preset="chrome-latest-windows")
+    session = Session(preset="chrome-149")
     try:
-        # Download all unique extracted videos (useful for carousels)
+        # 1. Download all unique extracted videos
         for i, quality_urls in enumerate(video_urls):
             video_path = (
-                DOWNLOADS_DIR / f"{shortcode}_{i}.mp4" if len(video_urls) > 1 else DOWNLOADS_DIR / f"{shortcode}.mp4"
+                DOWNLOADS_DIR / f"{shortcode}_{i}.mp4"
+                if (len(video_urls) + len(image_urls)) > 1
+                else DOWNLOADS_DIR / f"{shortcode}.mp4"
             )
 
             vid_downloaded = False
@@ -256,6 +295,17 @@ async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadR
             if not vid_downloaded:
                 logger.error(f"Could not download any quality for video index {i} under 50MB.")
 
+        # 2. Download all unique extracted images
+        for i, img_url in enumerate(image_urls):
+            img_path = (
+                DOWNLOADS_DIR / f"{shortcode}_img_{i}.jpg"
+                if (len(video_urls) + len(image_urls)) > 1
+                else DOWNLOADS_DIR / f"{shortcode}.jpg"
+            )
+            logger.info(f"Downloading image to {img_path}")
+            if await _download_file(img_url, img_path):
+                files_to_return.append(img_path)
+
     finally:
         session.close()
 
@@ -263,12 +313,14 @@ async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadR
         return DownloadResult(
             success=False,
             files=[],
-            error="Failed to download video files or all files exceeded 50MB limit",
+            error="Failed to download any media files",
             downloader_used=DownloaderType.CUSTOM,
         )
 
     # Implement Caption Save
     if caption:
+        import aiofiles
+
         caption_path = DOWNLOADS_DIR / f"{shortcode}.txt"
         async with aiofiles.open(caption_path, "w", encoding="utf-8") as f:
             await f.write(caption)
