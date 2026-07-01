@@ -200,11 +200,11 @@ async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadR
                     {"name": cookie.name, "value": cookie.value, "domain": cookie.domain, "path": cookie.path}
                 )
 
-            session = Session(preset="chrome-149")
+            session = Session(preset="chrome-latest-windows")
             try:
                 # Add cookies manually to session
                 for cookie in httpcloak_cookies:
-                    session.cookies.set(cookie["name"], cookie["value"], domain=cookie["domain"], path=cookie["path"])
+                    session.set_cookie(cookie["name"], cookie["value"], domain=cookie["domain"], path=cookie["path"])
 
                 resp = await session.get_async(url, headers=headers)
                 video_urls, caption = _extract_from_html(resp.text)
@@ -225,7 +225,7 @@ async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadR
     DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
     files_to_return = []
 
-    session = Session(preset="chrome-149")
+    session = Session(preset="chrome-latest-windows")
     try:
         # Download all unique extracted videos (useful for carousels)
         for i, quality_urls in enumerate(video_urls):
