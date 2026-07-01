@@ -10,7 +10,7 @@ from httpcloak.client import HTTPCloakError
 
 from core.config import DOWNLOADS_DIR
 from core.logger import logger
-from tg_bot.downloaders.downloader_manager import DownloaderType, DownloadResult
+from tg_bot.downloaders.downloader_types import DownloaderType, DownloadResult
 
 
 def _extract_from_html(text: str) -> Tuple[list[list[str]], Optional[str]]:
@@ -134,7 +134,7 @@ async def _download_file(url: str, filepath: Path, session: Optional[Session] = 
         return False
 
 
-async def download_reel(url: str, cookies_path: Optional[str] = None) -> DownloadResult:
+async def download_reel(url: str, cookies_path: Path | None = None) -> DownloadResult:
     """
     Downloads an Instagram Reel by URL.
     Attempts without cookies first, falls back to cookies if provided.
@@ -188,7 +188,7 @@ async def download_reel(url: str, cookies_path: Optional[str] = None) -> Downloa
         logger.error(f"Error fetching Instagram without cookies: {e}")
 
     # STRATEGY 2: Cookie Fallback
-    if not video_urls and cookies_path and Path(cookies_path).exists():
+    if not video_urls and cookies_path and cookies_path.exists():
         logger.info("Falling back to authenticated request using cookies")
         try:
             cj = http.cookiejar.MozillaCookieJar(cookies_path)
@@ -269,8 +269,6 @@ async def download_reel(url: str, cookies_path: Optional[str] = None) -> Downloa
 
     # Implement Caption Save
     if caption:
-        import aiofiles
-
         caption_path = DOWNLOADS_DIR / f"{shortcode}.txt"
         async with aiofiles.open(caption_path, "w", encoding="utf-8") as f:
             await f.write(caption)
