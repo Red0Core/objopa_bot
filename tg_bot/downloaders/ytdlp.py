@@ -1,3 +1,4 @@
+import re
 import traceback
 from pathlib import Path
 
@@ -11,6 +12,11 @@ MAX_SIZE_MB = 49  # 49 MB (Telegram limit is 50MB)
 MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 MAX_HEIGHT = 1440  # 2K max resolution
 MIN_HEIGHT = 480  # Minimum height
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _clean_error_text(error: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", error).strip()
 
 
 async def download_with_ytdlp(
@@ -129,9 +135,12 @@ async def download_with_ytdlp(
                     return False
 
                 title = downloaded.get("title")
-                entries = downloaded["entries"] if "entries" in downloaded else [downloaded]
+                entries = downloaded.get("entries") if isinstance(downloaded.get("entries"), list) else [downloaded]
 
                 for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+
                     file_path = Path(ydl.prepare_filename(entry))  # type: ignore
                     files.append(file_path)
 
@@ -161,7 +170,7 @@ async def download_with_ytdlp(
                 return True
 
         except Exception as e:
-            error = str(e)
+            error = _clean_error_text(str(e))
 
             if with_cookies:
                 logger.exception(f"Download with cookies failed: {e}")
@@ -170,7 +179,6 @@ async def download_with_ytdlp(
             if cookies_manager.has_cookies_error(error):
                 site_name = cookies_manager.get_site_name(url)
                 logger.warning(f"Cookies required for {site_name}")
-                await cookies_manager.mark_cookies_expired(site_name)
                 return False
 
             logger.error(f"yt-dlp error: {traceback.format_exc()}")
@@ -184,7 +192,8 @@ async def download_with_ytdlp(
                     pass
 
     # Try download
-    if use_cookies and await _download_attempt(with_cookies=True):
+    if use_cookies:
+        await _download_attempt(with_cookies=True)
         return files, title, error
 
     if await _download_attempt(with_cookies=False):
