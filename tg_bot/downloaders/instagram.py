@@ -27,16 +27,7 @@ REQUEST_RETRIES = 3
 CHROME_149_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 )
-INSTAGRAM_HTTP_PRESET_NAME = "instagram-chrome149"
-INSTAGRAM_HTTP_PRESET_JSON = json.dumps(
-    {
-        "version": 1,
-        "preset": {
-            "name": INSTAGRAM_HTTP_PRESET_NAME,
-            "extends": "chrome-149-windows",
-        },
-    }
-)
+INSTAGRAM_HTTP_PRESET_NAME = "chrome-149-windows"
 
 
 class InstagramDownloadError(Exception):
@@ -90,6 +81,7 @@ class InstagramHttpSession:
             timeout=REQUEST_TIMEOUT,
             retry=REQUEST_RETRIES,
             prefer_ipv4=True,
+            local_address="0.0.0.0",
             http_version="auto",
         )
 
@@ -168,12 +160,7 @@ class InstagramHttpSession:
 
 
 def get_httpcloak_preset_name() -> str:
-    try:
-        return httpcloak.load_preset_from_json(INSTAGRAM_HTTP_PRESET_JSON)
-    except Exception as exc:
-        if "already" not in str(exc).lower() and "exist" not in str(exc).lower():
-            logger.warning(f"Failed to register Instagram HTTPCloak preset: {exc}")
-        return INSTAGRAM_HTTP_PRESET_NAME
+    return INSTAGRAM_HTTP_PRESET_NAME
 
 
 class InstagramWebDownloader:
