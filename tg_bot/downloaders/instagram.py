@@ -111,11 +111,20 @@ class InstagramWebDownloader:
         except InstagramDownloadError as exc:
             logger.debug(f"Instagram HTML page failed for {shortcode}: {exc}")
 
+        raw_video_post: InstagramPost | None = None
         if html_text:
+            raw_video_post = self._post_from_raw_video_urls(html_text, shortcode, canonical_url)
             json_candidates = self._extract_json_candidates(html_text)
             for candidate in json_candidates:
                 post = self._post_from_json(candidate, shortcode, canonical_url)
                 if post.media:
+                    if (
+                        "/reel/" in canonical_url
+                        and raw_video_post.media
+                        and not any(media.is_video for media in post.media)
+                    ):
+                        logger.debug(f"Using raw Instagram video URL fallback for reel {shortcode}")
+                        return raw_video_post
                     return post
 
         json_candidates = await self._load_json_candidates(session, shortcode, canonical_url)
@@ -123,6 +132,10 @@ class InstagramWebDownloader:
             post = self._post_from_json(candidate, shortcode, canonical_url)
             if post.media:
                 return post
+
+        if raw_video_post and raw_video_post.media:
+            logger.debug(f"Using raw Instagram video URL fallback for {shortcode}")
+            return raw_video_post
 
         if html_text:
             post = self._post_from_meta_tags(html_text, shortcode, canonical_url)
@@ -493,6 +506,31 @@ class InstagramWebDownloader:
 
         return None
 
+    def _post_from_raw_video_urls(self, html_text: str, shortcode: str, canonical_url: str) -> InstagramPost:
+        media_items: list[InstagramMedia] = []
+
+        patterns = (
+            r'"video_url"\s*:\s*"([^"]+)"',
+            r'\\"video_url\\"\s*:\s*\\"(.+?)\\"',
+            r'"playback_url"\s*:\s*"([^"]+)"',
+            r'\\"playback_url\\"\s*:\s*\\"(.+?)\\"',
+            r'https?:\\?/\\?/[^"\'<>]+?\.mp4[^"\'<>]*',
+        )
+
+        for pattern in patterns:
+            for match in re.finditer(pattern, html_text, flags=re.IGNORECASE):
+                raw_url = match.group(1) if match.groups() else match.group(0)
+                video_url = self._decode_media_url(raw_url)
+                if self._looks_like_video_url(video_url):
+                    media_items.append(InstagramMedia(url=video_url, is_video=True, index=len(media_items) + 1))
+
+        return InstagramPost(
+            shortcode=shortcode,
+            canonical_url=canonical_url,
+            caption=None,
+            media=self._dedupe_media(media_items),
+        )
+
     def _post_from_meta_tags(self, html_text: str, shortcode: str, canonical_url: str) -> InstagramPost:
         media: list[InstagramMedia] = []
         caption: str | None = None
@@ -555,6 +593,26 @@ class InstagramWebDownloader:
         return value_lower.startswith("http") and any(
             marker in value_lower for marker in ("cdninstagram", "fbcdn", ".cdn", "scontent")
         )
+
+    def _looks_like_video_url(self, value: str) -> bool:
+        value_lower = value.lower()
+        return self._looks_like_media_url(value) and ".mp4" in value_lower
+
+    def _decode_media_url(self, value: str) -> str:
+        decoded = html.unescape(value)
+
+        for _ in range(3):
+            previous = decoded
+            try:
+                decoded = json.loads(f'"{decoded}"')
+            except json.JSONDecodeError:
+                decoded = decoded.replace("\\/", "/").replace("\\u0026", "&").replace("\\u003d", "=")
+
+            decoded = html.unescape(decoded)
+            if decoded == previous:
+                break
+
+        return decoded
 
     def _try_load_json(self, text: str) -> Any | None:
         if not text:
