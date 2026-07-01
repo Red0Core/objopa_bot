@@ -183,10 +183,10 @@ class InstagramWebDownloader:
         self.user_agent = user_agent
         self.http_preset = http_preset
 
-    async def download(self, url: str, download_path: Path = DOWNLOADS_DIR) -> InstagramPost:
+    async def download(self, url: str, download_path: Path = DOWNLOADS_DIR, use_cookies: bool = False) -> InstagramPost:
         download_path.mkdir(parents=True, exist_ok=True)
 
-        cookies_path = await self._get_saved_instagram_cookies()
+        cookies_path = await self._get_saved_instagram_cookies() if use_cookies else None
         try:
             async with InstagramHttpSession(self.http_preset) as session:
                 if cookies_path:
@@ -250,7 +250,7 @@ class InstagramWebDownloader:
             raw_video_post = self._post_from_raw_video_urls(html_text, shortcode, canonical_url)
             json_candidates = self._extract_json_candidates(html_text)
             for candidate in json_candidates:
-                post = self._post_from_json(candidate, shortcode, canonical_url)
+                post = self._safe_post_from_json(candidate, shortcode, canonical_url)
                 if post.media:
                     if is_reel and any(media.is_video for media in post.media):
                         return post
@@ -264,7 +264,7 @@ class InstagramWebDownloader:
 
         json_candidates = await self._load_json_candidates(session, shortcode, canonical_url)
         for candidate in json_candidates:
-            post = self._post_from_json(candidate, shortcode, canonical_url)
+            post = self._safe_post_from_json(candidate, shortcode, canonical_url)
             if post.media:
                 if is_reel and not any(media.is_video for media in post.media):
                     logger.debug(f"Ignoring image-only Instagram reel API metadata for {shortcode}")
@@ -286,6 +286,13 @@ class InstagramWebDownloader:
                 return post
 
         raise InstagramNoMediaError("No media metadata found on Instagram page.")
+
+    def _safe_post_from_json(self, data: Any, shortcode: str, canonical_url: str) -> InstagramPost:
+        try:
+            return self._post_from_json(data, shortcode, canonical_url)
+        except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:
+            logger.debug(f"Skipping malformed Instagram JSON candidate for {shortcode}: {exc}")
+            return InstagramPost(shortcode=shortcode, canonical_url=canonical_url, caption=None, media=[])
 
     async def _load_json_candidates(
         self, session: InstagramHttpSession, shortcode: str, canonical_url: str
@@ -515,7 +522,8 @@ class InstagramWebDownloader:
         return None
 
     def _pick_image_url(self, node: dict[str, Any]) -> str | None:
-        image_versions = (node.get("image_versions2") or {}).get("candidates")
+        image_versions2 = node.get("image_versions2")
+        image_versions = image_versions2.get("candidates") if isinstance(image_versions2, dict) else None
         if isinstance(image_versions, list):
             candidate = self._pick_best_candidate_url(image_versions)
             if candidate:
@@ -864,11 +872,11 @@ async def reset_instaloader_session() -> None:
     logger.info("Instagram downloader cache reset")
 
 
-async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
+async def download_instagram_media(url: str, use_cookies: bool = False) -> tuple[str | None, str | None]:
     """Download Instagram post media and return shortcode plus a user-facing error."""
     try:
         client = await get_instaloader_session()
-        post = await client.download(url, DOWNLOADS_DIR)
+        post = await client.download(url, DOWNLOADS_DIR, use_cookies=use_cookies)
         return post.shortcode, None
     except InstagramUnsupportedUrlError as exc:
         return None, f"❌ Ошибка: {exc}"
@@ -884,7 +892,7 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
         return None, f"❌ Ошибка Instagram: {exc}"
     except Exception as exc:
         logger.exception(f"Unexpected Instagram downloader error: {exc}")
-        return None, f"❌ Ошибка: {exc}"
+        return None, "❌ Ошибка: Instagram вернул неожиданный формат ответа."
 
 
 DOWNLOADS_DIR.mkdir(exist_ok=True)
