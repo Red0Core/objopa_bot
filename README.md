@@ -198,3 +198,40 @@ redis-cli ping
 ---
 
 ⭐ **Поставьте звезду, если проект был полезен!**
+
+## 🧩 Новый загрузчик Instagram Reels
+
+Мы добавили новый улучшенный модуль для загрузки Instagram Reels (`tg_bot/downloaders/ig_reel_downloader.py`).
+Этот модуль работает по гибридной стратегии (сначала пытается получить видео без кукисов, а если это не удается — прибегает к помощи Netscape-кукисов).
+
+### Как его использовать:
+
+Модуль можно использовать отдельно в ваших скриптах:
+```python
+import asyncio
+from tg_bot.downloaders.ig_reel_downloader import download_reel
+
+async def main():
+    result = await download_reel("https://www.instagram.com/reel/DaFeGEKM9In/", cookies_path="cookies.txt")
+    if result.success:
+        print("Success:", result.files[0])
+    else:
+        print("Error:", result.error)
+
+asyncio.run(main())
+```
+
+### Формат cookies.txt
+
+Если инстаграм заблокирует доступ к странице без авторизации, скрипт попытается прочитать Netscape-совместимый файл `cookies.txt` в случае если он был передан через аргумент `cookies_path`.
+
+Пример формата Netscape:
+```
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.instagram.com	TRUE	/	TRUE	1798333134	csrftoken	pwORmmAjf8kD...
+.instagram.com	TRUE	/	TRUE	1790557134	ds_user_id	11845255...
+.instagram.com	TRUE	/	TRUE	1798333068	sessionid	11845255...
+```
