@@ -3,6 +3,7 @@
 Приоритет: кастомные версии -> yt-dlp -> gallery-dl
 """
 
+import re
 import traceback
 from dataclasses import dataclass
 from enum import Enum
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from core.logger import logger
+from tg_bot.utils.cookies_manager import cookies_manager
 
 from .gallery_dl import download_with_gallery_dl
 from .instagram import INSTAGRAM_REGEX, download_instagram_media
@@ -77,29 +79,30 @@ class DownloaderManager:
         # Проверяем, является ли URL кастомной платформой
         is_instagram = INSTAGRAM_REGEX.match(url)
         is_custom_platform = is_instagram or TWITTER_REGEX.match(url)
-
-        # Проиритет для кукисов, если это инстаграмм
-        if use_cookies and is_instagram:
-            cookies_yt_dlp_result = await self._try_ytdlp(url, use_cookies=True)
-            if cookies_yt_dlp_result.success:
-                return cookies_yt_dlp_result
+        instagram_use_cookies = use_cookies or (bool(is_instagram) and await self._has_saved_cookies("instagram"))
+        effective_use_cookies = instagram_use_cookies if is_instagram else use_cookies
 
         # Попытка 1: Кастомные скачиватели
-        custom_result = await self._try_custom_downloaders(url)
+        custom_result = await self._try_custom_downloaders(url, use_cookies=effective_use_cookies)
         if custom_result.success:
             return custom_result
 
         if is_instagram:
-            ytdlp_result = await self._try_ytdlp(url, use_cookies=True)
+            ytdlp_result = await self._try_ytdlp(url, use_cookies=effective_use_cookies)
             if ytdlp_result.success:
                 return ytdlp_result
 
-            gallery_result = await self._try_gallery_dl(url, use_cookies=True)
+            gallery_result = await self._try_gallery_dl(url, use_cookies=effective_use_cookies)
             if gallery_result.success:
                 return gallery_result
 
-            attempts_summary = "\n".join(self.download_attempts)
-            return DownloadResult(success=False, files=[], caption=None, error=attempts_summary, downloader_used=None)
+            return DownloadResult(
+                success=False,
+                files=[],
+                caption=None,
+                error=self._instagram_error_message(use_cookies=effective_use_cookies),
+                downloader_used=None,
+            )
 
         # Если это кастомная платформа и она не сработала - не пробуем другие методы
         if is_custom_platform:
@@ -122,12 +125,12 @@ class DownloaderManager:
 
         return DownloadResult(success=False, files=[], caption=None, error=error_message, downloader_used=None)
 
-    async def _try_custom_downloaders(self, url: str) -> DownloadResult:
+    async def _try_custom_downloaders(self, url: str, use_cookies: bool = False) -> DownloadResult:
         """Пробует кастомные скачиватели."""
         try:
             if INSTAGRAM_REGEX.match(url):
                 logger.info(f"Attempting Instagram download for: {url}")
-                shortcode, error = await download_instagram_media(url)
+                shortcode, error = await download_instagram_media(url, use_cookies=use_cookies)
 
                 if shortcode and not error:
                     from core.config import DOWNLOADS_DIR
@@ -222,7 +225,7 @@ class DownloaderManager:
 
         except Exception as e:
             logger.error(f"Custom downloader error: {e}\n{traceback.format_exc()}")
-            self.download_attempts.append(f"Custom: Exception - {str(e)}")
+            self.download_attempts.append(f"Custom: Exception - {self._clean_error_text(str(e))}")
 
         return DownloadResult(
             success=False,
@@ -231,6 +234,15 @@ class DownloaderManager:
             error="\n".join(self.download_attempts),
             downloader_used=None,
         )
+
+    async def _has_saved_cookies(self, site_name: str) -> bool:
+        try:
+            available_cookies = await cookies_manager.list_available_cookies()
+        except Exception as e:
+            logger.debug(f"Saved cookies check failed for {site_name}: {e}")
+            return False
+
+        return site_name.lower() in available_cookies
 
     async def _try_ytdlp(self, url: str, use_cookies: bool = False) -> DownloadResult:
         """Пробует yt-dlp. Если use_cookies=True, сначала пробует с cookies."""
@@ -273,6 +285,7 @@ class DownloaderManager:
 
     def _filter_ytdlp_error(self, error: str) -> str:
         """Фильтрует и упрощает ошибки yt-dlp для пользователя."""
+        error = self._clean_error_text(error)
         error_lower = error.lower()
 
         # Распространенные ошибки и их упрощенные версии
@@ -297,6 +310,33 @@ class DownloaderManager:
         else:
             # Если ошибка не распознана, возвращаем укороченную версию
             return error[:100] + "..." if len(error) > 100 else error
+
+    def _instagram_error_message(self, use_cookies: bool) -> str:
+        attempts_summary = "\n".join(self.download_attempts)
+        attempts_lower = attempts_summary.lower()
+        auth_markers = (
+            "accounts/login",
+            "login page",
+            "login required",
+            "requires login",
+            "use --cookies",
+            "empty media response",
+            "unauthorized",
+            "require_login",
+        )
+
+        if any(marker in attempts_lower for marker in auth_markers):
+            if use_cookies:
+                return (
+                    "Instagram: ❌ Cookies не сработали или Instagram временно ограничил доступ. "
+                    "Обнови cookies через /set_cookies и повтори /d <url>."
+                )
+            return (
+                "Instagram: ❌ Instagram не отдал медиа без авторизации. "
+                "Загрузи cookies через /set_cookies и повтори /d <url>."
+            )
+
+        return attempts_summary
 
     async def _try_gallery_dl(self, url: str, use_cookies: bool = False) -> DownloadResult:
         """Пробует gallery-dl."""
@@ -330,6 +370,7 @@ class DownloaderManager:
 
     def _filter_gallery_dl_error(self, error: str) -> str:
         """Фильтрует и упрощает ошибки gallery-dl для пользователя."""
+        error = self._clean_error_text(error)
         error_lower = error.lower()
 
         # Распространенные ошибки gallery-dl
@@ -362,6 +403,11 @@ class DownloaderManager:
         else:
             # Если ошибка не распознана, возвращаем укороченную версию
             return error[:100] + "..." if len(error) > 100 else error
+
+    @staticmethod
+    def _clean_error_text(error: str) -> str:
+        error = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", error)
+        return " ".join(error.split())
 
 
 # Создаем глобальный экземпляр менеджера
