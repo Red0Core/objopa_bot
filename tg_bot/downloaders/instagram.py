@@ -105,6 +105,7 @@ class InstagramWebDownloader:
 
     async def _load_post(self, session: AsyncSession, shortcode: str, canonical_url: str) -> InstagramPost:
         html_text: str | None = None
+        is_reel = "/reel/" in canonical_url
 
         try:
             html_text = await self._load_html(session, canonical_url)
@@ -118,19 +119,23 @@ class InstagramWebDownloader:
             for candidate in json_candidates:
                 post = self._post_from_json(candidate, shortcode, canonical_url)
                 if post.media:
-                    if (
-                        "/reel/" in canonical_url
-                        and raw_video_post.media
-                        and not any(media.is_video for media in post.media)
-                    ):
+                    if is_reel and any(media.is_video for media in post.media):
+                        return post
+                    if is_reel and raw_video_post.media and not any(media.is_video for media in post.media):
                         logger.debug(f"Using raw Instagram video URL fallback for reel {shortcode}")
                         return raw_video_post
+                    if is_reel:
+                        logger.debug(f"Ignoring image-only Instagram reel metadata for {shortcode}")
+                        continue
                     return post
 
         json_candidates = await self._load_json_candidates(session, shortcode, canonical_url)
         for candidate in json_candidates:
             post = self._post_from_json(candidate, shortcode, canonical_url)
             if post.media:
+                if is_reel and not any(media.is_video for media in post.media):
+                    logger.debug(f"Ignoring image-only Instagram reel API metadata for {shortcode}")
+                    continue
                 return post
 
         if raw_video_post and raw_video_post.media:
@@ -140,6 +145,11 @@ class InstagramWebDownloader:
         if html_text:
             post = self._post_from_meta_tags(html_text, shortcode, canonical_url)
             if post.media:
+                if is_reel and not any(media.is_video for media in post.media):
+                    raise InstagramAuthRequiredError(
+                        "Instagram не отдал video URL для этого reel без cookies. "
+                        "Загрузи cookies через /set_cookies и попробуй /d_cookies <url>."
+                    )
                 return post
 
         raise InstagramNoMediaError("No media metadata found on Instagram page.")
@@ -716,8 +726,9 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
         return post.shortcode, None
     except InstagramUnsupportedUrlError as exc:
         return None, f"❌ Ошибка: {exc}"
-    except InstagramAuthRequiredError:
-        return None, "❌ Ошибка: Требуется авторизация в Instagram для этого контента."
+    except InstagramAuthRequiredError as exc:
+        message = str(exc) or "Требуется авторизация в Instagram для этого контента."
+        return None, f"❌ Ошибка: {message}"
     except InstagramRateLimitedError:
         await reset_instaloader_session()
         return None, "❌ Ошибка: Instagram ограничил доступ. Попробуйте обновить User-Agent командой /ua_set"
