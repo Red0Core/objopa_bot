@@ -714,6 +714,18 @@ wheels = [
 ]
 
 [[package]]
+name = "httpcloak"
+version = "1.6.7"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bd/74/e574b3d3bdcd36d3a12955bbfcc755aa50e5ff6f588bd0c59c791eefe14a/httpcloak-1.6.7-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:54f45574fdc39506e01480676b999900843aa9a70d5482a8b6aa9ad3c22abf2b", size = 4901176, upload-time = "2026-06-03T10:48:44.699Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/b8/032620d2fcaeea6b03806b3219c1e3c62a126157e664bbf3c7c60dd04f2c/httpcloak-1.6.7-py3-none-macosx_11_0_arm64.whl", hash = "sha256:55bcb1a3f101403098026f5000db312beb0c31809ffbd3a0ed562c2f68606df6", size = 4498688, upload-time = "2026-06-03T10:48:46.101Z" },
+    { url = "https://files.pythonhosted.org/packages/10/f6/a33150ae28c7e698b1d0bd397d02786050f5a9f495c1588a747ec9aa0575/httpcloak-1.6.7-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:c700f1ca6d88e07799877d80d2b9d7ba58f6cf2ce57383d89efbd22ff0ec68b1", size = 4676997, upload-time = "2026-06-03T10:48:47.469Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/1e/10f216469ee6b1407b6b132f6f0a971b2c804259ebb2d2f0933133f1031e/httpcloak-1.6.7-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:53acffa6590bd85b1a8cf94b9292b166c071d078b1a18ef10bdd87253c4bb3f9", size = 5175904, upload-time = "2026-06-03T10:48:48.948Z" },
+    { url = "https://files.pythonhosted.org/packages/70/00/a5d5a1eb07a9956c97a457f9247a82e46d2b5870e8606b18470119ada82a/httpcloak-1.6.7-py3-none-win_amd64.whl", hash = "sha256:8d77f1d3f4e7d126e18c1f390c6ac7c55d55d9991d1c72c34a65387a5abebe4d", size = 4969109, upload-time = "2026-06-03T10:48:50.803Z" },
+]
+
+[[package]]
 name = "httpcore"
 version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
@@ -1228,6 +1240,7 @@ dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "gallery-dl" },
     { name = "google-genai" },
+    { name = "httpcloak" },
     { name = "httpx" },
     { name = "instaloader" },
     { name = "loguru" },
@@ -1264,6 +1277,7 @@ requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.118.0" },
     { name = "gallery-dl", specifier = ">=1.30.8" },
     { name = "google-genai", specifier = ">=1.39.1" },
+    { name = "httpcloak", specifier = ">=1.6.7" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "instaloader", specifier = ">=4.14.2" },
     { name = "loguru", specifier = ">=0.7.3" },
