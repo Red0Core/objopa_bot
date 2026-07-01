@@ -13,11 +13,13 @@ from core.logger import logger
 from tg_bot.downloaders.downloader_manager import DownloaderType, DownloadResult
 
 
-def _extract_from_html(text: str) -> Tuple[list[str], Optional[str]]:
-    """Extracts video URLs (sorted by quality) and caption from Instagram HTML."""
+def _extract_from_html(text: str) -> Tuple[list[list[str]], Optional[str]]:
+    """Extracts video URLs (sorted by quality) and caption from Instagram HTML.
+    Returns a list of lists, where each sublist represents a video and contains URLs sorted by quality."""
     import json
 
-    video_urls_clean = []
+    # List of lists, each sublist is a video's qualities
+    video_urls_lists = []
     caption = None
 
     # 1. Try meta tags for caption
@@ -28,8 +30,8 @@ def _extract_from_html(text: str) -> Tuple[list[str], Optional[str]]:
     # 2. Extract from video_versions which contains the best quality videos
     scripts = re.findall(r'<script type="application/json"[^>]*>(.*?)</script>', text, re.DOTALL)
 
-    # Instagram can have multiple videos in a carousel, so we collect the best URL from each video_versions object
-    extracted_urls_set = set()
+    # Instagram can have multiple videos in a carousel, so we collect URLs from each video_versions object
+    extracted_urls_sets = []
 
     for script in scripts:
         if "video_versions" in script:
@@ -41,13 +43,15 @@ def _extract_from_html(text: str) -> Tuple[list[str], Optional[str]]:
                         if "video_versions" in obj:
                             versions = obj["video_versions"]
                             if versions:
-                                # Get highest quality by sorting by width
-                                best = sorted(versions, key=lambda x: x.get("width", 0) or 0, reverse=True)
-                                if best and "url" in best[0]:
-                                    url = best[0]["url"]
-                                    if url not in extracted_urls_set:
-                                        extracted_urls_set.add(url)
-                                        video_urls_clean.append(url)
+                                # Get all qualities sorted by width
+                                sorted_versions = sorted(versions, key=lambda x: x.get("width", 0) or 0, reverse=True)
+                                current_vid_urls = []
+                                for v in sorted_versions:
+                                    if "url" in v and v["url"] not in current_vid_urls:
+                                        current_vid_urls.append(v["url"])
+                                if current_vid_urls and current_vid_urls not in extracted_urls_sets:
+                                    extracted_urls_sets.append(current_vid_urls)
+                                    video_urls_lists.append(current_vid_urls)
                         for v in obj.values():
                             search_urls(v)
                     elif isinstance(obj, list):
@@ -59,30 +63,25 @@ def _extract_from_html(text: str) -> Tuple[list[str], Optional[str]]:
                 pass
 
     # 3. Try meta tags for video if video_versions failed
-    if not video_urls_clean:
+    if not video_urls_lists:
         meta_video = re.search(r'<meta property="og:video" content="([^"]+)"', text)
         if meta_video:
-            video_urls_clean.append(html.unescape(meta_video.group(1)))
+            video_urls_lists.append([html.unescape(meta_video.group(1))])
 
     # 4. Try embed json structures if all else failed
-    if not video_urls_clean:
+    if not video_urls_lists:
         for match in re.finditer(r'"video_url":"(.*?)"', text):
-            video_urls_clean.append(match.group(1))
+            video_urls_lists.append([match.group(1).replace("\\/", "/")])
             break
 
-        if not video_urls_clean:
-            for match in re.finditer(r"VideoURL\":\"(.*?)\"", text):
-                video_urls_clean.append(match.group(1))
+        if not video_urls_lists:
+            for match in re.finditer(r'VideoURL\\":\\"(.*?)\\"', text):
+                video_urls_lists.append([match.group(1).replace("\\/", "/")])
                 break
 
-        if not video_urls_clean:
-            for match in re.finditer(r"video_url\":\"(.*?)\"", text):
-                video_urls_clean.append(match.group(1))
-                break
-
-        if not video_urls_clean:
+        if not video_urls_lists:
             for match in re.finditer(r'video_url\\":\\"(.*?)\\"', text):
-                video_urls_clean.append(match.group(1))
+                video_urls_lists.append([match.group(1).replace("\\/", "/")])
                 break
 
     if not caption:
@@ -96,23 +95,28 @@ def _extract_from_html(text: str) -> Tuple[list[str], Optional[str]]:
 
     # Final fix for any remaining unicode escapes in URLs
     final_urls = []
-    for u in video_urls_clean:
-        u = u.replace("\\u0026", "&")
-        u = u.replace("\\/", "/")
-        while "\\/" in u:
-            u = u.replace("\\/", "/")
-        while "\\u0026" in u:
+    for quality_list in video_urls_lists:
+        clean_q_list = []
+        for u in quality_list:
             u = u.replace("\\u0026", "&")
-        final_urls.append(u)
+            u = u.replace("\\/", "/")
+            while "\\/" in u:
+                u = u.replace("\\/", "/")
+            while "\\u0026" in u:
+                u = u.replace("\\u0026", "&")
+            clean_q_list.append(u)
+        final_urls.append(clean_q_list)
 
     return final_urls, caption
 
 
-async def _download_file(url: str, filepath: Path) -> bool:
+async def _download_file(url: str, filepath: Path, session: Optional[Session] = None) -> bool:
     """Downloads a file using httpcloak to bypass blocks"""
 
     try:
-        session = Session(preset="chrome-149")
+        is_own_session = session is None
+        if is_own_session:
+            session = Session(preset="chrome-149")
         try:
             resp = await session.get_async(url)
             if resp.status_code == 200:
@@ -120,10 +124,11 @@ async def _download_file(url: str, filepath: Path) -> bool:
                     await f.write(resp.body)
                 return True
             else:
-                logger.error(f"Failed to download video, status code: {resp.status}")
+                logger.error(f"Failed to download video, status code: {resp.status_code}")
                 return False
         finally:
-            session.close()
+            if is_own_session:
+                session.close()
     except Exception as e:
         logger.error(f"Error downloading file: {e}")
         return False
@@ -199,7 +204,7 @@ async def download_reel(url: str, cookies_path: Optional[str] = None) -> Downloa
             try:
                 # Add cookies manually to session
                 for cookie in httpcloak_cookies:
-                    session.set_cookie(cookie["domain"], cookie["name"], cookie["value"], cookie["path"])
+                    session.cookies.set(cookie["name"], cookie["value"], domain=cookie["domain"], path=cookie["path"])
 
                 resp = await session.get_async(url, headers=headers)
                 video_urls, caption = _extract_from_html(resp.text)
@@ -223,26 +228,33 @@ async def download_reel(url: str, cookies_path: Optional[str] = None) -> Downloa
     session = Session(preset="chrome-149")
     try:
         # Download all unique extracted videos (useful for carousels)
-        for i, vid_url in enumerate(video_urls):
+        for i, quality_urls in enumerate(video_urls):
             video_path = (
                 DOWNLOADS_DIR / f"{shortcode}_{i}.mp4" if len(video_urls) > 1 else DOWNLOADS_DIR / f"{shortcode}.mp4"
             )
 
-            # Check size via HEAD
-            try:
-                head_resp = await session.head_async(vid_url)
-                size_raw = head_resp.headers.get("content-length", 0)
-                size = int(size_raw[0] if isinstance(size_raw, list) else size_raw)
-                # 50 MB in bytes limit
-                if size > 50 * 1024 * 1024:
-                    logger.info(f"Video size {size} exceeds 50MB limit, trying next quality or skipping this video.")
-                    continue
-            except Exception as e:
-                logger.warning(f"Failed to get video size via HEAD: {e}")
+            vid_downloaded = False
+            for vid_url in quality_urls:
+                # Check size via HEAD
+                try:
+                    head_resp = await session.head_async(vid_url)
+                    size_raw = head_resp.headers.get("content-length", 0)
+                    size = int(size_raw[0] if isinstance(size_raw, list) else size_raw)
+                    # 50 MB in bytes limit
+                    if size > 50 * 1024 * 1024:
+                        logger.info(f"Video size {size} exceeds 50MB limit, trying lower quality...")
+                        continue
+                except Exception as e:
+                    logger.warning(f"Failed to get video size via HEAD: {e}")
 
-            logger.info(f"Downloading video to {video_path}")
-            if await _download_file(vid_url, video_path):
-                files_to_return.append(video_path)
+                logger.info(f"Downloading video to {video_path}")
+                if await _download_file(vid_url, video_path):
+                    files_to_return.append(video_path)
+                    vid_downloaded = True
+                    break
+
+            if not vid_downloaded:
+                logger.error(f"Could not download any quality for video index {i} under 50MB.")
 
     finally:
         session.close()
