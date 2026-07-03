@@ -10,11 +10,13 @@ from enum import Enum
 from pathlib import Path
 from typing import List, Optional
 
+from core.config import DOWNLOADS_DIR
 from core.logger import logger
 from tg_bot.utils.cookies_manager import cookies_manager
 
 from .gallery_dl import download_with_gallery_dl
-from .instagram import INSTAGRAM_REGEX, download_instagram_media
+from .instagram import download_instagram_media as download_instagram_with_instaloader
+from .instagram_web_parser import INSTAGRAM_REGEX, download_instagram_web_media
 from .spotify import SPOTIFY_TRACK_REGEX, TrackInfo, download_spotify_track, extract_track_id
 from .twitter import TWITTER_REGEX, download_twitter_media
 from .ytdlp import download_with_ytdlp
@@ -28,6 +30,8 @@ class DownloaderType(Enum):
     SPOTIFY = "spotify"
     TWITTER = "twitter"
     INSTAGRAM = "instagram"
+    INSTAGRAM_WEB = "instagram_web_parser"
+    INSTALOADER = "instaloader"
 
 
 @dataclass
@@ -82,12 +86,11 @@ class DownloaderManager:
         instagram_use_cookies = use_cookies or (bool(is_instagram) and await self._has_saved_cookies("instagram"))
         effective_use_cookies = instagram_use_cookies if is_instagram else use_cookies
 
-        # Попытка 1: Кастомные скачиватели
-        custom_result = await self._try_custom_downloaders(url, use_cookies=effective_use_cookies)
-        if custom_result.success:
-            return custom_result
-
         if is_instagram:
+            web_parser_result = await self._try_instagram_web_parser(url, use_cookies=effective_use_cookies)
+            if web_parser_result.success:
+                return web_parser_result
+
             ytdlp_result = await self._try_ytdlp(url, use_cookies=effective_use_cookies)
             if ytdlp_result.success:
                 return ytdlp_result
@@ -96,6 +99,10 @@ class DownloaderManager:
             if gallery_result.success:
                 return gallery_result
 
+            instaloader_result = await self._try_instaloader(url)
+            if instaloader_result.success:
+                return instaloader_result
+
             return DownloadResult(
                 success=False,
                 files=[],
@@ -103,6 +110,11 @@ class DownloaderManager:
                 error=self._instagram_error_message(use_cookies=effective_use_cookies),
                 downloader_used=None,
             )
+
+        # Попытка 1: Кастомные скачиватели
+        custom_result = await self._try_custom_downloaders(url, use_cookies=effective_use_cookies)
+        if custom_result.success:
+            return custom_result
 
         # Если это кастомная платформа и она не сработала - не пробуем другие методы
         if is_custom_platform:
@@ -128,38 +140,7 @@ class DownloaderManager:
     async def _try_custom_downloaders(self, url: str, use_cookies: bool = False) -> DownloadResult:
         """Пробует кастомные скачиватели."""
         try:
-            if INSTAGRAM_REGEX.match(url):
-                logger.info(f"Attempting Instagram download for: {url}")
-                shortcode, error = await download_instagram_media(url, use_cookies=use_cookies)
-
-                if shortcode and not error:
-                    from core.config import DOWNLOADS_DIR
-
-                    files = sorted([f for f in DOWNLOADS_DIR.iterdir() if f.name.startswith(shortcode)])
-
-                    # Извлекаем caption из txt файла
-                    caption = None
-                    media_files = []
-                    for file_path in files:
-                        if file_path.suffix.lower() == ".txt":
-                            caption = file_path.read_text(encoding="utf-8")
-                        else:
-                            media_files.append(file_path)
-
-                    self.download_attempts.append(f"Instagram: {'Success' if media_files else 'No media files found'}")
-
-                    if media_files:
-                        return DownloadResult(
-                            success=True,
-                            files=media_files,
-                            caption=caption,
-                            error=None,
-                            downloader_used=DownloaderType.INSTAGRAM,
-                        )
-
-                self.download_attempts.append(f"Instagram: {error or 'Unknown error'}")
-
-            elif TWITTER_REGEX.match(url):
+            if TWITTER_REGEX.match(url):
                 logger.info(f"Attempting Twitter download for: {url}")
                 img_files, vid_files, caption, error = await download_twitter_media(url)
 
@@ -233,6 +214,73 @@ class DownloaderManager:
             caption=None,
             error="\n".join(self.download_attempts),
             downloader_used=None,
+        )
+
+    async def _try_instagram_web_parser(self, url: str, use_cookies: bool = False) -> DownloadResult:
+        try:
+            logger.info(f"Attempting Instagram web parser download for: {url} (use_cookies={use_cookies})")
+            shortcode, error = await download_instagram_web_media(url, use_cookies=use_cookies)
+            if shortcode and not error:
+                result = self._collect_instagram_download(
+                    shortcode=shortcode,
+                    downloader_used=DownloaderType.INSTAGRAM_WEB,
+                    attempt_label="Instagram web parser",
+                )
+                if result.success:
+                    return result
+
+            self.download_attempts.append(f"Instagram web parser: {error or 'Unknown error'}")
+        except Exception as e:
+            logger.error(f"Instagram web parser error: {e}\n{traceback.format_exc()}")
+            self.download_attempts.append(f"Instagram web parser: Exception - {self._clean_error_text(str(e))}")
+
+        return DownloadResult(success=False, files=[], caption=None, error="instagram web parser failed")
+
+    async def _try_instaloader(self, url: str) -> DownloadResult:
+        try:
+            logger.info(f"Attempting Instaloader fallback for: {url}")
+            shortcode, error = await download_instagram_with_instaloader(url)
+            if shortcode and not error:
+                result = self._collect_instagram_download(
+                    shortcode=shortcode,
+                    downloader_used=DownloaderType.INSTALOADER,
+                    attempt_label="Instaloader",
+                )
+                if result.success:
+                    return result
+
+            self.download_attempts.append(f"Instaloader: {error or 'Unknown error'}")
+        except Exception as e:
+            logger.error(f"Instaloader fallback error: {e}\n{traceback.format_exc()}")
+            self.download_attempts.append(f"Instaloader: Exception - {self._clean_error_text(str(e))}")
+
+        return DownloadResult(success=False, files=[], caption=None, error="instaloader failed")
+
+    def _collect_instagram_download(
+        self,
+        *,
+        shortcode: str,
+        downloader_used: DownloaderType,
+        attempt_label: str,
+    ) -> DownloadResult:
+        files = sorted([file_path for file_path in DOWNLOADS_DIR.iterdir() if file_path.name.startswith(shortcode)])
+        caption = None
+        media_files = []
+
+        for file_path in files:
+            if file_path.suffix.lower() == ".txt":
+                caption = file_path.read_text(encoding="utf-8")
+            else:
+                media_files.append(file_path)
+
+        self.download_attempts.append(f"{attempt_label}: {'Success' if media_files else 'No media files found'}")
+
+        return DownloadResult(
+            success=bool(media_files),
+            files=media_files,
+            caption=caption,
+            error=None if media_files else f"{attempt_label} did not create media files",
+            downloader_used=downloader_used if media_files else None,
         )
 
     async def _has_saved_cookies(self, site_name: str) -> bool:
