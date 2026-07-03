@@ -245,6 +245,12 @@ class InstagramWebDownloader:
 
         raw_video_post: InstagramPost | None = None
         if html_text:
+            if self._is_instagram_error_page(html_text):
+                raise InstagramNoMediaError(
+                    "Instagram returned an error page for this post. "
+                    "It may be deleted, private, age-restricted, or unavailable for the current account."
+                )
+
             raw_video_post = self._post_from_raw_video_urls(html_text, shortcode, canonical_url)
             json_candidates = self._extract_json_candidates(html_text)
             for candidate in json_candidates:
@@ -284,6 +290,16 @@ class InstagramWebDownloader:
                 return post
 
         raise InstagramNoMediaError("No media metadata found on Instagram page.")
+
+    def _is_instagram_error_page(self, html_text: str) -> bool:
+        error_markers = (
+            "PolarisErrorRoot",
+            "PolarisErrorRoute",
+            "httpErrorPage",
+            '"pageID":"httpErrorPage"',
+            '"page_type":"MEDIA"',
+        )
+        return any(marker in html_text for marker in error_markers)
 
     def _safe_post_from_json(self, data: Any, shortcode: str, canonical_url: str) -> InstagramPost:
         try:
