@@ -362,6 +362,11 @@ class DownloaderManager:
     def _instagram_error_message(self, use_cookies: bool) -> str:
         attempts_summary = "\n".join(self.download_attempts)
         attempts_lower = attempts_summary.lower()
+        unavailable_markers = (
+            "returned an error page",
+            "unavailable for the current account",
+            "deleted, private, age-restricted",
+        )
         auth_markers = (
             "accounts/login",
             "login page",
@@ -372,6 +377,12 @@ class DownloaderManager:
             "unauthorized",
             "require_login",
         )
+
+        if any(marker in attempts_lower for marker in unavailable_markers):
+            return (
+                "Instagram: ❌ Пост недоступен для текущего аккаунта/cookies. "
+                "Проверь, открывается ли он в браузере под этим же аккаунтом."
+            )
 
         if any(marker in attempts_lower for marker in auth_markers):
             if use_cookies:
