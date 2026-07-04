@@ -90,6 +90,14 @@ class DownloaderManager:
             web_parser_result = await self._try_instagram_web_parser(url, use_cookies=effective_use_cookies)
             if web_parser_result.success:
                 return web_parser_result
+            if web_parser_result.error and self._is_terminal_instagram_error(web_parser_result.error):
+                return DownloadResult(
+                    success=False,
+                    files=[],
+                    caption=None,
+                    error=self._instagram_error_message(use_cookies=effective_use_cookies),
+                    downloader_used=None,
+                )
 
             ytdlp_result = await self._try_ytdlp(url, use_cookies=effective_use_cookies)
             if ytdlp_result.success:
@@ -217,6 +225,7 @@ class DownloaderManager:
         )
 
     async def _try_instagram_web_parser(self, url: str, use_cookies: bool = False) -> DownloadResult:
+        web_parser_error = None
         try:
             logger.info(f"Attempting Instagram web parser download for: {url} (use_cookies={use_cookies})")
             shortcode, error = await download_instagram_web_media(url, use_cookies=use_cookies)
@@ -229,12 +238,20 @@ class DownloaderManager:
                 if result.success:
                     return result
 
-            self.download_attempts.append(f"Instagram web parser: {error or 'Unknown error'}")
+            web_parser_error = error or "Unknown error"
+            self.download_attempts.append(f"Instagram web parser: {web_parser_error}")
         except Exception as e:
             logger.error(f"Instagram web parser error: {e}\n{traceback.format_exc()}")
-            self.download_attempts.append(f"Instagram web parser: Exception - {self._clean_error_text(str(e))}")
+            web_parser_error = f"Exception - {self._clean_error_text(str(e))}"
+            self.download_attempts.append(f"Instagram web parser: {web_parser_error}")
 
-        return DownloadResult(success=False, files=[], caption=None, error="instagram web parser failed")
+        return DownloadResult(
+            success=False,
+            files=[],
+            caption=None,
+            error=web_parser_error or "instagram web parser failed",
+            downloader_used=None,
+        )
 
     async def _try_instaloader(self, url: str) -> DownloadResult:
         try:
@@ -396,6 +413,16 @@ class DownloaderManager:
             )
 
         return attempts_summary
+
+    def _is_terminal_instagram_error(self, error: str) -> bool:
+        error_lower = error.lower()
+        terminal_markers = (
+            "returned an error page",
+            "unavailable for the current account",
+            "deleted, private, age-restricted",
+            "stories are not supported",
+        )
+        return any(marker in error_lower for marker in terminal_markers)
 
     async def _try_gallery_dl(self, url: str, use_cookies: bool = False) -> DownloadResult:
         """Пробует gallery-dl."""

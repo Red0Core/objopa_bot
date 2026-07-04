@@ -24,7 +24,7 @@ INSTAGRAM_APP_ID = "936619743392459"
 REQUEST_TIMEOUT = 20
 SHORTCODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".webm")
-REQUEST_RETRIES = 3
+REQUEST_RETRIES = 1
 CHROME_149_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 )
@@ -243,6 +243,7 @@ class InstagramWebDownloader:
         except InstagramDownloadError as exc:
             logger.debug(f"Instagram HTML page failed for {shortcode}: {exc}")
 
+        meta_post: InstagramPost | None = None
         raw_video_post: InstagramPost | None = None
         if html_text:
             if self._is_instagram_error_page(html_text):
@@ -251,11 +252,16 @@ class InstagramWebDownloader:
                     "It may be deleted, private, age-restricted, or unavailable for the current account."
                 )
 
+            meta_post = self._post_from_meta_tags(html_text, shortcode, canonical_url)
             raw_video_post = self._post_from_raw_video_urls(html_text, shortcode, canonical_url)
             json_candidates = self._extract_json_candidates(html_text)
             for candidate in json_candidates:
                 post = self._safe_post_from_json(candidate, shortcode, canonical_url)
                 if post.media:
+                    post = self._with_fallback_caption(post, meta_post.caption if meta_post else None)
+                    raw_video_post = self._with_fallback_caption(
+                        raw_video_post, meta_post.caption if meta_post else None
+                    )
                     if is_reel and any(media.is_video for media in post.media):
                         return post
                     if is_reel and raw_video_post.media and not any(media.is_video for media in post.media):
@@ -270,6 +276,7 @@ class InstagramWebDownloader:
         for candidate in json_candidates:
             post = self._safe_post_from_json(candidate, shortcode, canonical_url)
             if post.media:
+                post = self._with_fallback_caption(post, meta_post.caption if meta_post else None)
                 if is_reel and not any(media.is_video for media in post.media):
                     logger.debug(f"Ignoring image-only Instagram reel API metadata for {shortcode}")
                     continue
@@ -277,10 +284,10 @@ class InstagramWebDownloader:
 
         if raw_video_post and raw_video_post.media:
             logger.debug(f"Using raw Instagram video URL fallback for {shortcode}")
-            return raw_video_post
+            return self._with_fallback_caption(raw_video_post, meta_post.caption if meta_post else None)
 
         if html_text:
-            post = self._post_from_meta_tags(html_text, shortcode, canonical_url)
+            post = meta_post or self._post_from_meta_tags(html_text, shortcode, canonical_url)
             if post.media:
                 if is_reel and not any(media.is_video for media in post.media):
                     raise InstagramAuthRequiredError(
@@ -295,9 +302,7 @@ class InstagramWebDownloader:
         error_markers = (
             "PolarisErrorRoot",
             "PolarisErrorRoute",
-            "httpErrorPage",
             '"pageID":"httpErrorPage"',
-            '"page_type":"MEDIA"',
         )
         return any(marker in html_text for marker in error_markers)
 
@@ -716,7 +721,7 @@ class InstagramWebDownloader:
         caption: str | None = None
 
         for match in re.finditer(
-            r"<meta\s+[^>]*(?:property|name)=[\"']og:(video|image|description)[\"'][^>]*>",
+            r"<meta\s+[^>]*(?:property|name)=[\"'](?:og:|twitter:)?(video|image|description)[\"'][^>]*>",
             html_text,
             flags=re.IGNORECASE,
         ):
@@ -739,6 +744,17 @@ class InstagramWebDownloader:
             canonical_url=canonical_url,
             caption=caption,
             media=self._dedupe_media(media),
+        )
+
+    def _with_fallback_caption(self, post: InstagramPost, caption: str | None) -> InstagramPost:
+        if post.caption or not caption:
+            return post
+
+        return InstagramPost(
+            shortcode=post.shortcode,
+            canonical_url=post.canonical_url,
+            caption=caption,
+            media=post.media,
         )
 
     def _dedupe_media(self, media_items: list[InstagramMedia]) -> list[InstagramMedia]:
