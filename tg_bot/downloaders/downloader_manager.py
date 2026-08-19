@@ -90,14 +90,6 @@ class DownloaderManager:
             web_parser_result = await self._try_instagram_web_parser(url, use_cookies=effective_use_cookies)
             if web_parser_result.success:
                 return web_parser_result
-            if web_parser_result.error and self._is_terminal_instagram_error(web_parser_result.error):
-                return DownloadResult(
-                    success=False,
-                    files=[],
-                    caption=None,
-                    error=self._instagram_error_message(use_cookies=effective_use_cookies),
-                    downloader_used=None,
-                )
 
             ytdlp_result = await self._try_ytdlp(url, use_cookies=effective_use_cookies)
             if ytdlp_result.success:
