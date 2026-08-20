@@ -81,21 +81,10 @@ class CookiesManager:
             # Читаем файл
             cookies_content = cookies_path.read_text(encoding="utf-8")
             redis_client = await get_redis()
-            slots = [site_name.lower()]
-            if site_name.lower() == "instagram":
-                slots = CookiesManager._pool_slots("instagram")
-
-            target = slots[0]
-            for slot in slots:
-                existing = await redis_client.get(f"cookies:{slot}")
-                if existing == cookies_content:
-                    target = slot
-                    break
-                if existing is None:
-                    target = slot
-                    break
-            else:
-                target = slots[0]
+            # New upload replaces the primary slot. Extra pool slots stay until deleted.
+            target = site_name.lower()
+            if target.startswith("instagram") and ":" not in target:
+                target = "instagram"
 
             key = f"cookies:{target}"
             ttl = int(timedelta(days=CookiesManager.COOKIES_EXPIRE_DAYS).total_seconds())

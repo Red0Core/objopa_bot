@@ -233,42 +233,55 @@ class InstagramWebDownloader:
         download_path.mkdir(parents=True, exist_ok=True)
         cookie_path: Path | None = None
         self._cookie_slot = None
+        target = self._parse_target(url)
+
+        async def fetch(session: InstagramHttpSession, current: dict[str, str]) -> tuple[dict[str, str], InstagramPost]:
+            await self._warmup(session)
+            resolved = current
+            if resolved["kind"] == "unknown":
+                resolved = await self._resolve_share_target(session, url)
+            return resolved, await self._load_target_soft(session, resolved)
 
         try:
-            async with InstagramHttpSession(self.http_preset) as session:
-                await self._warmup(session)
-                target = self._parse_target(url)
-                if target["kind"] == "unknown":
-                    target = await self._resolve_share_target(session, url)
+            post: InstagramPost | None = None
+            stories_like = target["kind"] in {"story_item", "story_user", "highlight"}
 
-                post = await self._load_target(session, target)
-                needs_auth = self._needs_auth(target, post)
-                if needs_auth and use_cookies:
-                    from tg_bot.utils.cookies_manager import cookies_manager
+            if not stories_like:
+                async with InstagramHttpSession(self.http_preset) as guest:
+                    target, post = await fetch(guest, target)
+                    if post.media and not self._needs_auth(target, post):
+                        return await self._finalize_download(guest, post, download_path)
 
+            if use_cookies:
+                from tg_bot.utils.cookies_manager import cookies_manager
+
+                tried: set[str] = set()
+                while True:
                     pooled = await cookies_manager.get_pooled_cookies("instagram")
-                    if pooled:
-                        self._cookie_slot, cookie_path = pooled
-                        session.load_netscape_cookies(cookie_path)
-                        logger.info(f"Instagram web parser using cookie slot {self._cookie_slot}")
-                        post = await self._load_target(session, target)
-                        needs_auth = self._needs_auth(target, post)
+                    if not pooled:
+                        break
+                    slot, cookie_path = pooled
+                    if slot in tried:
+                        break
+                    tried.add(slot)
+                    self._cookie_slot = slot
+                    logger.info(f"Instagram web parser using cookie slot {slot}")
+                    try:
+                        async with InstagramHttpSession(self.http_preset) as authed:
+                            authed.load_netscape_cookies(cookie_path)
+                            target, post = await fetch(authed, target)
+                            if post.media and not self._needs_auth(target, post):
+                                return await self._finalize_download(authed, post, download_path)
+                    except InstagramRateLimitedError:
+                        await cookies_manager.mark_cookie_cooldown(slot)
+                        continue
+                    await cookies_manager.mark_cookie_cooldown(slot, seconds=120)
 
-                if not post.media:
-                    if needs_auth:
-                        raise InstagramAuthRequiredError(
-                            "Instagram не отдал медиа без авторизации. "
-                            "Загрузи cookies через /set_cookies и повтори /d <url>."
-                        )
-                    raise InstagramNoMediaError("Instagram did not expose downloadable media for this post.")
-
-                self._cleanup_old_files(download_path, post.shortcode)
-                downloaded = await self._download_media_files(session, post, download_path)
-                if not downloaded:
-                    raise InstagramNoMediaError("Instagram media links were found, but files were not downloaded.")
-                if post.caption:
-                    (download_path / f"{post.shortcode}.txt").write_text(post.caption, encoding="utf-8")
-                return post
+            if post is None or not post.media:
+                raise InstagramAuthRequiredError(
+                    "Instagram не отдал медиа без авторизации. Загрузи cookies через /set_cookies и повтори /d <url>."
+                )
+            raise InstagramNoMediaError("Instagram did not expose downloadable media for this post.")
         except (InstagramAuthRequiredError, InstagramRateLimitedError) as exc:
             if self._cookie_slot and isinstance(exc, InstagramRateLimitedError):
                 from tg_bot.utils.cookies_manager import cookies_manager
@@ -280,8 +293,19 @@ class InstagramWebDownloader:
                 await cookies_manager.mark_cookie_cooldown(self._cookie_slot)
             raise
         finally:
-            if cookie_path and cookie_path.exists():
+            if cookie_path and cookie_path.exists() and cookie_path.name.startswith("instagram"):
                 cookie_path.unlink(missing_ok=True)
+
+    async def _finalize_download(
+        self, session: InstagramHttpSession, post: InstagramPost, download_path: Path
+    ) -> InstagramPost:
+        self._cleanup_old_files(download_path, post.shortcode)
+        downloaded = await self._download_media_files(session, post, download_path)
+        if not downloaded:
+            raise InstagramNoMediaError("Instagram media links were found, but files were not downloaded.")
+        if post.caption:
+            (download_path / f"{post.shortcode}.txt").write_text(post.caption, encoding="utf-8")
+        return post
 
     def _parse_target(self, url: str) -> dict[str, str]:
         highlight = STORIES_HIGHLIGHT_RE.search(url)
@@ -331,6 +355,18 @@ class InstagramWebDownloader:
             await session.get("https://www.instagram.com/", headers=self._html_headers())
         except Exception as exc:
             logger.debug(f"Instagram warmup failed: {exc}")
+
+    async def _load_target_soft(self, session: InstagramHttpSession, target: dict[str, str]) -> InstagramPost:
+        try:
+            return await self._load_target(session, target)
+        except (InstagramNoMediaError, InstagramAuthRequiredError):
+            shortcode = target.get("shortcode") or target.get("id") or target.get("user") or "ig"
+            return InstagramPost(
+                shortcode=shortcode,
+                canonical_url=target.get("url") or "",
+                caption=None,
+                media=[],
+            )
 
     async def _load_target(self, session: InstagramHttpSession, target: dict[str, str]) -> InstagramPost:
         if target["kind"] in {"story_item", "story_user", "highlight"}:
@@ -472,10 +508,8 @@ class InstagramWebDownloader:
             html_text = None
         if html_text:
             if self._is_instagram_error_page(html_text):
-                raise InstagramNoMediaError(
-                    "Instagram returned an error page for this post. "
-                    "It may be deleted, private, age-restricted, or unavailable for the current account."
-                )
+                logger.debug(f"Instagram error page for {shortcode}, treating as auth-required")
+                return empty
             meta_post = self._post_from_meta_tags(html_text, shortcode, canonical_url)
             raw_video_post = self._post_from_raw_video_urls(html_text, shortcode, canonical_url)
             for candidate in self._extract_json_candidates(html_text):
