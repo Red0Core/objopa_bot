@@ -86,21 +86,8 @@ class DownloaderManager:
                     downloader_used=None,
                 )
 
-            ytdlp_guest = await self._try_ytdlp(url, use_cookies=False)
-            if ytdlp_guest.success:
-                return ytdlp_guest
-
-            cookies_already_used = effective_use_cookies
-            if not cookies_already_used:
-                gallery_result = await self._try_gallery_dl(url, use_cookies=False)
-                if gallery_result.success:
-                    return gallery_result
-                instaloader_result = await self._try_instaloader(url)
-                if instaloader_result.success:
-                    return instaloader_result
-            else:
-                logger.warning("Skipping Instagram cookie cascade after web parser used cookies")
-
+            # Never let yt-dlp guest hit Instagram: it downloads the login wall
+            # ("Create an account or log in") and sends it as media.
             return DownloadResult(
                 success=False,
                 files=[],

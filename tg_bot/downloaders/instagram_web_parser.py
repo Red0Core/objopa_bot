@@ -6,7 +6,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import httpcloak
 
@@ -86,6 +86,7 @@ class InstagramHttpResponse:
 
 class InstagramHttpSession:
     def __init__(self, preset: str = INSTAGRAM_ANDROID_HTTP_PRESET):
+        self.authed = False
         self._session = httpcloak.Session(
             preset=preset,
             timeout=REQUEST_TIMEOUT,
@@ -183,6 +184,7 @@ class InstagramHttpSession:
             domain, _, path, secure, _, name, value = parts[:7]
             if name not in SESSION_COOKIE_NAMES:
                 continue
+            value = unquote(value.strip().strip('"'))
             try:
                 self._session.set_cookie(
                     name,
@@ -194,6 +196,16 @@ class InstagramHttpSession:
                 )
             except Exception as exc:
                 logger.debug(f"Failed to load Instagram cookie {name!r}: {exc}")
+        self.authed = True
+
+    def csrf_token(self) -> str | None:
+        try:
+            token = self._session.get_cookie("csrftoken")
+        except Exception:
+            return None
+        if isinstance(token, str) and token:
+            return token
+        return None
 
     def _normalize_response(self, response: Any) -> InstagramHttpResponse:
         headers = self._normalize_headers(getattr(response, "headers", {}) or {})
@@ -412,7 +424,7 @@ class InstagramWebDownloader:
         url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
         try:
             response = await self._request(
-                session, url, headers=self._json_headers(f"https://www.instagram.com/{username}/")
+                session, url, headers=self._json_headers(f"https://www.instagram.com/{username}/", session)
             )
         except InstagramDownloadError as exc:
             logger.debug(f"web_profile_info failed for {username}: {exc}")
@@ -432,7 +444,7 @@ class InstagramWebDownloader:
             f"https://i.instagram.com/api/v1/feed/reels_media/?reel_ids={reel_ids}",
         )
         for api_url in urls:
-            headers = self._json_headers(referer)
+            headers = self._json_headers(referer, session)
             if "i.instagram.com" in api_url:
                 headers = self._android_app_headers(referer)
             try:
@@ -465,26 +477,45 @@ class InstagramWebDownloader:
     async def _load_post(self, session: InstagramHttpSession, shortcode: str, canonical_url: str) -> InstagramPost:
         is_reel = "/reel/" in canonical_url
         empty = InstagramPost(shortcode=shortcode, canonical_url=canonical_url, caption=None, media=[])
+        authed = bool(getattr(session, "authed", False))
 
-        for embed_path in (
-            f"https://www.instagram.com/reel/{shortcode}/embed/captioned/",
-            f"https://www.instagram.com/p/{shortcode}/embed/captioned/",
-            f"https://www.instagram.com/p/{shortcode}/embed/",
-        ):
-            try:
-                html_text = (await self._request(session, embed_path)).text
-            except InstagramDownloadError as exc:
-                logger.debug(f"Instagram embed failed {embed_path}: {exc}")
-                continue
-            post = self._post_from_embed(html_text, shortcode, canonical_url)
-            if self._usable_post(post, is_reel):
-                return post
+        if authed:
+            api_post = await self._load_post_from_api(session, shortcode, canonical_url)
+            if self._usable_post(api_post, is_reel):
+                return api_post
 
+        if not authed:
+            for embed_path in (
+                f"https://www.instagram.com/reel/{shortcode}/embed/captioned/",
+                f"https://www.instagram.com/p/{shortcode}/embed/captioned/",
+                f"https://www.instagram.com/p/{shortcode}/embed/",
+            ):
+                try:
+                    html_text = (await self._request(session, embed_path)).text
+                except InstagramDownloadError as exc:
+                    logger.debug(f"Instagram embed failed {embed_path}: {exc}")
+                    continue
+                if self._is_login_wall(html_text):
+                    continue
+                post = self._post_from_embed(html_text, shortcode, canonical_url)
+                if self._usable_post(post, is_reel):
+                    return post
+
+            api_post = await self._load_post_from_api(session, shortcode, canonical_url)
+            if self._usable_post(api_post, is_reel):
+                return api_post
+
+        return empty
+
+    async def _load_post_from_api(
+        self, session: InstagramHttpSession, shortcode: str, canonical_url: str
+    ) -> InstagramPost:
+        empty = InstagramPost(shortcode=shortcode, canonical_url=canonical_url, caption=None, media=[])
         media_id = self._shortcode_to_media_id(shortcode)
         for api_url, headers in (
             (
                 f"https://www.instagram.com/api/v1/media/{media_id}/info/",
-                self._json_headers(canonical_url),
+                self._json_headers(canonical_url, session),
             ),
             (
                 f"https://i.instagram.com/api/v1/media/{media_id}/info/",
@@ -498,30 +529,8 @@ class InstagramWebDownloader:
                 continue
             parsed = self._try_load_json(response.text)
             post = self._safe_post_from_json(parsed, shortcode, canonical_url)
-            if self._usable_post(post, is_reel):
+            if post.media:
                 return post
-
-        try:
-            html_text = await self._load_html(session, canonical_url)
-        except InstagramDownloadError as exc:
-            logger.debug(f"Instagram HTML page failed for {shortcode}: {exc}")
-            html_text = None
-        if html_text:
-            if self._is_instagram_error_page(html_text):
-                logger.debug(f"Instagram error page for {shortcode}, treating as auth-required")
-                return empty
-            meta_post = self._post_from_meta_tags(html_text, shortcode, canonical_url)
-            raw_video_post = self._post_from_raw_video_urls(html_text, shortcode, canonical_url)
-            for candidate in self._extract_json_candidates(html_text):
-                post = self._safe_post_from_json(candidate, shortcode, canonical_url)
-                post = self._with_fallback_caption(post, meta_post.caption)
-                if self._usable_post(post, is_reel):
-                    return post
-            if self._usable_post(raw_video_post, is_reel):
-                return self._with_fallback_caption(raw_video_post, meta_post.caption)
-            if self._usable_post(meta_post, is_reel):
-                return meta_post
-
         return empty
 
     def _usable_post(self, post: InstagramPost | None, is_reel: bool) -> bool:
@@ -532,6 +541,8 @@ class InstagramWebDownloader:
         return True
 
     def _post_from_embed(self, html_text: str, shortcode: str, canonical_url: str) -> InstagramPost:
+        if self._is_login_wall(html_text):
+            return InstagramPost(shortcode=shortcode, canonical_url=canonical_url, caption=None, media=[])
         raw = self._post_from_raw_video_urls(html_text, shortcode, canonical_url)
         meta = self._post_from_meta_tags(html_text, shortcode, canonical_url)
         json_post = InstagramPost(shortcode=shortcode, canonical_url=canonical_url, caption=None, media=[])
@@ -545,12 +556,21 @@ class InstagramWebDownloader:
         return InstagramPost(shortcode=shortcode, canonical_url=canonical_url, caption=caption, media=media)
 
     def _is_instagram_error_page(self, html_text: str) -> bool:
-        error_markers = (
+        return self._is_login_wall(html_text)
+
+    def _is_login_wall(self, html_text: str) -> bool:
+        text = html_text or ""
+        lowered = text.lower()
+        markers = (
             "PolarisErrorRoot",
             "PolarisErrorRoute",
             '"pageID":"httpErrorPage"',
+            "loginPage",
+            "Create an account",
+            "accounts/login",
+            "log in to instagram",
         )
-        return any(marker in html_text for marker in error_markers)
+        return any(marker.lower() in lowered or marker in text for marker in markers)
 
     def _safe_post_from_json(self, data: Any, shortcode: str, canonical_url: str) -> InstagramPost:
         try:
@@ -634,14 +654,18 @@ class InstagramWebDownloader:
             "Upgrade-Insecure-Requests": "1",
         }
 
-    def _json_headers(self, referer: str) -> dict[str, str]:
-        return {
+    def _json_headers(self, referer: str, session: InstagramHttpSession | None = None) -> dict[str, str]:
+        headers = {
             "Accept": "application/json,text/plain,*/*",
             "Referer": referer,
             "X-IG-App-ID": INSTAGRAM_WEB_APP_ID,
             "X-ASBD-ID": "129477",
             "X-Requested-With": "XMLHttpRequest",
         }
+        token = session.csrf_token() if session is not None else None
+        if token:
+            headers["X-CSRFToken"] = token
+        return headers
 
     def _android_app_headers(self, referer: str) -> dict[str, str]:
         return {
