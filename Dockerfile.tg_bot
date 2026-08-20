@@ -1,16 +1,29 @@
 FROM python:3.13.5-slim
 WORKDIR /app
 
-# Копируем код
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONMALLOC=malloc \
+    MALLOC_ARENA_MAX=2 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    MAX_CONCURRENT_DOWNLOADS=1 \
+    MAX_GPT_SESSIONS=8 \
+    GPT_SESSION_TIMEOUT_SEC=1200 \
+    RSS_TRIM_THRESHOLD_MB=280 \
+    FFMPEG_MEMORY_MB=256
+
 COPY tg_bot/ ./tg_bot
 COPY core/ ./core
 
-# Устанавливаем зависимости
-RUN pip install -r tg_bot/requirements.txt uvloop
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install -r tg_bot/requirements.txt uvloop
 
-# Переменная окружения, передаётся через docker-compose
 ARG INSTAGRAM_USERNAME
 ENV INSTAGRAM_USERNAME=${INSTAGRAM_USERNAME}
 
-# CMD
 CMD ["python", "-m", "tg_bot.main"]

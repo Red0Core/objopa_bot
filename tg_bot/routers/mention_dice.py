@@ -14,7 +14,21 @@ from tg_bot.services.gpt import (
 )
 
 router = Router()
-AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY)
+_ai_client: GeminiModel | None = None
+
+
+def get_ai_client() -> GeminiModel:
+    global _ai_client
+    if _ai_client is None:
+        _ai_client = GeminiModel(api_key=GEMINI_API_KEY)
+    return _ai_client
+
+
+# Back-compat for day_tracker which imported AI_CLIENT.
+def __getattr__(name: str):
+    if name == "AI_CLIENT":
+        return get_ai_client()
+    raise AttributeError(name)
 
 
 @router.message(Command("dice"))
@@ -55,7 +69,7 @@ async def handle_mention(message: Message, bot: Bot):
 
     try:
         # Генерируем объяснение через OpenAI API
-        text = await AI_CLIENT.get_response(action_prompt, system_prompt)
+        text = await get_ai_client().get_response(action_prompt, system_prompt)
         for chunk in get_gpt_formatted_chunks(text):
             await message.reply(chunk, parse_mode="MarkdownV2")
     except APIKeyError:

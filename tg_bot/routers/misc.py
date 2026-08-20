@@ -1,6 +1,5 @@
 from typing import cast
 
-import wolframalpha  # type: ignore
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import (
@@ -9,7 +8,6 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-from sympy import N, sympify
 
 from core.config import GIFS_ID, WOLFRAMALPHA_TOKEN
 from core.logger import logger
@@ -67,9 +65,13 @@ async def calculator_wolframaplha_math(message: Message):
     arr = cast(str, message.text).split(maxsplit=1)
     if len(arr) == 2:
         try:
+            from sympy import N, sympify
+
             result = float(N(sympify(arr[1], evaluate=True)))
             await message.answer(str(result))
         except Exception:
+            import wolframalpha  # type: ignore
+
             client = wolframalpha.Client(WOLFRAMALPHA_TOKEN)
             res = await client.aquery(arr[1])  # type: ignore
             await message.answer(next(res.results).text)

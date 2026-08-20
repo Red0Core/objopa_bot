@@ -1,7 +1,7 @@
 from telegramify_markdown import markdownify
 
 from core.logger import logger
-from tg_bot.services.gpt import get_gpt_formatted_chunks, split_message_by_paragraphs
+from tg_bot.utils.text_split import get_gpt_formatted_chunks, split_message_by_paragraphs
 
 
 class CaptionFormatter:

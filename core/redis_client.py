@@ -7,12 +7,13 @@ from redis.exceptions import BusyLoadingError, ConnectionError, TimeoutError
 
 from core.config import REDIS_HOST, REDIS_PASSWORD, REDIS_PORT, REDIS_SSL
 from core.logger import logger
+from core.memory import REDIS_MAX_CONNECTIONS
 
 _redis: Optional[Redis] = None
 
 
 def _make_redis() -> Redis:
-    """Создаёт новый Redis-инстанс с retry/backoff настройками."""
+    """Создаёт новый Redis-инстанс с retry/backoff и ограниченным пулом."""
     return Redis(
         host=REDIS_HOST,
         port=REDIS_PORT,
@@ -21,6 +22,11 @@ def _make_redis() -> Redis:
         retry=Retry(backoff=ExponentialBackoff(), retries=5),
         retry_on_error=[ConnectionError, TimeoutError, BusyLoadingError],
         ssl=REDIS_SSL,
+        max_connections=REDIS_MAX_CONNECTIONS,
+        socket_keepalive=True,
+        health_check_interval=30,
+        socket_connect_timeout=5,
+        socket_timeout=10,
     )
 
 
@@ -43,7 +49,6 @@ async def get_redis() -> Redis:
         finally:
             _redis.connection_pool.disconnect()
         _redis = _make_redis()
-        # гарантируем соединение
         await _redis.ping()
         logger.info("Redis reconnected successfully.")
 

@@ -1,4 +1,3 @@
-import asyncio
 import traceback
 
 import telegramify_markdown
@@ -6,7 +5,7 @@ from aiogram import Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import FSInputFile, Message
 
-from core.config import COOKIES_ALLOW_USERS_ID, DOWNLOADS_DIR, STORAGE_DIR
+from core.config import COOKIES_ALLOW_USERS_ID, STORAGE_DIR
 from core.logger import logger
 from core.redis_client import Redis, get_redis
 from tg_bot.downloaders import (
@@ -16,7 +15,6 @@ from tg_bot.downloaders import (
 )
 from tg_bot.utils.cookies_manager import cookies_manager
 from tg_bot.utils.media_sender import media_sender
-from tg_bot.utils.video_utils import video_processor
 
 router = Router()
 
@@ -33,7 +31,7 @@ async def process_instagram(message: Message, url: str) -> bool:
             return False
 
         # Используем новый простой sender
-        await media_sender.send(message, result.files, result.caption, optimize_video=True)
+        await media_sender.send(message, result.files, result.caption)
         await status_message.delete()
         return True
 
@@ -105,7 +103,7 @@ async def universal_download_handler(message: Message, command: CommandObject):
                 f"Media downloaded successfully using {result.downloader_used.value if result.downloader_used else 'unknown'} from: {url}"
             )
 
-        await media_sender.send(message, result.files, result.caption, optimize_video=True)
+        await media_sender.send(message, result.files, result.caption)
         await status_message.delete()
 
     except Exception as e:
@@ -252,245 +250,11 @@ async def downloader_status_handler(message: Message):
         else:
             status_report += "\n📁 **Папка загрузок:** ❌ Не найдена\n"
 
-        # Проверяем FFmpeg
-        try:
-            process = await asyncio.create_subprocess_exec(
-                "ffmpeg", "-version", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await process.communicate()
-
-            if process.returncode == 0:
-                # Извлекаем версию FFmpeg
-                output = stdout.decode()
-                version_line = output.split("\n")[0]
-                status_report += f"🎬 **FFmpeg:** ✅ {version_line}\n"
-            else:
-                status_report += "🎬 **FFmpeg:** ❌ Не работает\n"
-        except FileNotFoundError:
-            status_report += "🎬 **FFmpeg:** ❌ Не установлен\n"
-        except Exception as e:
-            status_report += f"🎬 **FFmpeg:** ❌ Ошибка проверки - {str(e)}\n"
-
         await message.reply(telegramify_markdown.markdownify(status_report), parse_mode="MarkdownV2")
 
     except Exception as e:
         logger.error(f"Error checking downloader status: {e}")
         await message.reply(f"❌ Ошибка проверки статуса: {str(e)}")
-
-
-@router.message(Command("video_test"))
-async def video_test_handler(message: Message, command: CommandObject):
-    """Тестирует оптимизацию видео файла."""
-    if not command.args:
-        await message.reply(
-            telegramify_markdown.markdownify(
-                "🎬 **Тест оптимизации видео**\n\n"
-                "Использование: `/video_test <путь_к_видео_файлу>`\n\n"
-                "Команда проверит видео на наличие faststart и при необходимости оптимизирует его."
-            ),
-            parse_mode="MarkdownV2",
-        )
-        return
-
-    video_name = command.args.strip()
-    video_path = DOWNLOADS_DIR / video_name
-
-    if not video_path.exists():
-        await message.reply(f"❌ Файл `{video_name}` не найден в папке загрузок.")
-        return
-
-    if video_path.suffix.lower() not in (".mp4", ".mov", ".mkv", ".webm"):
-        await message.reply(f"❌ Файл `{video_name}` не является видео файлом.")
-        return
-
-    status_message = await message.answer("🔍 Анализирую видео файл...")
-
-    try:
-        # Проверяем текущее состояние
-        has_faststart = await video_processor.check_faststart(video_path)
-        file_size_mb = video_path.stat().st_size / (1024 * 1024)
-
-        report = f"🎬 **Анализ видео:** `{video_name}`\n\n"
-        report += f"📊 **Размер:** {file_size_mb:.1f} MB\n"
-        report += f"⚡ **Faststart:** {'✅ Включен' if has_faststart else '❌ Выключен'}\n"
-        report += f"📱 **Совместимость с Telegram:** {'✅ Готов' if has_faststart and file_size_mb <= 50 else '⚠️ Требует оптимизации'}\n\n"
-
-        if has_faststart and file_size_mb <= 50:
-            report += "✅ Видео уже оптимизировано для Telegram!"
-            await status_message.edit_text(telegramify_markdown.markdownify(report), parse_mode="MarkdownV2")
-        else:
-            report += "🔧 Запускаю оптимизацию...\n"
-            await status_message.edit_text(telegramify_markdown.markdownify(report), parse_mode="MarkdownV2")
-
-            # Оптимизируем видео
-            success, optimized_path, error = await video_processor.optimize_video_for_telegram(
-                video_path, max_size_mb=50
-            )
-
-            if success and optimized_path:
-                new_size_mb = optimized_path.stat().st_size / (1024 * 1024)
-                final_report = report + "✅ **Оптимизация завершена!**\n"
-                final_report += f"📊 **Новый размер:** {new_size_mb:.1f} MB\n"
-                final_report += f"💾 **Экономия:** {file_size_mb - new_size_mb:.1f} MB\n"
-
-                if error:
-                    final_report += f"⚠️ **Предупреждение:** {error}\n"
-
-                await status_message.edit_text(telegramify_markdown.markdownify(final_report), parse_mode="MarkdownV2")
-
-                # Отправляем оптимизированное видео как пример
-                await message.reply_video(
-                    FSInputFile(optimized_path),
-                    supports_streaming=True,
-                    caption="🎬 Оптимизированное видео (для демонстрации)",
-                )
-
-                # Очищаем временный файл если он отличается от оригинала
-                if optimized_path != video_path:
-                    video_processor.cleanup_temp_files(video_path, optimized_path)
-            else:
-                error_report = report + f"❌ **Ошибка оптимизации:** {error}\n"
-                await status_message.edit_text(telegramify_markdown.markdownify(error_report), parse_mode="MarkdownV2")
-
-    except Exception as e:
-        logger.error(f"Error in video test: {e}")
-        await status_message.edit_text(f"❌ Ошибка анализа видео: {str(e)}")
-
-
-@router.message(Command("video_stats"))
-async def video_stats_handler(message: Message):
-    """Показывает статистику системы оптимизации видео."""
-    try:
-        stats = video_processor.get_optimization_stats()
-
-        report = "📊 **Статистика видео процессора**\n\n"
-
-        # Кэш
-        report += f"💾 **Кэш информации:** {stats['cache_size']} файлов\n\n"
-
-        # Конфигурация
-        config = stats["config"]
-        report += "⚙️ **Настройки:**\n"
-        report += f"• Лимит размера: {config['max_size_mb']} MB\n"
-        report += f"• Порог малых файлов: {config['small_file_threshold']} MB\n"
-        report += f"• Preset сжатия: {config['compression_preset']}\n\n"
-
-        # Профили качества
-        report += f"🎯 **Доступные профили:** {', '.join(stats['quality_profiles'])}\n\n"
-
-        # Действия
-        report += "🔧 **Команды управления:**\n"
-        report += "• `/video_clear_cache` - очистить кэш\n"
-        report += "• `/video_test <файл>` - тестировать файл\n"
-        report += "• `/d_status` - статус системы\n"
-
-        await message.reply(telegramify_markdown.markdownify(report), parse_mode="MarkdownV2")
-
-    except Exception as e:
-        logger.error(f"Error getting video stats: {e}")
-        await message.reply(f"❌ Ошибка получения статистики: {str(e)}")
-
-
-@router.message(Command("video_clear_cache"))
-async def video_clear_cache_handler(message: Message):
-    """Очищает кэш информации о видео файлах."""
-    try:
-        old_size = len(video_processor._video_info_cache)
-        video_processor.clear_cache()
-
-        await message.reply(f"✅ Кэш очищен. Удалено записей: {old_size}")
-
-    except Exception as e:
-        logger.error(f"Error clearing video cache: {e}")
-        await message.reply(f"❌ Ошибка очистки кэша: {str(e)}")
-
-
-@router.message(Command("batch_optimize"))
-async def batch_optimize_handler(message: Message, command: CommandObject):
-    """Пакетная оптимизация видео файлов в папке загрузок."""
-    if not command.args:
-        await message.reply(
-            telegramify_markdown.markdownify(
-                "📦 **Пакетная оптимизация видео**\n\n"
-                "Использование: `/batch_optimize <маска_файлов>`\n\n"
-                "Примеры:\n"
-                "• `/batch_optimize *.mp4` - все MP4 файлы\n"
-                "• `/batch_optimize video_*` - файлы начинающиеся с 'video_'\n"
-                "• `/batch_optimize all` - все видео файлы\n\n"
-                "⚠️ Операция может занять много времени!"
-            ),
-            parse_mode="MarkdownV2",
-        )
-        return
-
-    pattern = command.args.strip()
-    status_message = await message.answer("🔍 Поиск видео файлов...")
-
-    try:
-        # Находим файлы по паттерну
-        video_files = []
-
-        if pattern.lower() == "all":
-            # Все видео файлы
-            for ext in [".mp4", ".mov", ".mkv", ".webm", ".avi"]:
-                video_files.extend(DOWNLOADS_DIR.glob(f"*{ext}"))
-        else:
-            # По паттерну
-            video_files = list(DOWNLOADS_DIR.glob(pattern))
-            # Фильтруем только видео
-            video_files = [f for f in video_files if f.suffix.lower() in [".mp4", ".mov", ".mkv", ".webm", ".avi"]]
-
-        if not video_files:
-            await status_message.edit_text(f"❌ Видео файлы по маске '{pattern}' не найдены.")
-            return
-
-        await status_message.edit_text(f"📋 Найдено {len(video_files)} файлов. Начинаю оптимизацию...")
-
-        # Оптимизируем с ограничением на 2 одновременных процесса
-        results = await video_processor.optimize_multiple_videos(video_files, max_concurrent=2)
-
-        # Подсчитываем статистику
-        successful = 0
-        failed = 0
-        total_original_size = 0
-        total_optimized_size = 0
-
-        for original_path, success, optimized_path, error in results:
-            if error:
-                logger.warning(f"Batch optimize error for {original_path}: {error}")
-            if success and optimized_path:
-                successful += 1
-                total_original_size += original_path.stat().st_size
-                total_optimized_size += optimized_path.stat().st_size
-
-                # Очищаем временные файлы
-                if optimized_path != original_path:
-                    video_processor.cleanup_temp_files(original_path, optimized_path)
-            else:
-                failed += 1
-
-        # Формируем отчет
-        total_original_mb = total_original_size / (1024 * 1024)
-        total_optimized_mb = total_optimized_size / (1024 * 1024)
-        saved_mb = total_original_mb - total_optimized_mb
-        saved_percent = (saved_mb / total_original_mb * 100) if total_original_mb > 0 else 0
-
-        report = "📊 **Результаты пакетной оптимизации:**\n\n"
-        report += f"✅ Успешно: {successful}\n"
-        report += f"❌ Ошибки: {failed}\n"
-        report += f"📦 Всего файлов: {len(video_files)}\n\n"
-
-        if successful > 0:
-            report += "💾 **Экономия места:**\n"
-            report += f"• Было: {total_original_mb:.1f} MB\n"
-            report += f"• Стало: {total_optimized_mb:.1f} MB\n"
-            report += f"• Сэкономлено: {saved_mb:.1f} MB ({saved_percent:.1f}%)\n"
-
-        await status_message.edit_text(telegramify_markdown.markdownify(report), parse_mode="MarkdownV2")
-
-    except Exception as e:
-        logger.error(f"Error in batch optimization: {e}")
-        await status_message.edit_text(f"❌ Ошибка пакетной оптимизации: {str(e)}")
 
 
 @router.message(Command("d_cookies"))
@@ -515,7 +279,7 @@ async def download_with_cookies_handler(message: Message, command: CommandObject
             return
 
         # Отправляем медиа
-        await media_sender.send(message, result.files, result.caption, optimize_video=True)
+        await media_sender.send(message, result.files, result.caption)
         await status_message.delete()
 
     except Exception as e:

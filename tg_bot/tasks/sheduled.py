@@ -7,6 +7,7 @@ import tg_bot.redis_workers.base_notifications as base_notifications
 import tg_bot.routers.day_tracker as day_tracker
 from core.config import BACKEND_ROUTE, DOWNLOADS_DIR, MAIN_ACC, OBZHORA_CHAT_ID
 from core.logger import logger
+from core.memory import DOWNLOAD_TTL_SEC, trim_memory
 from tg_bot.redis_workers import image_selection
 from tg_bot.services.horoscope_mail_ru import format_horoscope, get_horoscope_mail_ru
 
@@ -56,16 +57,37 @@ async def send_daily_tracker_messages(bot):
 
 @daily_schedule(hour=3, minute=0)
 async def cleanup_downloads(bot):
-    removed = 0
-    for file in DOWNLOADS_DIR.glob("*"):
-        if file.is_file():
-            try:
-                file.unlink()
-                removed += 1
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"Failed to delete {file}: {e}")
+    removed = _purge_stale_downloads(max_age_sec=0)
     if removed:
         logger.info(f"Cleaned {removed} files from downloads")
+    trim_memory()
+
+
+def _purge_stale_downloads(max_age_sec: int) -> int:
+    import time
+
+    removed = 0
+    now = time.time()
+    for file in DOWNLOADS_DIR.glob("*"):
+        if not file.is_file():
+            continue
+        try:
+            if max_age_sec and (now - file.stat().st_mtime) < max_age_sec:
+                continue
+            file.unlink()
+            removed += 1
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Failed to delete {file}: {e}")
+    return removed
+
+
+async def purge_downloads_loop(bot):
+    while True:
+        await asyncio.sleep(1800)
+        removed = _purge_stale_downloads(DOWNLOAD_TTL_SEC)
+        if removed:
+            logger.info(f"Purged {removed} stale download files older than {DOWNLOAD_TTL_SEC}s")
+        trim_memory()
 
 
 async def check_cbr_update(bot):
@@ -142,6 +164,7 @@ async def on_startup(bot):
         # send_daily_horoscope_for_brothers(bot),
         send_daily_tracker_messages(bot),
         cleanup_downloads(bot),
+        purge_downloads_loop(bot),
         check_cbr_update(bot),
         base_notifications.poll_redis(bot),
         image_selection.poll_image_selection(bot),

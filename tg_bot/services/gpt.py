@@ -4,168 +4,13 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-
-import openai
-import telegramify_markdown
-from google import genai
-from google.genai import types
-from google.genai.types import GenerateContentConfig, GoogleSearch, Tool
+from typing import Any
 
 from core.logger import logger
+from tg_bot.utils.text_split import get_gpt_formatted_chunks, split_message_by_paragraphs, split_text_smart
 
-
-def split_text_smart(text: str, max_length: int) -> list[str]:
-    """
-    Разделяет текст на части, не превышающие max_length символов.
-    Пытается сохранить целостность слов и предложений.
-
-    Args:
-        text: Текст для разделения
-        max_length: Максимальная длина одной части
-
-    Returns:
-        Список частей текста
-    """
-    if not text or max_length <= 0:
-        return []
-
-    if len(text) <= max_length:
-        return [text]
-
-    parts = []
-    current_pos = 0
-    text_length = len(text)
-
-    while current_pos < text_length:
-        # Определяем границы текущего фрагмента
-        end_pos = min(current_pos + max_length, text_length)
-
-        # Если это последний фрагмент, добавляем весь остаток
-        if end_pos == text_length:
-            parts.append(text[current_pos:])
-            break
-
-        # Ищем оптимальное место для разрыва
-        fragment = text[current_pos:end_pos]
-        split_position = _find_best_split_position(fragment)
-
-        if split_position > 0:
-            # Найдено хорошее место для разрыва
-            parts.append(text[current_pos : current_pos + split_position])
-            current_pos += split_position
-        else:
-            # Принудительный разрыв по максимальной длине
-            parts.append(text[current_pos:end_pos])
-            current_pos = end_pos
-
-    return [part for part in parts if part.strip()]
-
-
-def _find_best_split_position(text: str) -> int:
-    """
-    Находит лучшую позицию для разрыва текста.
-    Приоритет: перенос строки > точка + пробел > пробел
-
-    Returns:
-        Позиция для разрыва (0 если не найдена)
-    """
-    # Ищем перенос строки
-    newline_pos = text.rfind("\n")
-    if newline_pos != -1:
-        return newline_pos + 1
-
-    # Ищем точку с последующим пробелом (конец предложения)
-    for i in range(len(text) - 2, -1, -1):
-        if text[i] == "." and i + 1 < len(text) and text[i + 1] == " ":
-            return i + 2
-
-    # Ищем просто пробел
-    space_pos = text.rfind(" ")
-    if space_pos != -1:
-        return space_pos + 1
-
-    return 0
-
-
-def split_message_by_paragraphs(text: str, max_length: int = 4096) -> list[str]:
-    """
-    Разбивает текст на части по абзацам с учетом максимальной длины.
-
-    Args:
-        text: Исходный текст
-        max_length: Максимальная длина одной части
-
-    Returns:
-        Список частей текста, готовых для отправки
-    """
-    if not text:
-        return []
-
-    # Разделяем на абзацы
-    paragraphs = text.split("\n\n")
-    chunks = []
-    current_chunk = ""
-
-    for paragraph in paragraphs:
-        paragraph = paragraph.strip()
-        if not paragraph:
-            continue
-
-        # Если абзац слишком длинный, разбиваем его
-        if len(paragraph) > max_length:
-            # Сохраняем накопленный чанк
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-                current_chunk = ""
-
-            # Разбиваем длинный абзац и добавляем части
-            paragraph_parts = split_text_smart(paragraph, max_length)
-            chunks.extend(paragraph_parts)
-            continue
-
-        # Проверяем, поместится ли абзац в текущий чанк
-        separator = "\n\n" if current_chunk else ""
-        potential_chunk = current_chunk + separator + paragraph
-
-        if len(potential_chunk) <= max_length:
-            # Помещается - добавляем к текущему чанку
-            current_chunk = potential_chunk
-        else:
-            # Не помещается - сохраняем текущий чанк и начинаем новый
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-            current_chunk = paragraph
-
-    # Добавляем последний чанк
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-
-    return [chunk for chunk in chunks if chunk]
-
-
-def get_gpt_formatted_chunks(text: str, max_length: int = 4096) -> list[str]:
-    """
-    Форматирует текст для Telegram и разбивает на части.
-
-    Args:
-        text: Исходный текст
-        max_length: Максимальная длина одной части
-
-    Returns:
-        Список отформатированных частей текста
-    """
-    if not text:
-        return []
-
-    try:
-        # Применяем форматирование Telegram
-        formatted_text = telegramify_markdown.markdownify(text)
-    except Exception as e:
-        logger.warning(f"Ошибка форматирования markdown: {e}")
-        formatted_text = text
-
-    # Разбиваем на части
-    return split_message_by_paragraphs(formatted_text, max_length)
+# Re-export split helpers for existing imports.
+_ = (get_gpt_formatted_chunks, split_message_by_paragraphs, split_text_smart)
 
 
 # Исключения
@@ -240,6 +85,8 @@ class BaseOpenAIModel(AIModelInterface):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
+        import openai
+
         self.client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key)
 
     def _prepare_messages(self, prompt: str, system_prompt: str = "") -> list:
@@ -276,14 +123,18 @@ class BaseOpenAIModel(AIModelInterface):
 
             return content
 
-        except openai.AuthenticationError as e:
-            raise APIKeyError(f"Ошибка аутентификации для {self.base_url}") from e
-        except openai.RateLimitError as e:
-            raise RateLimitError(f"Превышен лимит запросов к {self.base_url}") from e
-        except openai.APIConnectionError as e:
-            raise AIModelError(f"Ошибка подключения к {self.base_url}: {e}") from e
-        except openai.OpenAIError as e:
-            raise UnexpectedResponseError(f"Неожиданная ошибка {self.base_url}: {e}") from e
+        except Exception as e:
+            import openai
+
+            if isinstance(e, openai.AuthenticationError):
+                raise APIKeyError(f"Ошибка аутентификации для {self.base_url}") from e
+            if isinstance(e, openai.RateLimitError):
+                raise RateLimitError(f"Превышен лимит запросов к {self.base_url}") from e
+            if isinstance(e, openai.APIConnectionError):
+                raise AIModelError(f"Ошибка подключения к {self.base_url}: {e}") from e
+            if isinstance(e, openai.OpenAIError):
+                raise UnexpectedResponseError(f"Неожиданная ошибка {self.base_url}: {e}") from e
+            raise
 
 
 class OpenAIModel(BaseOpenAIModel):
@@ -342,7 +193,7 @@ class GeminiFile:
                     self.mime_type = "application/octet-stream"  # Fallback to generic binary
 
 
-async def wait_for_file_active(client: genai.Client, file_obj: types.File) -> types.File:
+async def wait_for_file_active(client: Any, file_obj: Any) -> Any:
     """Ожидает, пока файл Gemini перейдет в состояние ACTIVE."""
     start_time = time.time()
     # Максимальное время ожидания для файла (например, 5 минут для больших видео)
@@ -377,6 +228,8 @@ class GeminiModel(AIModelInterface):
 
         self.api_key = api_key
         self.model = model
+        from google import genai
+
         self.client = genai.Client(api_key=api_key)
         self.files_to_upload: list[GeminiFile] = []
 
@@ -393,6 +246,9 @@ class GeminiModel(AIModelInterface):
         files_to_delete_locally: list[Path] = []
 
         try:
+            from google.genai import types
+            from google.genai.types import GoogleSearch, Tool
+
             contents: types.ContentListUnion = []
             if prompt.strip():
                 contents.append(types.Part.from_text(text=prompt))
@@ -485,6 +341,8 @@ class GeminiChatModel(AIChatInterface):
         if not api_key:
             raise APIKeyError("API ключ для Gemini Chat не может быть пустым")
 
+        from google import genai
+
         self.client = genai.Client(api_key=api_key)
         self.model = model
         self.chat = None
@@ -497,6 +355,8 @@ class GeminiChatModel(AIChatInterface):
     def new_chat(self, system_prompt: str = "") -> None:
         """Создает новый чат."""
         try:
+            from google.genai.types import GenerateContentConfig, GoogleSearch, Tool
+
             google_search_tool = Tool(google_search=GoogleSearch())
 
             config_params = {
@@ -525,6 +385,8 @@ class GeminiChatModel(AIChatInterface):
         files_to_delete_locally: list[Path] = []
 
         try:
+            from google.genai import types
+
             message_parts: list[types.PartUnionDict] = []
             if prompt.strip():
                 message_parts.append(types.Part.from_text(text=prompt))
@@ -574,3 +436,13 @@ class GeminiChatModel(AIChatInterface):
                     logger.info(
                         f"Deleted temporary local file after successful upload to Gemini File API: {local_path}"
                     )
+
+    def close(self) -> None:
+        self.chat = None
+        self.files_to_upload.clear()
+        closer = getattr(self.client, "close", None)
+        if callable(closer):
+            try:
+                closer()
+            except Exception:
+                logger.debug("Failed to close Gemini client", exc_info=True)

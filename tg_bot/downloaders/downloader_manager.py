@@ -12,14 +12,10 @@ from typing import List, Optional
 
 from core.config import DOWNLOADS_DIR
 from core.logger import logger
+from core.memory import DOWNLOAD_SLOT, trim_memory
 from tg_bot.utils.cookies_manager import cookies_manager
 
-from .gallery_dl import download_with_gallery_dl
-from .instagram import download_instagram_media as download_instagram_with_instaloader
-from .instagram_web_parser import INSTAGRAM_REGEX, download_instagram_web_media
-from .spotify import SPOTIFY_TRACK_REGEX, TrackInfo, download_spotify_track, extract_track_id
-from .twitter import TWITTER_REGEX, download_twitter_media
-from .ytdlp import download_with_ytdlp
+from .patterns import INSTAGRAM_REGEX, TWITTER_REGEX
 
 
 class DownloaderType(Enum):
@@ -52,38 +48,27 @@ class DownloaderManager:
         self.download_attempts = []
 
     async def download_media(self, url: str) -> DownloadResult:
-        """
-        Скачивает медиа с использованием приоритетной системы.
-
-        Порядок попыток:
-        1. Кастомные скачиватели (Instagram, Twitter) - строгий режим
-        2. yt-dlp (для видео контента)
-        3. gallery-dl (для изображений)
-        """
         return await self._download_media_impl(url, use_cookies=False)
 
     async def download_media_with_cookies(self, url: str) -> DownloadResult:
-        """
-        Скачивает медиа с приоритетом на cookies, если доступны.
-        Fallback на обычную скачку если cookies нет или не помогли.
-        """
         return await self._download_media_impl(url, use_cookies=True)
 
     async def _download_media_impl(self, url: str, use_cookies: bool = False) -> DownloadResult:
-        """
-        Основная реализация скачки медиа.
+        async with DOWNLOAD_SLOT:
+            try:
+                return await self._download_media_unlocked(url, use_cookies=use_cookies)
+            finally:
+                self.download_attempts = self.download_attempts[-12:]
+                trim_memory()
 
-        Порядок попыток:
-        1. Кастомные скачиватели (Instagram, Twitter) - строгий режим
-        2. yt-dlp (для видео контента)
-        3. gallery-dl (для изображений)
-        """
+    async def _download_media_unlocked(self, url: str, use_cookies: bool = False) -> DownloadResult:
         self.download_attempts = []
 
-        # Проверяем, является ли URL кастомной платформой
         is_instagram = INSTAGRAM_REGEX.match(url)
         is_custom_platform = is_instagram or TWITTER_REGEX.match(url)
-        instagram_use_cookies = use_cookies or (bool(is_instagram) and await self._has_saved_cookies("instagram"))
+        instagram_use_cookies = use_cookies or (
+            bool(is_instagram) and await cookies_manager.has_pooled_cookies("instagram")
+        )
         effective_use_cookies = instagram_use_cookies if is_instagram else use_cookies
 
         if is_instagram:
@@ -91,17 +76,30 @@ class DownloaderManager:
             if web_parser_result.success:
                 return web_parser_result
 
-            ytdlp_result = await self._try_ytdlp(url, use_cookies=effective_use_cookies)
-            if ytdlp_result.success:
-                return ytdlp_result
+            # Do not hammer the same Instagram cookies through yt-dlp/gallery-dl after 403/429.
+            if self._is_terminal_instagram_error(web_parser_result.error or ""):
+                return DownloadResult(
+                    success=False,
+                    files=[],
+                    caption=None,
+                    error=self._instagram_error_message(use_cookies=effective_use_cookies),
+                    downloader_used=None,
+                )
 
-            gallery_result = await self._try_gallery_dl(url, use_cookies=effective_use_cookies)
-            if gallery_result.success:
-                return gallery_result
+            ytdlp_guest = await self._try_ytdlp(url, use_cookies=False)
+            if ytdlp_guest.success:
+                return ytdlp_guest
 
-            instaloader_result = await self._try_instaloader(url)
-            if instaloader_result.success:
-                return instaloader_result
+            cookies_already_used = effective_use_cookies
+            if not cookies_already_used:
+                gallery_result = await self._try_gallery_dl(url, use_cookies=False)
+                if gallery_result.success:
+                    return gallery_result
+                instaloader_result = await self._try_instaloader(url)
+                if instaloader_result.success:
+                    return instaloader_result
+            else:
+                logger.warning("Skipping Instagram cookie cascade after web parser used cookies")
 
             return DownloadResult(
                 success=False,
@@ -111,36 +109,32 @@ class DownloaderManager:
                 downloader_used=None,
             )
 
-        # Попытка 1: Кастомные скачиватели
         custom_result = await self._try_custom_downloaders(url, use_cookies=effective_use_cookies)
         if custom_result.success:
             return custom_result
 
-        # Если это кастомная платформа и она не сработала - не пробуем другие методы
         if is_custom_platform:
             logger.warning(f"Custom platform failed for {url}, not trying other methods - {custom_result}")
-            return custom_result  # Возвращаем ошибку кастомного скачивателя
+            return custom_result
 
-        # Попытка 2: yt-dlp для видео контента
         ytdlp_result = await self._try_ytdlp(url, use_cookies=use_cookies)
         if ytdlp_result.success:
             return ytdlp_result
 
-        # Попытка 3: gallery-dl для изображений
         gallery_result = await self._try_gallery_dl(url, use_cookies=use_cookies)
         if gallery_result.success:
             return gallery_result
 
-        # Если все попытки неудачны, возвращаем последнюю ошибку
         attempts_summary = "\n".join(self.download_attempts)
         error_message = f"❌ Все попытки скачивания неудачны:\n{attempts_summary}"
 
         return DownloadResult(success=False, files=[], caption=None, error=error_message, downloader_used=None)
 
     async def _try_custom_downloaders(self, url: str, use_cookies: bool = False) -> DownloadResult:
-        """Пробует кастомные скачиватели."""
         try:
             if TWITTER_REGEX.match(url):
+                from .twitter import download_twitter_media
+
                 logger.info(f"Attempting Twitter download for: {url}")
                 img_files, vid_files, caption, error = await download_twitter_media(url)
 
@@ -156,7 +150,6 @@ class DownloaderManager:
                         downloader_used=DownloaderType.TWITTER,
                     )
 
-                # Если есть только текст без медиа, но скачивание "успешное"
                 if caption and not error:
                     self.download_attempts.append("Twitter: Text-only tweet")
 
@@ -170,39 +163,42 @@ class DownloaderManager:
 
                 self.download_attempts.append(f"Twitter: {error or 'No media found'}")
 
-            elif SPOTIFY_TRACK_REGEX.match(url):
-                logger.info(f"Attempting Spotify download for: {url}")
-                track_id = extract_track_id(url)
-                if not track_id:
-                    self.download_attempts.append("Spotify: Invalid track URL")
-                    return DownloadResult(
-                        success=False,
-                        files=[],
-                        caption=None,
-                        error="Invalid Spotify track URL",
-                        downloader_used=DownloaderType.SPOTIFY,
-                    )
-                track_info: TrackInfo = download_spotify_track(track_id)
+            else:
+                from .spotify import SPOTIFY_TRACK_REGEX, download_spotify_track, extract_track_id
 
-                if track_info and track_info.local_path.exists():
-                    self.download_attempts.append("Spotify: Success")
+                if SPOTIFY_TRACK_REGEX.match(url):
+                    logger.info(f"Attempting Spotify download for: {url}")
+                    track_id = extract_track_id(url)
+                    if not track_id:
+                        self.download_attempts.append("Spotify: Invalid track URL")
+                        return DownloadResult(
+                            success=False,
+                            files=[],
+                            caption=None,
+                            error="Invalid Spotify track URL",
+                            downloader_used=DownloaderType.SPOTIFY,
+                        )
+                    track_info = download_spotify_track(track_id)
 
-                    files = (
-                        [track_info.local_path, track_info.local_cover_path]
-                        if track_info.local_cover_path
-                        else [track_info.local_path]
-                    )
-                    caption = f"{track_info.title} - {track_info.artist} - {track_info.bitrate_kbps}kbps"
+                    if track_info and track_info.local_path.exists():
+                        self.download_attempts.append("Spotify: Success")
 
-                    return DownloadResult(
-                        success=True,
-                        files=files,
-                        caption=caption,
-                        error=None,
-                        downloader_used=DownloaderType.SPOTIFY,
-                    )
+                        files = (
+                            [track_info.local_path, track_info.local_cover_path]
+                            if track_info.local_cover_path
+                            else [track_info.local_path]
+                        )
+                        caption = f"{track_info.title} - {track_info.artist}"
 
-                self.download_attempts.append("Spotify: No track downloaded")
+                        return DownloadResult(
+                            success=True,
+                            files=files,
+                            caption=caption,
+                            error=None,
+                            downloader_used=DownloaderType.SPOTIFY,
+                        )
+
+                    self.download_attempts.append("Spotify: No track downloaded")
 
         except Exception as e:
             logger.error(f"Custom downloader error: {e}\n{traceback.format_exc()}")
@@ -219,6 +215,8 @@ class DownloaderManager:
     async def _try_instagram_web_parser(self, url: str, use_cookies: bool = False) -> DownloadResult:
         web_parser_error = None
         try:
+            from .instagram_web_parser import download_instagram_web_media
+
             logger.info(f"Attempting Instagram web parser download for: {url} (use_cookies={use_cookies})")
             shortcode, error = await download_instagram_web_media(url, use_cookies=use_cookies)
             if shortcode and not error:
@@ -247,6 +245,8 @@ class DownloaderManager:
 
     async def _try_instaloader(self, url: str) -> DownloadResult:
         try:
+            from .instagram import download_instagram_media as download_instagram_with_instaloader
+
             logger.info(f"Attempting Instaloader fallback for: {url}")
             shortcode, error = await download_instagram_with_instaloader(url)
             if shortcode and not error:
@@ -279,6 +279,8 @@ class DownloaderManager:
         for file_path in files:
             if file_path.suffix.lower() == ".txt":
                 caption = file_path.read_text(encoding="utf-8")
+                if len(caption) > 8000:
+                    caption = caption[:8000]
             else:
                 media_files.append(file_path)
 
@@ -302,13 +304,13 @@ class DownloaderManager:
         return site_name.lower() in available_cookies
 
     async def _try_ytdlp(self, url: str, use_cookies: bool = False) -> DownloadResult:
-        """Пробует yt-dlp. Если use_cookies=True, сначала пробует с cookies."""
         try:
+            from .ytdlp import download_with_ytdlp
+
             logger.info(f"Attempting yt-dlp download for: {url} (use_cookies={use_cookies})")
             files, caption, error = await download_with_ytdlp(url, use_cookies=use_cookies)
 
             if files:
-                # Фильтруем только видео файлы для yt-dlp приоритета
                 video_files = [f for f in files if f.suffix.lower() in (".mp4", ".mov", ".mkv", ".webm")]
 
                 if video_files:
@@ -322,11 +324,8 @@ class DownloaderManager:
                         if caption and caption.endswith("cookies_used")
                         else DownloaderType.YTDLP,
                     )
-                else:
-                    # Если нет видео файлов, продолжаем с gallery-dl
-                    self.download_attempts.append("yt-dlp: No video files found")
+                self.download_attempts.append("yt-dlp: No video files found")
             else:
-                # Более детальная обработка ошибок yt-dlp
                 if error:
                     filtered_error = self._filter_ytdlp_error(error)
                     self.download_attempts.append(f"yt-dlp: {filtered_error}")
@@ -341,11 +340,9 @@ class DownloaderManager:
         return DownloadResult(success=False, files=[], caption=None, error="yt-dlp failed", downloader_used=None)
 
     def _filter_ytdlp_error(self, error: str) -> str:
-        """Фильтрует и упрощает ошибки yt-dlp для пользователя."""
         error = self._clean_error_text(error)
         error_lower = error.lower()
 
-        # Распространенные ошибки и их упрощенные версии
         if "not available" in error_lower or "unavailable" in error_lower:
             return "Видео недоступно"
         elif "private" in error_lower or "permission" in error_lower:
@@ -365,7 +362,6 @@ class DownloaderManager:
         elif "extractor" in error_lower:
             return "Ошибка извлечения данных"
         else:
-            # Если ошибка не распознана, возвращаем укороченную версию
             return error[:100] + "..." if len(error) > 100 else error
 
     def _instagram_error_message(self, use_cookies: bool) -> str:
@@ -412,13 +408,17 @@ class DownloaderManager:
             "returned an error page",
             "unavailable for the current account",
             "deleted, private, age-restricted",
-            "stories are not supported",
+            "instagram ограничил доступ",
+            "http 429",
+            "cooling down",
+            "http 403",
         )
         return any(marker in error_lower for marker in terminal_markers)
 
     async def _try_gallery_dl(self, url: str, use_cookies: bool = False) -> DownloadResult:
-        """Пробует gallery-dl."""
         try:
+            from .gallery_dl import download_with_gallery_dl
+
             logger.info(f"Attempting gallery-dl download for: {url} (use_cookies={use_cookies})")
             files, caption, error = await download_with_gallery_dl(url, use_cookies=use_cookies)
 
@@ -431,13 +431,11 @@ class DownloaderManager:
                     error=None,
                     downloader_used=DownloaderType.GALLERY_DL,
                 )
+            if error:
+                filtered_error = self._filter_gallery_dl_error(error)
+                self.download_attempts.append(f"gallery-dl: {filtered_error}")
             else:
-                # Более детальная обработка ошибок gallery-dl
-                if error:
-                    filtered_error = self._filter_gallery_dl_error(error)
-                    self.download_attempts.append(f"gallery-dl: {filtered_error}")
-                else:
-                    self.download_attempts.append("gallery-dl: No files downloaded")
+                self.download_attempts.append("gallery-dl: No files downloaded")
 
         except Exception as e:
             logger.error(f"gallery-dl error: {e}")
@@ -447,11 +445,9 @@ class DownloaderManager:
         return DownloadResult(success=False, files=[], caption=None, error="gallery-dl failed", downloader_used=None)
 
     def _filter_gallery_dl_error(self, error: str) -> str:
-        """Фильтрует и упрощает ошибки gallery-dl для пользователя."""
         error = self._clean_error_text(error)
         error_lower = error.lower()
 
-        # Распространенные ошибки gallery-dl
         if "403" in error or "forbidden" in error_lower:
             return "Доступ запрещен (403)"
         elif "404" in error or "not found" in error_lower:
@@ -479,7 +475,6 @@ class DownloaderManager:
         elif "private" in error_lower or "protected" in error_lower:
             return "Приватный или защищенный контент"
         else:
-            # Если ошибка не распознана, возвращаем укороченную версию
             return error[:100] + "..." if len(error) > 100 else error
 
     @staticmethod
@@ -488,5 +483,4 @@ class DownloaderManager:
         return " ".join(error.split())
 
 
-# Создаем глобальный экземпляр менеджера
 downloader_manager = DownloaderManager()

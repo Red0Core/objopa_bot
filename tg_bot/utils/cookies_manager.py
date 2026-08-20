@@ -80,18 +80,30 @@ class CookiesManager:
 
             # Читаем файл
             cookies_content = cookies_path.read_text(encoding="utf-8")
-
-            # Сохраняем в Redis с expiry
-            key = f"cookies:{site_name.lower()}"
-            ttl = int(timedelta(days=CookiesManager.COOKIES_EXPIRE_DAYS).total_seconds())
-
             redis_client = await get_redis()
+            slots = [site_name.lower()]
+            if site_name.lower() == "instagram":
+                slots = CookiesManager._pool_slots("instagram")
+
+            target = slots[0]
+            for slot in slots:
+                existing = await redis_client.get(f"cookies:{slot}")
+                if existing == cookies_content:
+                    target = slot
+                    break
+                if existing is None:
+                    target = slot
+                    break
+            else:
+                target = slots[0]
+
+            key = f"cookies:{target}"
+            ttl = int(timedelta(days=CookiesManager.COOKIES_EXPIRE_DAYS).total_seconds())
             await redis_client.setex(key, ttl, cookies_content)
-
-            # Сохраняем временную метку
             await redis_client.setex(f"{key}:timestamp", ttl, datetime.now().isoformat())
+            await redis_client.delete(f"{key}:cooldown")
 
-            logger.info(f"Cookies saved for {site_name} (expires in {CookiesManager.COOKIES_EXPIRE_DAYS} days)")
+            logger.info(f"Cookies saved for {target} (expires in {CookiesManager.COOKIES_EXPIRE_DAYS} days)")
             return True
         except Exception as e:
             logger.error(f"Error saving cookies: {e}")
@@ -143,7 +155,7 @@ class CookiesManager:
             result = {}
             redis_client = await get_redis()
             for key in await redis_client.keys("cookies:*"):
-                if key.endswith(":timestamp"):
+                if key.endswith(":timestamp") or key.endswith(":cooldown") or key.endswith(":rr"):
                     continue
                 site_name = key.replace("cookies:", "").lower()
                 timestamp_key = f"{key}:timestamp"
@@ -162,12 +174,59 @@ class CookiesManager:
             redis_client = await get_redis()
             await redis_client.delete(key)
             await redis_client.delete(f"{key}:timestamp")
+            await redis_client.delete(f"{key}:cooldown")
             logger.info(f"Cookies deleted for {site_name}")
             return True
         except Exception as e:
             logger.error(f"Error deleting cookies: {e}")
             return False
 
+    @staticmethod
+    def _pool_slots(site_root: str) -> list[str]:
+        root = site_root.lower()
+        return [root, *[f"{root}:{index}" for index in range(1, 5)]]
 
-# Глобальный экземпляр
+    @staticmethod
+    async def has_pooled_cookies(site_root: str) -> bool:
+        try:
+            redis_client = await get_redis()
+            for slot in CookiesManager._pool_slots(site_root):
+                if await redis_client.get(f"cookies:{slot}"):
+                    return True
+        except Exception as e:
+            logger.debug(f"Pooled cookies check failed for {site_root}: {e}")
+        return False
+
+    @staticmethod
+    async def get_pooled_cookies(site_root: str) -> tuple[str, Path] | None:
+        """Return (slot, netscape path) for the next cookie file that is not in cooldown."""
+        try:
+            redis_client = await get_redis()
+            slots = CookiesManager._pool_slots(site_root)
+            start = 0
+            try:
+                start = int(await redis_client.incr(f"cookies:{site_root.lower()}:rr")) % len(slots)
+            except Exception:
+                start = 0
+            ordered = slots[start:] + slots[:start]
+            for slot in ordered:
+                if await redis_client.get(f"cookies:{slot}:cooldown"):
+                    continue
+                path = await CookiesManager.get_cookies(slot)
+                if path:
+                    return slot, path
+        except Exception as e:
+            logger.error(f"Error getting pooled cookies for {site_root}: {e}")
+        return None
+
+    @staticmethod
+    async def mark_cookie_cooldown(slot: str, seconds: int = 900) -> None:
+        try:
+            redis_client = await get_redis()
+            await redis_client.setex(f"cookies:{slot.lower()}:cooldown", max(60, seconds), "1")
+            logger.warning(f"Cookies slot {slot} cooling down for {seconds}s")
+        except Exception as e:
+            logger.error(f"Error setting cookie cooldown for {slot}: {e}")
+
+
 cookies_manager = CookiesManager()

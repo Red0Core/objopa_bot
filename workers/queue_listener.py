@@ -1,7 +1,14 @@
 import asyncio
 import json
+import os
 import signal
 import sys
+
+os.environ.setdefault("MALLOC_ARENA_MAX", "2")
+os.environ.setdefault("PYTHONMALLOC", "malloc")
+os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -10,6 +17,7 @@ from redis.exceptions import BusyLoadingError, ConnectionError, TimeoutError
 from core.config import OBZHORA_CHAT_ID
 from core.locks import LockAcquireError
 from core.logger import logger
+from core.memory import trim_memory
 from core.redis_client import get_redis
 from workers.animation_generation_pipeline import (
     AnimationGenerationPipeline,
@@ -114,7 +122,10 @@ class QueueListener:
 
         pipeline: BasePipeline = worker_cls(**task)
         logger.info(f"Запускаю пайплайн для задачи: {task_type}")
-        await pipeline.run()
+        try:
+            await pipeline.run()
+        finally:
+            trim_memory()
         logger.info(f"Задача {task['task_id']} завершена.")
 
     async def shutdown(self, sig: signal.Signals):

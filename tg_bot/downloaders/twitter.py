@@ -13,6 +13,7 @@ from redis.asyncio import Redis
 
 from core.config import DOWNLOADS_DIR
 from core.logger import logger
+from core.memory import MAX_MEDIA_BYTES, MediaTooLargeError, stream_url_to_file, unlink_quietly
 from core.redis_client import get_redis
 
 AUTH_TOKEN = os.getenv("TWITTER_AUTH_TOKEN")
@@ -254,6 +255,7 @@ class TwitterGQLResolver:
             )
         resp = await session.get(main_js_url, impersonate="chrome")
         js = resp.text
+        del resp
 
         qid, feature_switches, field_toggles_list = self._parse_export_block(js, self.op_name)
         if not qid:
@@ -268,6 +270,7 @@ class TwitterGQLResolver:
 
         # Prefer bearer from JS; fallback to HTML; then default
         bearer = self._parse_bearer(js) or self._parse_bearer(html) or BEARER_TOKEN
+        del js
 
         default_cfg = self._parse_initial_state_features(html)
         features = {}
@@ -422,6 +425,7 @@ async def download_twitter_media(
         try:
             html_resp = await session.get(url, impersonate="chrome")
             html = html_resp.text
+            del html_resp
         except Exception as e:  # noqa: BLE001
             logger.error(f"Twitter HTML fetch error: {e}")
             return [], [], None, "Не удалось получить страницу твита"
@@ -626,48 +630,68 @@ async def download_twitter_media(
     media_items = result.get("legacy", {}).get("extended_entities", {}).get("media", [])
     image_files = []
     video_files = []
-    async with AsyncSession() as session2:
-        sem = asyncio.Semaphore(4)
+    sem = asyncio.Semaphore(1)
+    max_video_bytes = MAX_MEDIA_BYTES
 
-        async def download_item(item: dict):
-            mtype = item.get("type")
-            media_url = item.get("media_url_https")
-            if mtype == "photo" and media_url:
-                base, ext = os.path.splitext(media_url)
-                img_url = f"{base}?format={ext.lstrip('.')}\u0026name=orig".replace("\\u0026", "&")
-                filename = download_path / f"{Path(base).name}{ext}"
+    def _pick_video_variant(item: dict) -> dict | None:
+        variants = item.get("video_info", {}).get("variants", [])
+        mp4s = [v for v in variants if v.get("content_type") == "video/mp4" and v.get("url")]
+        if not mp4s:
+            return None
+        duration = (item.get("video_info", {}).get("duration_millis") or 0) / 1000
+        ranked = sorted(mp4s, key=lambda v: v.get("bitrate") or 0, reverse=True)
+        for variant in ranked:
+            bitrate = variant.get("bitrate") or 0
+            if duration and bitrate:
+                estimated = bitrate / 8 * duration
+                if estimated <= max_video_bytes:
+                    return variant
+        return min(mp4s, key=lambda v: v.get("bitrate") or 10**12)
 
-                async with sem:
-                    try:
-                        img_resp = await session2.get(img_url, impersonate="chrome")
-                        img_resp.raise_for_status()
-                        filename.write_bytes(img_resp.content)
-                        image_files.append(filename)
-                    except Exception as e:  # noqa: BLE001
-                        logger.error(f"Error downloading {img_url}: {e}")
+    async def download_item(item: dict):
+        mtype = item.get("type")
+        media_url = item.get("media_url_https")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Referer": "https://x.com/",
+            "Accept": "*/*",
+        }
+        if mtype == "photo" and media_url:
+            base, ext = os.path.splitext(media_url)
+            img_url = f"{base}?format={ext.lstrip('.')}\u0026name=orig".replace("\\u0026", "&")
+            filename = download_path / f"{Path(base).name}{ext}"
 
-            elif mtype in {"video", "animated_gif"}:
-                variants = item.get("video_info", {}).get("variants", [])
-                mp4s = [v for v in variants if v.get("content_type") == "video/mp4"]
-                if not mp4s:
-                    return
-                best = max(mp4s, key=lambda v: v.get("bitrate", 0))
-                v_url = best.get("url")
-                if not v_url:
-                    return
-                ext = ".mp4"
-                stem = Path(media_url).stem if media_url else "video"
-                filename = download_path / f"{stem}{ext}"
-                async with sem:
-                    try:
-                        v_resp = await session2.get(v_url, impersonate="chrome")
-                        v_resp.raise_for_status()
-                        filename.write_bytes(v_resp.content)
-                        video_files.append(filename)
-                    except Exception as e:  # noqa: BLE001
-                        logger.error(f"Error downloading {v_url}: {e}")
+            async with sem:
+                try:
+                    await stream_url_to_file(img_url, filename, max_bytes=MAX_MEDIA_BYTES, headers=headers)
+                    image_files.append(filename)
+                except MediaTooLargeError as e:
+                    logger.warning(f"Skipping oversized Twitter image {e.size} bytes")
+                    unlink_quietly(filename)
+                except Exception as e:  # noqa: BLE001
+                    logger.error(f"Error downloading {img_url}: {e}")
 
-        await asyncio.gather(*(download_item(it) for it in media_items))
+        elif mtype in {"video", "animated_gif"}:
+            best = _pick_video_variant(item)
+            if not best:
+                return
+            v_url = best.get("url")
+            if not v_url:
+                return
+            ext = ".mp4"
+            stem = Path(media_url).stem if media_url else "video"
+            filename = download_path / f"{stem}{ext}"
+            async with sem:
+                try:
+                    await stream_url_to_file(v_url, filename, max_bytes=max_video_bytes, headers=headers)
+                    video_files.append(filename)
+                except MediaTooLargeError as e:
+                    logger.warning(f"Skipping oversized Twitter video {e.size} bytes")
+                    unlink_quietly(filename)
+                except Exception as e:  # noqa: BLE001
+                    logger.error(f"Error downloading {v_url}: {e}")
+
+    await asyncio.gather(*(download_item(it) for it in media_items))
 
     return image_files, video_files, caption, None
 
