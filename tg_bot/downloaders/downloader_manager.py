@@ -64,7 +64,7 @@ class DownloaderManager:
     async def _download_media_unlocked(self, url: str, use_cookies: bool = False) -> DownloadResult:
         self.download_attempts = []
 
-        is_instagram = INSTAGRAM_REGEX.match(url)
+        is_instagram = bool(INSTAGRAM_REGEX.search(url))
         is_custom_platform = is_instagram or TWITTER_REGEX.match(url)
         instagram_use_cookies = use_cookies or (
             bool(is_instagram) and await cookies_manager.has_pooled_cookies("instagram")

@@ -50,9 +50,10 @@ async def instagram_handler(message: Message, command: CommandObject):
         )
         return
 
-    url = command.args.strip()
+    url = command.args.strip().strip("<>")
+    url = url.split()[0] if url else url
 
-    if not INSTAGRAM_REGEX.match(url):
+    if not INSTAGRAM_REGEX.search(url):
         await message.answer(
             telegramify_markdown.markdownify("❌ Это не похоже на ссылку Instagram. Попробуй еще раз."),
             parse_mode="MarkdownV2",
@@ -71,11 +72,12 @@ async def universal_download_handler(message: Message, command: CommandObject):
         )
         return
 
-    url = command.args.strip()
+    url = command.args.strip().strip("<>")
+    url = url.split()[0] if url else url
 
     download_from_str = ""
     # Для Instagram URL используем специальный обработчик с улучшенным UI
-    if INSTAGRAM_REGEX.match(url):
+    if INSTAGRAM_REGEX.search(url):
         await process_instagram(message, url)
         return
     elif TWITTER_REGEX.match(url):

@@ -386,12 +386,18 @@ class InstagramWebDownloader:
         return await self._load_post(session, target["shortcode"], target["url"])
 
     async def _load_stories(self, session: InstagramHttpSession, target: dict[str, str]) -> InstagramPost:
+        if target["kind"] == "story_item" and target.get("id"):
+            story_post = await self._load_story_by_pk(session, target)
+            if story_post.media:
+                return story_post
+
         reel_ids: str
         prefix: str
         if target["kind"] == "highlight":
             reel_ids = f"highlight:{target['id']}"
             prefix = f"highlight_{target['id']}"
             canonical = f"https://www.instagram.com/stories/highlights/{target['id']}/"
+            user_id = None
         else:
             username = target["user"]
             user_id = await self._lookup_user_id(session, username)
@@ -401,14 +407,18 @@ class InstagramWebDownloader:
                 )
             reel_ids = user_id
             prefix = f"stories_{username}"
-            if target.get("id"):
-                prefix = target["id"]
             canonical = f"https://www.instagram.com/stories/{username}/"
 
-        items = await self._fetch_reel_items(session, reel_ids, canonical)
-        if target.get("id") and target["kind"] == "story_item":
-            wanted = target["id"]
-            items = [item for item in items if str(item.get("pk") or item.get("id") or "").startswith(wanted)]
+        items = await self._fetch_reel_items(session, reel_ids, canonical, user_id=user_id)
+        wanted = target.get("id") if target["kind"] == "story_item" else None
+        if wanted:
+            filtered = [item for item in items if wanted in str(item.get("pk") or item.get("id") or "")]
+            if filtered:
+                items = filtered
+                prefix = wanted
+            elif items:
+                logger.warning(f"Story {wanted} expired, falling back to current stories of {target.get('user')}")
+                prefix = f"stories_{target.get('user')}"
 
         media: list[InstagramMedia] = []
         caption: str | None = None
@@ -420,33 +430,88 @@ class InstagramWebDownloader:
         unique = self._dedupe_media(media)
         return InstagramPost(shortcode=prefix, canonical_url=canonical, caption=caption, media=unique)
 
+    async def _load_story_by_pk(self, session: InstagramHttpSession, target: dict[str, str]) -> InstagramPost:
+        pk = target["id"]
+        canonical = f"https://www.instagram.com/stories/{target['user']}/{pk}/"
+        empty = InstagramPost(shortcode=pk, canonical_url=canonical, caption=None, media=[])
+        for api_url, headers in (
+            (
+                f"https://www.instagram.com/api/v1/media/{pk}/info/",
+                self._json_headers(canonical, session),
+            ),
+            (
+                f"https://i.instagram.com/api/v1/media/{pk}/info/",
+                self._android_app_headers(canonical),
+            ),
+        ):
+            try:
+                response = await self._request(session, api_url, headers=headers)
+            except InstagramDownloadError as exc:
+                logger.debug(f"story media info failed {api_url}: {exc}")
+                continue
+            parsed = self._try_load_json(response.text)
+            post = self._safe_post_from_json(parsed, pk, canonical)
+            if post.media:
+                return post
+        return empty
+
     async def _lookup_user_id(self, session: InstagramHttpSession, username: str) -> str | None:
-        url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
-        try:
-            response = await self._request(
-                session, url, headers=self._json_headers(f"https://www.instagram.com/{username}/", session)
+        urls = (
+            f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}",
+            f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}",
+            f"https://i.instagram.com/api/v1/users/{username}/usernameinfo/",
+        )
+        for url in urls:
+            headers = (
+                self._android_app_headers(f"https://www.instagram.com/{username}/")
+                if "i.instagram.com" in url
+                else self._json_headers(f"https://www.instagram.com/{username}/", session)
             )
-        except InstagramDownloadError as exc:
-            logger.debug(f"web_profile_info failed for {username}: {exc}")
-            return None
-        parsed = self._try_load_json(response.text)
+            try:
+                response = await self._request(session, url, headers=headers)
+            except InstagramDownloadError as exc:
+                logger.debug(f"user lookup failed {url}: {exc}")
+                continue
+            parsed = self._try_load_json(response.text)
+            user_id = self._user_id_from_payload(parsed)
+            if user_id:
+                return user_id
+        return None
+
+    def _user_id_from_payload(self, parsed: Any) -> str | None:
         if not isinstance(parsed, dict):
             return None
-        user = (parsed.get("data") or {}).get("user") or {}
-        user_id = user.get("id") or user.get("pk")
+        user = (parsed.get("data") or {}).get("user") or parsed.get("user") or {}
+        if not isinstance(user, dict):
+            return None
+        user_id = user.get("id") or user.get("pk") or user.get("pk_id")
         return str(user_id) if user_id else None
 
     async def _fetch_reel_items(
-        self, session: InstagramHttpSession, reel_ids: str, referer: str
+        self,
+        session: InstagramHttpSession,
+        reel_ids: str,
+        referer: str,
+        user_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        urls = (
-            f"https://www.instagram.com/api/v1/feed/reels_media/?reel_ids={reel_ids}",
-            f"https://i.instagram.com/api/v1/feed/reels_media/?reel_ids={reel_ids}",
-        )
-        for api_url in urls:
-            headers = self._json_headers(referer, session)
-            if "i.instagram.com" in api_url:
-                headers = self._android_app_headers(referer)
+        urls: list[tuple[str, dict[str, str]]] = [
+            (
+                f"https://www.instagram.com/api/v1/feed/reels_media/?reel_ids={reel_ids}",
+                self._json_headers(referer, session),
+            ),
+            (
+                f"https://i.instagram.com/api/v1/feed/reels_media/?reel_ids={reel_ids}",
+                self._android_app_headers(referer),
+            ),
+        ]
+        if user_id:
+            urls[0:0] = [
+                (
+                    f"https://www.instagram.com/api/v1/feed/user/{user_id}/story/",
+                    self._json_headers(referer, session),
+                )
+            ]
+        for api_url, headers in urls:
             try:
                 response = await self._request(session, api_url, headers=headers)
             except InstagramDownloadError as exc:
@@ -462,16 +527,20 @@ class InstagramWebDownloader:
         if not isinstance(parsed, dict):
             return []
         items: list[dict[str, Any]] = []
+
+        def take(batch: Any) -> None:
+            if isinstance(batch, list):
+                items.extend(item for item in batch if isinstance(item, dict))
+
         reels = parsed.get("reels")
         if isinstance(reels, dict):
             for reel in reels.values():
                 if isinstance(reel, dict):
-                    batch = reel.get("items") or reel.get("media_ids") or []
-                    if isinstance(batch, list):
-                        items.extend(item for item in batch if isinstance(item, dict))
-        tray = parsed.get("items")
-        if isinstance(tray, list):
-            items.extend(item for item in tray if isinstance(item, dict))
+                    take(reel.get("items"))
+        reel = parsed.get("reel")
+        if isinstance(reel, dict):
+            take(reel.get("items"))
+        take(parsed.get("items"))
         return items
 
     async def _load_post(self, session: InstagramHttpSession, shortcode: str, canonical_url: str) -> InstagramPost:
