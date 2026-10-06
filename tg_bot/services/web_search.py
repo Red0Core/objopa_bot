@@ -7,7 +7,6 @@ from urllib.parse import urlsplit
 import httpx
 
 from core.logger import logger
-from tg_bot.services.search_routing import official_domains_for_query
 
 MAX_QUERY_LENGTH = 400
 MAX_RESULTS = 6
@@ -39,12 +38,11 @@ class WebSearchService:
         self._cache: dict[str, tuple[float, SearchResult]] = {}
         self._lock = asyncio.Lock()
 
-    async def search(self, query: str, *, prefer_official: bool = False) -> SearchResult:
+    async def search(self, query: str) -> SearchResult:
         query = normalize_query(query)
         if not query or len(query) > MAX_QUERY_LENGTH:
             return SearchResult(error=f"Search query must contain 1–{MAX_QUERY_LENGTH} characters.")
-        cache_key = ("official:" if prefer_official else "wide:") + query.casefold()
-        official = official_domains_for_query(query) if prefer_official else ()
+        cache_key = query.casefold()
         safe_query = query.replace(self.api_key, "[REDACTED]") if self.api_key else query
         if not self.api_key:
             logger.warning("Web search unavailable: SERPER_API_KEY is not configured")
@@ -56,9 +54,8 @@ class WebSearchService:
             cached = self._cache.get(cache_key)
             if cached:
                 logger.info(
-                    "Web search cache hit: query={!r}, cache_hit=True, official_domain={}, results={}, domains={}",
+                    "Web search cache hit: query={!r}, cache_hit=True, results={}, domains={}",
                     safe_query,
-                    official,
                     len(cached[1].sources),
                     [
                         (urlsplit(s.link).hostname or "").replace(self.api_key, "[REDACTED]")
@@ -68,37 +65,17 @@ class WebSearchService:
                 return cached[1]
             logger.info("Web search cache miss: query={!r}", safe_query)
             try:
-                async with httpx.AsyncClient(timeout=15.0, transport=self.transport) as client:
-                    search_queries = [query]
-                    if official:
-                        sites = " OR ".join(f"site:{domain}" for domain in official)
-                        search_queries.insert(0, f"{query} ({sites})")
-                    result = SearchResult()
-                    for search_query in search_queries:
-                        safe_search_query = search_query.replace(self.api_key, "[REDACTED]")
-                        logger.info(
-                            "Web search: original_query={!r}, search_query={!r}, official_domain={}, cache_hit=False",
-                            safe_query,
-                            safe_search_query,
-                            official,
-                        )
-                        response = await client.post(
-                            "https://google.serper.dev/search",
-                            headers={"X-API-KEY": self.api_key, "Content-Type": "application/json"},
-                            json={"q": search_query, "num": 10},
-                        )
-                        response.raise_for_status()
-                        data = response.json()
-                        if not isinstance(data, dict):
-                            raise ValueError("Unexpected search response")
-                        result = SearchResult(sources=self._parse_sources(data, query))
-                        # One substantive official result is enough; do not spend another credit.
-                        if search_query == query or any(
-                            self._matches_domain(source, official) and len(source.snippet) >= 12
-                            for source in result.sources
-                        ):
-                            break
-                        logger.info("Web search official results insufficient; using broad fallback")
+                async with httpx.AsyncClient(timeout=15.0, transport=self.transport, trust_env=False) as client:
+                    response = await client.post(
+                        "https://google.serper.dev/search",
+                        headers={"X-API-KEY": self.api_key, "Content-Type": "application/json"},
+                        json={"q": query, "num": 10},
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    if not isinstance(data, dict):
+                        raise ValueError("Unexpected search response")
+                    result = SearchResult(sources=self._parse_sources(data, query))
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 logger.warning("Web search HTTP error: status={}, query={!r}", status, safe_query)
@@ -109,7 +86,7 @@ class WebSearchService:
                     error="Web search failed: timeout or unavailable service; fresh facts cannot be verified."
                 )
             logger.info(
-                "Web search complete: query={!r}, results={}, domains={}",
+                "Web search complete: query={!r}, results={}, cache_hit=False, domains={}",
                 safe_query,
                 len(result.sources),
                 [(urlsplit(s.link).hostname or "").replace(self.api_key, "[REDACTED]") for s in result.sources[:3]],
@@ -158,7 +135,20 @@ class WebSearchService:
                 continue
             seen.add(link)
             sources.append(SearchSource(normalize_query(title)[:200], link, normalize_query(snippet)[:1000]))
-        official = official_domains_for_query(query)
+        # This mapping only ranks retrieved evidence; it never changes the query or calls search.
+        words = set(re.findall(r"[a-z]+", query.casefold()))
+        domains = {
+            "gpt": ("openai.com",),
+            "openai": ("openai.com",),
+            "python": ("python.org",),
+            "apple": ("apple.com",),
+            "iphone": ("apple.com",),
+            "google": ("google.com", "ai.google.dev", "blog.google"),
+            "gemini": ("google.com", "ai.google.dev", "blog.google"),
+            "samsung": ("samsung.com",),
+            "github": ("github.com",),
+        }
+        official = tuple(domain for word in words for domain in domains.get(word, ()))
 
         specialist = ("reuters.com", "arstechnica.com", "theverge.com", "techcrunch.com")
 
@@ -170,7 +160,8 @@ class WebSearchService:
                 return 2
             return 3
 
-        sources.sort(key=priority)
+        if official:
+            sources.sort(key=priority)
         selected: list[SearchSource] = []
         domain_counts: dict[str, int] = {}
         evidence_seen = set()

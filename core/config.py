@@ -36,7 +36,6 @@ DOWNLOADS_DIR = BASE_DIR / "downloads"
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 TOKEN_BOT = get_required_env("TOKEN_BOT")
-TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY")
 OBZHORA_CHAT_ID = get_required_env("OBZHORA_CHAT_ID")  # Используется в личных целях
 ZA_IDEU_CHAT_ID = get_required_env("ZA_IDEU_CHAT_ID")  # Используется в личных целях
 MAIN_ACC = int(get_required_env("MAIN_ACC"))  # Используется для проверки запуска бота

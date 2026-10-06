@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
 import openai
 import telegramify_markdown
 from google import genai
@@ -382,7 +383,13 @@ class GeminiModel(AIModelInterface):
 
         self.api_key = api_key
         self.model = model
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(
+                client_args={"trust_env": False},
+                async_client_args={"trust_env": False, "transport": httpx.AsyncHTTPTransport(trust_env=False)},
+            ),
+        )
         self.files_to_upload: list[GeminiFile] = []
 
     def add_file(self, gemini_file: GeminiFile) -> None:
@@ -474,7 +481,13 @@ class GeminiChatModel(AIChatInterface):
         if not api_key:
             raise APIKeyError("API ключ для Gemini Chat не может быть пустым")
 
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(
+                client_args={"trust_env": False},
+                async_client_args={"trust_env": False, "transport": httpx.AsyncHTTPTransport(trust_env=False)},
+            ),
+        )
         self.model = model
         self.chat: AsyncChat | None = None
         self.system_prompt = ""
