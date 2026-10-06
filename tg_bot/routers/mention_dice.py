@@ -2,7 +2,7 @@ from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from core.config import GEMINI_API_KEY
+from core.config import GEMINI_API_KEY, GEMINI_MODEL
 from tg_bot.services.gpt import (
     AIModelError,
     APIKeyError,
@@ -14,7 +14,7 @@ from tg_bot.services.gpt import (
 )
 
 router = Router()
-AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY)
+AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY, model=GEMINI_MODEL)
 
 
 @router.message(Command("dice"))

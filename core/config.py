@@ -36,6 +36,7 @@ DOWNLOADS_DIR = BASE_DIR / "downloads"
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 TOKEN_BOT = get_required_env("TOKEN_BOT")
+TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY")
 OBZHORA_CHAT_ID = get_required_env("OBZHORA_CHAT_ID")  # Используется в личных целях
 ZA_IDEU_CHAT_ID = get_required_env("ZA_IDEU_CHAT_ID")  # Используется в личных целях
 MAIN_ACC = int(get_required_env("MAIN_ACC"))  # Используется для проверки запуска бота
@@ -51,6 +52,8 @@ GIFS_ID = {
 OPENROUTER_API_KEY = get_required_env("OPENROUTER_API_KEY")
 CHATGPT_API_KEY = get_required_env("CHATGPT_API_KEY")
 GEMINI_API_KEY = get_required_env("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
 WOLFRAMALPHA_TOKEN = get_required_env("WOLFRAMALPHA_TOKEN")
 ALPHAVANTAGE_API_KEY = get_required_env("ALPHAVANTAGE_API_KEY")
 COINMARKETCAP_API_KEY = get_required_env("COINMARKETCAP_API_KEY")

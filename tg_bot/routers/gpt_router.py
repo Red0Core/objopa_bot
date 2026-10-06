@@ -8,7 +8,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from core.config import GEMINI_API_KEY, STORAGE_DIR
+from core.config import GEMINI_API_KEY, GEMINI_MODEL, STORAGE_DIR
 from core.logger import logger
 from tg_bot.services.gpt import (
     AIModelError,
@@ -84,7 +84,7 @@ async def handle_ask_gpt(message: Message):
     # Файлы будут удалены локально методом get_response после попытки загрузки в Gemini File API.
     gemini_files_to_add: list[GeminiFile] = []
     ask_command_text: str = ""
-    AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY)
+    AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY, model=GEMINI_MODEL)
 
     try:
         # 1. Извлекаем текстовый промпт из аргумента команды /ask
@@ -213,7 +213,7 @@ async def start_session(message: Message):
     chat_manager = ChatSessionManager()
 
     if not await chat_manager.get_chat(chat_id):
-        chat_model = GeminiChatModel(api_key=GEMINI_API_KEY)
+        chat_model = GeminiChatModel(api_key=GEMINI_API_KEY, model=GEMINI_MODEL)
         text_input = message.text.split(maxsplit=1) if message.text else ""
         system_prompt = text_input[1] if len(text_input) > 1 else ""
 
