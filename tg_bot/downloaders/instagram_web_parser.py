@@ -20,7 +20,7 @@ REQUEST_TIMEOUT = 20
 SHORTCODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".webm")
 REQUEST_RETRIES = 1
-INSTAGRAM_ANDROID_HTTP_PRESET = "android-chrome-latest"
+INSTAGRAM_ANDROID_HTTP_PRESET = "chrome-latest"
 SESSION_COOKIE_NAMES = {
     "sessionid",
     "ds_user_id",
