@@ -148,10 +148,7 @@ async def convert_currency_handler(message: Message):
     """
     if not message.text:
         await message.reply(
-            markdownify(
-                "❌ Использование: /rate <сумма> <из валюты> <в валюту...>\n"
-                "Пример: /rate 5 BYN USD RUB EUR"
-            )
+            markdownify("❌ Использование: /rate <сумма> <из валюты> <в валюту...>\nПример: /rate 5 BYN USD RUB EUR")
         )
         return
 
@@ -195,16 +192,10 @@ async def convert_currency_handler(message: Message):
                 await message.reply(markdownify(f"❌ Валюта {from_currency} не найдена в ЦБ РФ"))
                 return
 
-            not_found = [
-                currency
-                for currency in to_currencies
-                if currency != "RUB" and currency not in rates_dict
-            ]
+            not_found = [currency for currency in to_currencies if currency != "RUB" and currency not in rates_dict]
 
             if not_found:
-                await message.reply(
-                    markdownify(f"❌ Валюты не найдены в ЦБ РФ: {', '.join(not_found)}")
-                )
+                await message.reply(markdownify(f"❌ Валюты не найдены в ЦБ РФ: {', '.join(not_found)}"))
                 return
 
             if from_currency == "RUB":
@@ -237,9 +228,7 @@ async def convert_currency_handler(message: Message):
 
             await message.reply(output, parse_mode="html")
 
-            logger.info(
-                f"Конвертация: {amount} {from_currency} → {', '.join(results)}"
-            )
+            logger.info(f"Конвертация: {amount} {from_currency} → {', '.join(results)}")
 
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 400:
@@ -249,6 +238,7 @@ async def convert_currency_handler(message: Message):
     except Exception:
         logger.error(f"Ошибка при конвертации валют: {traceback.format_exc()}")
         await message.reply("Произошла ошибка при конвертации")
+
 
 @router.message(Command("rub"))
 async def get_forex_rub_rates_handler(message: Message):

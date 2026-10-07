@@ -1,5 +1,4 @@
 import re
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,6 +7,7 @@ from lxml import html
 
 from core.config import DOWNLOADS_DIR
 from core.logger import logger
+from core.memory import MAX_MEDIA_BYTES
 
 SPOTIFY_TRACK_REGEX = re.compile(r"^(?:https?://)?(?:open\.)?spotify\.com/track/[A-Za-z0-9]+(?:\S+)?$")
 SPOTIFY_TRACK_ID_RE = re.compile(r"(?:https?://)?(?:open\.)?spotify\.com/track/([A-Za-z0-9]+)")
@@ -83,63 +83,16 @@ def download_binary(url: str, out_path: Path):
         resp.raise_for_status()
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with out_path.open("wb") as f:
+            written = 0
             for chunk in resp.iter_content(8192):
-                if chunk:
-                    f.write(chunk)
+                if not chunk:
+                    continue
+                written += len(chunk)
+                if written > MAX_MEDIA_BYTES:
+                    raise ValueError("Spotify file exceeds 50MB cap")
+                f.write(chunk)
     except Exception:
         logger.exception(f"Failed to download binary: {url}")
-
-
-def mux_audio_with_cover(
-    ogg_path: Path,
-    cover_path: Path | None,
-    out_path: Path,
-    title: str | None,
-    artist: str | None,
-    bitrate_kbps: int | None = None,
-):
-    """
-    Convert OGG to M4A with metadata.
-    """
-    cmd = ["ffmpeg", "-y", "-i", str(ogg_path)]
-
-    bitrate = bitrate_kbps or 256
-    bitrate_str = f"{bitrate}k"
-
-    cmd += ["-c:a", "aac", "-b:a", bitrate_str]
-
-    if title:
-        cmd += ["-metadata", f"title={title}"]
-    if artist:
-        cmd += ["-metadata", f"artist={artist}"]
-    cmd.append(str(out_path))
-
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-def get_bitrate_kbps(path: Path) -> int | None:
-    cmd = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-select_streams",
-        "a:0",
-        "-show_entries",
-        "stream=bit_rate",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
-        str(path),
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode != 0:
-        return None
-    val = proc.stdout.strip()
-    if not val:
-        return None
-    try:
-        return int(int(val) / 1000)
-    except ValueError:
-        return None
 
 
 def download_spotify_track(track_id: str, base_dir: Path = DOWNLOADS_DIR) -> TrackInfo:
@@ -149,39 +102,27 @@ def download_spotify_track(track_id: str, base_dir: Path = DOWNLOADS_DIR) -> Tra
     stream_url = get_stream_url(track_id)
     full_stream_url = f"{BACKEND_SPOTIFY_DOWNLOAD_BASE}{stream_url}" if stream_url.startswith("/") else stream_url
 
-    # имена файлов
     safe_title = (meta["title"] or track_id).replace("/", "_")
     safe_artist = (meta["artist"] or "Unknown").replace("/", "_")
 
     track_dir = base_dir / track_id
-    ogg_path = track_dir / f"{track_id}.ogg"
+    ogg_path = track_dir / f"{safe_artist} - {safe_title}.ogg"
     cover_path = track_dir / f"{track_id}.jpg"
-    out_path = track_dir / f"{safe_artist} - {safe_title}.m4a"
 
-    # качаем ogg
     download_binary(full_stream_url, ogg_path)
 
-    # получаем битрейт входного файла
-    input_bitrate = get_bitrate_kbps(ogg_path)
-
-    # качаем обложку (если есть)
     if meta["cover_url"]:
         download_binary(meta["cover_url"], cover_path)
     else:
         cover_path = None
-
-    # конвертируем с метаданными и обложкой
-    mux_audio_with_cover(ogg_path, cover_path, out_path, meta["title"], meta["artist"], input_bitrate)
-
-    bitrate_kbps = get_bitrate_kbps(out_path)
 
     return TrackInfo(
         title=meta["title"],
         artist=meta["artist"],
         cover_url=meta["cover_url"],
         stream_url=full_stream_url,
-        local_path=out_path,
-        bitrate_kbps=bitrate_kbps,
+        local_path=ogg_path,
+        bitrate_kbps=None,
         local_cover_path=cover_path,
     )
 

@@ -2,22 +2,25 @@ import sys
 
 from loguru import logger
 
-# Настройка логгера
-logger.remove()  # Удаляем стандартный вывод loguru
+logger.remove()
 logger.add(
     sys.stdout,
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-    level="INFO",  # Уровень логирования
-    enqueue=True,  # Для многопоточности
+    level="INFO",
+    enqueue=True,
+    backtrace=False,
+    diagnose=False,
 )
 
-# Логирование в файл
 logger.add(
     "logs/bot.log",
-    rotation="10 MB",  # Новый файл каждые 10 MB
-    retention="10 days",  # Хранить файлы 10 дней
-    compression="zip",  # Сжатие старых логов
-    level="DEBUG",
+    rotation="5 MB",
+    retention="5 days",
+    compression="zip",
+    level="INFO",
+    enqueue=True,
+    backtrace=False,
+    diagnose=False,
 )
 
 __all__ = ["logger"]

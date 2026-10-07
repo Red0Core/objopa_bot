@@ -9,9 +9,9 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from core.config import STORAGE_DIR
-from tg_bot.services.gpt import get_gpt_formatted_chunks
+from tg_bot.utils.text_split import get_gpt_formatted_chunks
 
-from .mention_dice import AI_CLIENT
+from .mention_dice import get_ai_client
 
 track_router = Router()
 TRACK_FILE = STORAGE_DIR / "trackers.json"
@@ -136,7 +136,7 @@ async def handle_tracking(message: Message):
             f"Можно использовать немного эмодзи, но без HTML. Говори жёстко, с юмором."
         )
         try:
-            gpt_response = await AI_CLIENT.get_response(prompt)
+            gpt_response = await get_ai_client().get_response(prompt)
             mention = f'<a href="tg://user?id={user_id}">{html.escape(user_name)}</a>'
             for i in get_gpt_formatted_chunks(f"{mention}, {gpt_response}"):
                 await message.answer(i, parse_mode="MarkdownV2")
@@ -217,7 +217,7 @@ async def send_daily_message(bot):
             )
 
             try:
-                gpt_response = await AI_CLIENT.get_response(prompt)
+                gpt_response = await get_ai_client().get_response(prompt)
                 mention = f'<a href="tg://user?id={user_id}">{html.escape(user_name)}</a>'
                 for i in get_gpt_formatted_chunks(f"{mention}, {gpt_response}"):
                     await bot.send_message(chat_id, i, parse_mode="MarkdownV2")

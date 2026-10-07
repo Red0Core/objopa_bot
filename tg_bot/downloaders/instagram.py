@@ -2,7 +2,6 @@ import asyncio
 import re
 from pathlib import Path
 
-import instaloader
 from curl_cffi.requests import AsyncSession
 
 from core.config import DOWNLOADS_DIR, INSTAGRAM_PASSWORD, INSTAGRAM_USERNAME, STORAGE_DIR
@@ -58,6 +57,8 @@ async def get_instagram_shortcode(url: str) -> str | None:
 
 async def init_instaloader():
     """Инициализация Instaloader с динамическим User-Agent"""
+    import instaloader
+
     try:
         user_agent = await instagram_ua_service.get_user_agent()
         logger.info(f"Initializing Instaloader with UA: {user_agent[:50]}...")
@@ -144,6 +145,8 @@ async def download_instagram_media(url: str) -> tuple[str | None, str | None]:
     """Асинхронно загружает посты Instagram (фото, видео, текст)
     и возвращает shortcode и ошибку, если есть."""
     try:
+        import instaloader
+
         shortcode: str | None = await get_instagram_shortcode(url)
         if not shortcode:
             return None, "❌ Ошибка: Не удалось извлечь shortcode из ссылки."

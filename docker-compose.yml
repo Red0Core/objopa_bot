@@ -4,6 +4,7 @@ services:
   redis:
     image: redis:alpine
     restart: unless-stopped
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru --save ""
 
   backend:
     build:
@@ -15,6 +16,9 @@ services:
     environment:
       - REDIS_HOST=redis
       - BACKEND_ROUTE=http://backend:8000
+      - MALLOC_ARENA_MAX=2
+      - PYTHONMALLOC=malloc
+      - PYTHONDONTWRITEBYTECODE=1
     depends_on:
       - redis
     volumes:
@@ -34,6 +38,14 @@ services:
     environment:
       - REDIS_HOST=redis
       - BACKEND_ROUTE=http://backend:8000
+      - MALLOC_ARENA_MAX=2
+      - PYTHONMALLOC=malloc
+      - PYTHONDONTWRITEBYTECODE=1
+      - MAX_CONCURRENT_DOWNLOADS=1
+      - MAX_GPT_SESSIONS=8
+      - GPT_SESSION_TIMEOUT_SEC=1200
+      - RSS_TRIM_THRESHOLD_MB=280
+      - FFMPEG_MEMORY_MB=256
     depends_on:
       - redis
       - backend

@@ -88,6 +88,12 @@ install-services: check
 		'WorkingDirectory=$(PROJECT_DIR)' \
 		'ExecStart=$(PYTHON) -m tg_bot.main' \
 		'Environment=PYTHONUNBUFFERED=1' \
+		'Environment=PYTHONMALLOC=malloc' \
+		'Environment=MALLOC_ARENA_MAX=2' \
+		'Environment=PYTHONDONTWRITEBYTECODE=1' \
+		'Environment=OMP_NUM_THREADS=1' \
+		'Environment=MAX_CONCURRENT_DOWNLOADS=1' \
+		'Environment=FFMPEG_MEMORY_MB=256' \
 		'Restart=always' \
 		'RestartSec=3' \
 		'TimeoutStopSec=30' \
@@ -106,6 +112,12 @@ install-services: check
 		'WorkingDirectory=$(PROJECT_DIR)' \
 		'ExecStart=$(PYTHON) -m uvicorn backend.main:app --host $(HOST) --port $(PORT)' \
 		'Environment=PYTHONUNBUFFERED=1' \
+		'Environment=PYTHONMALLOC=malloc' \
+		'Environment=MALLOC_ARENA_MAX=2' \
+		'Environment=PYTHONDONTWRITEBYTECODE=1' \
+		'Environment=OMP_NUM_THREADS=1' \
+		'Environment=MAX_CONCURRENT_DOWNLOADS=1' \
+		'Environment=FFMPEG_MEMORY_MB=256' \
 		'Restart=always' \
 		'RestartSec=3' \
 		'TimeoutStopSec=30' \
