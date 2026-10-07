@@ -2,7 +2,7 @@ from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from core.config import GEMINI_API_KEY
+from core.config import GEMINI_API_KEY, GEMINI_MODEL
 from tg_bot.services.gpt import (
     AIModelError,
     APIKeyError,
@@ -14,21 +14,7 @@ from tg_bot.services.gpt import (
 )
 
 router = Router()
-_ai_client: GeminiModel | None = None
-
-
-def get_ai_client() -> GeminiModel:
-    global _ai_client
-    if _ai_client is None:
-        _ai_client = GeminiModel(api_key=GEMINI_API_KEY)
-    return _ai_client
-
-
-# Back-compat for day_tracker which imported AI_CLIENT.
-def __getattr__(name: str):
-    if name == "AI_CLIENT":
-        return get_ai_client()
-    raise AttributeError(name)
+AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY, model=GEMINI_MODEL)
 
 
 @router.message(Command("dice"))

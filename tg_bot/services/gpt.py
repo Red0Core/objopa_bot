@@ -4,9 +4,20 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
+import httpx
+import openai
+import telegramify_markdown
+from google import genai
+from google.genai import types
+from google.genai.chats import AsyncChat
+
+from core.config import SERPER_API_KEY
 from core.logger import logger
+from tg_bot.services.gemini_tools import SearchContext, build_gemini_config, run_gemini_turn
+from tg_bot.services.web_search import WebSearchService
+
+WEB_SEARCH = WebSearchService(SERPER_API_KEY)
 from tg_bot.utils.text_split import get_gpt_formatted_chunks, split_message_by_paragraphs, split_text_smart
 
 # Re-export split helpers for existing imports.
@@ -222,15 +233,19 @@ async def wait_for_file_active(client: Any, file_obj: Any) -> Any:
 class GeminiModel(AIModelInterface):
     """Модель Google Gemini."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-3.5-flash-lite"):
         if not api_key:
             raise APIKeyError("API ключ для Gemini не может быть пустым")
 
         self.api_key = api_key
         self.model = model
-        from google import genai
-
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(
+                client_args={"trust_env": False},
+                async_client_args={"trust_env": False, "transport": httpx.AsyncHTTPTransport(trust_env=False)},
+            ),
+        )
         self.files_to_upload: list[GeminiFile] = []
 
     def add_file(self, gemini_file: GeminiFile) -> None:
@@ -246,20 +261,11 @@ class GeminiModel(AIModelInterface):
         files_to_delete_locally: list[Path] = []
 
         try:
-            from google.genai import types
-            from google.genai.types import GoogleSearch, Tool
-
-            contents: types.ContentListUnion = []
+            contents: list[types.PartUnionDict] = []
             if prompt.strip():
                 contents.append(types.Part.from_text(text=prompt))
 
-            config_params = {}
-
-            google_search_tool = Tool(google_search=GoogleSearch())
-            config_params["tools"] = [google_search_tool]
-
-            if system_prompt:
-                config_params["system_instruction"] = system_prompt
+            config = build_gemini_config(self.model, system_prompt)
 
             if self.files_to_upload:
                 uploaded_files = []
@@ -288,18 +294,8 @@ class GeminiModel(AIModelInterface):
                 )
                 self.files_to_upload.clear()  # Очищаем список объектов GeminiFile
 
-            # Выполняем запрос к Gemini API
-            response = await self.client.aio.models.generate_content(
-                model=self.model,
-                contents=contents,
-                config=types.GenerateContentConfig(**config_params),
-            )
-
-            if not self._is_valid_response(response):
-                logger.warning("Получен некорректный ответ от Gemini")
-                return ""
-
-            return self._extract_response_text(response)
+            chat = self.client.aio.chats.create(model=self.model, config=config)
+            return await run_gemini_turn(chat, contents, WEB_SEARCH, self.model, system_prompt)
 
         except Exception as e:
             logger.error(f"Ошибка при запросе к Gemini: {e}")
@@ -337,15 +333,22 @@ class GeminiModel(AIModelInterface):
 class GeminiChatModel(AIChatInterface):
     """Чат-модель Google Gemini."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-3.5-flash-lite"):
         if not api_key:
             raise APIKeyError("API ключ для Gemini Chat не может быть пустым")
 
-        from google import genai
-
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(
+                client_args={"trust_env": False},
+                async_client_args={"trust_env": False, "transport": httpx.AsyncHTTPTransport(trust_env=False)},
+            ),
+        )
         self.model = model
-        self.chat = None
+        self.chat: AsyncChat | None = None
+        self.system_prompt = ""
+        self.search_context = SearchContext()
+        self._message_lock = asyncio.Lock()
         self.files_to_upload: list[GeminiFile] = []
 
     def add_file(self, gemini_file: GeminiFile) -> None:
@@ -355,25 +358,21 @@ class GeminiChatModel(AIChatInterface):
     def new_chat(self, system_prompt: str = "") -> None:
         """Создает новый чат."""
         try:
-            from google.genai.types import GenerateContentConfig, GoogleSearch, Tool
+            self.system_prompt = system_prompt
+            self.search_context = SearchContext()
+            config = build_gemini_config(self.model, system_prompt)
 
-            google_search_tool = Tool(google_search=GoogleSearch())
-
-            config_params = {
-                "tools": [google_search_tool],
-                "response_modalities": ["TEXT"],
-            }
-
-            if system_prompt:
-                config_params["system_instruction"] = system_prompt
-
-            self.chat = self.client.aio.chats.create(model=self.model, config=GenerateContentConfig(**config_params))
+            self.chat = self.client.aio.chats.create(model=self.model, config=config)
 
         except Exception as e:
             logger.error(f"Ошибка создания чата Gemini: {e}")
             raise AIModelError(f"Не удалось создать чат: {e}") from e
 
     async def send_message(self, prompt: str) -> str:
+        async with self._message_lock:
+            return await self._send_message(prompt)
+
+    async def _send_message(self, prompt: str) -> str:
         """Отправляет сообщение в чат, включая добавленные файлы."""
         if not self.chat:
             raise AIModelError("Чат не инициализирован. Вызовите new_chat() сначала.")
@@ -418,10 +417,9 @@ class GeminiChatModel(AIChatInterface):
 
                 self.files_to_upload.clear()  # Очищаем список объектов GeminiFile
 
-            # Выполняем запрос к Gemini API
-            response = await self.chat.send_message(message_parts)
-
-            return response.text if response and response.text else ""
+            return await run_gemini_turn(
+                self.chat, message_parts, WEB_SEARCH, self.model, self.system_prompt, self.search_context
+            )
 
         except Exception as e:
             logger.error(f"Ошибка отправки сообщения в Gemini чат: {e}")
