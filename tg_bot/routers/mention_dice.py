@@ -55,7 +55,7 @@ async def handle_mention(message: Message, bot: Bot):
 
     try:
         # Генерируем объяснение через OpenAI API
-        text = await get_ai_client().get_response(action_prompt, system_prompt)
+        text = await AI_CLIENT.get_response(action_prompt, system_prompt)
         for chunk in get_gpt_formatted_chunks(text):
             await message.reply(chunk, parse_mode="MarkdownV2")
     except APIKeyError:
