@@ -10,6 +10,7 @@ from aiogram.types import Message
 
 from core.config import GEMINI_API_KEY, GEMINI_MODEL, STORAGE_DIR
 from core.logger import logger
+from tg_bot.services.ai_response import send_ai_response
 from tg_bot.services.gpt import (
     AIModelError,
     APIKeyError,
@@ -20,7 +21,6 @@ from tg_bot.services.gpt import (
     QuotaExceededError,
     RateLimitError,
     UnexpectedResponseError,
-    get_gpt_formatted_chunks,
 )
 from tg_bot.services.gptchat_manager import ChatSessionManager
 from tg_bot.services.pastebin import upload_to_pastebin
@@ -181,14 +181,7 @@ async def handle_ask_gpt(message: Message):
         response_text = await AI_CLIENT.get_response(final_prompt_text.strip())
 
         # 8. Отправляем ответ пользователю
-        prev_message = message
-        chunks = get_gpt_formatted_chunks(response_text)
-        if chunks:
-            await edit_message.edit_text(chunks[0], parse_mode="MarkdownV2")
-            for chunk in chunks[1:]:
-                prev_message = await prev_message.reply(chunk, parse_mode="MarkdownV2")
-        else:
-            await edit_message.edit_text("Модель вернула пустой ответ.")
+        await send_ai_response(message, edit_message, response_text)
 
     except APIKeyError:
         await message.answer("Ошибка: Неверный API-ключ. Обратитесь к администратору.")
@@ -396,14 +389,8 @@ async def handle_gpt_chat(message: Message):
                 paste_link = await upload_to_pastebin(response)
                 await edit_message.edit_text(f"Ответ загружен: {paste_link}")
             else:
-                prev_message = message
-                chunks = get_gpt_formatted_chunks(response)
-                if chunks:
-                    await edit_message.edit_text(chunks[0], parse_mode="MarkdownV2")
-                    for chunk in chunks[1:]:
-                        prev_message = await prev_message.reply(chunk, parse_mode="MarkdownV2")
-                else:
-                    await edit_message.edit_text("Модель вернула пустой ответ.")
+                await send_ai_response(message, edit_message, response)
+
         else:
             if current_message_gemini_files:
                 await message.reply("Файл(ы) получены. Отправьте текстовое сообщение, чтобы обработать их.")
