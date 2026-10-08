@@ -4,10 +4,10 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 import openai
-import telegramify_markdown
 from google import genai
 from google.genai import types
 from google.genai.chats import AsyncChat
@@ -16,9 +16,9 @@ from core.config import SERPER_API_KEY
 from core.logger import logger
 from tg_bot.services.gemini_tools import SearchContext, build_gemini_config, run_gemini_turn
 from tg_bot.services.web_search import WebSearchService
+from tg_bot.utils.text_split import get_gpt_formatted_chunks, split_message_by_paragraphs, split_text_smart
 
 WEB_SEARCH = WebSearchService(SERPER_API_KEY)
-from tg_bot.utils.text_split import get_gpt_formatted_chunks, split_message_by_paragraphs, split_text_smart
 
 # Re-export split helpers for existing imports.
 _ = (get_gpt_formatted_chunks, split_message_by_paragraphs, split_text_smart)
@@ -96,7 +96,6 @@ class BaseOpenAIModel(AIModelInterface):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
-        import openai
 
         self.client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key)
 
