@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from core.logger import logger
+from tg_bot.services.url_context import redact_urls
 
 MAX_QUERY_LENGTH = 400
 MAX_RESULTS = 6
@@ -43,7 +44,7 @@ class WebSearchService:
         if not query or len(query) > MAX_QUERY_LENGTH:
             return SearchResult(error=f"Search query must contain 1–{MAX_QUERY_LENGTH} characters.")
         cache_key = query.casefold()
-        safe_query = query.replace(self.api_key, "[REDACTED]") if self.api_key else query
+        safe_query = redact_urls(query).replace(self.api_key, "[REDACTED]") if self.api_key else redact_urls(query)
         if not self.api_key:
             logger.warning("Web search unavailable: SERPER_API_KEY is not configured")
             return SearchResult(error="Web search failed: search is not configured; fresh facts cannot be verified.")
