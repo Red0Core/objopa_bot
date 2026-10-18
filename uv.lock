@@ -999,14 +999,14 @@ wheels = [
 
 [[package]]
 name = "httpcloak"
-version = "1.7.2"
+version = "1.7.3"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/80/9454e87249a869f1c4a942407cfd18d51e768290601ea5d27ea90d15ac21/httpcloak-1.7.2-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:f5aa4ba2e82ec5987e2bb9abf115c7ede15ea139c2df0d3c8501b92c2e0d5cd4", size = 5040830, upload-time = "2026-09-02T22:56:23.646Z" },
-    { url = "https://files.pythonhosted.org/packages/95/f7/f5aee2c28a053839ab4f5d3ca59d96ecef44cfe6ca848700c9b3a6008495/httpcloak-1.7.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:d2e49844045746bfce285c90de49912fbdc31b0eae6be35e50b1f730533fc266", size = 4627968, upload-time = "2026-09-02T22:56:25.146Z" },
-    { url = "https://files.pythonhosted.org/packages/88/03/7555fcd9b1680d1829121d34646f071333520d0e66ad35189c8657d06dba/httpcloak-1.7.2-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:773ccac94ebb6d276fe8668969864be2749e47f77dee3c65c3fc9c448537eb93", size = 4810047, upload-time = "2026-09-02T22:56:26.428Z" },
-    { url = "https://files.pythonhosted.org/packages/da/1b/dfb3bde4add5b221f266db1c08bf39fde2cefd8b535cf42c36009597c227/httpcloak-1.7.2-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:7befa2a497a0a1f687ae03f2aa243afd0cc60037478b892933dc480334496938", size = 5319301, upload-time = "2026-09-02T22:56:27.74Z" },
-    { url = "https://files.pythonhosted.org/packages/2b/b3/67f6b10179f7d7de17fa2bae1bccf727e594e741cd7a1591c8c61144270e/httpcloak-1.7.2-py3-none-win_amd64.whl", hash = "sha256:ed92bb83ba9121d00c35ed85718a5e085be9eae63d4b8371ff78f6de6ab10d95", size = 5109964, upload-time = "2026-09-02T22:56:29.089Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/79/7d3746f05bba50d92aa8e93ac44eddf2612568ca5bbad7196091b40357c0/httpcloak-1.7.3-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:eff10ca60fffbbb9cc99ba947254c11bd4768e0d02bf1b31dff71aa83f37bd0c", size = 5097515, upload-time = "2026-10-13T23:35:50.072Z" },
+    { url = "https://files.pythonhosted.org/packages/91/aa/fdbd6e6ee97eb5080f146bc091198bd18f950ae0c4044b945dc9040599c8/httpcloak-1.7.3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:6b36910b103ee2602fef356c78b4e936bb666b8591faa2ef78cf8b795f118942", size = 4678097, upload-time = "2026-10-13T23:35:51.865Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/86/e6d4da3fdbea4b549861ee3d419e9f04e7b0edfe0d19f96a365b3e74c1b8/httpcloak-1.7.3-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:f540745d6d48defbd834c14685c21d76ab86687cb5726d6442fd25fe1572900e", size = 4863431, upload-time = "2026-10-13T23:35:53.16Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/ca/622f88915e03201391875ba8542055da68802860936dd3d99af390070aa4/httpcloak-1.7.3-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:4f2970497aa38cd328f17d6b6162747552d5c0192f2fb29f412f6d4ed6c315d4", size = 5378631, upload-time = "2026-10-13T23:35:54.63Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/91/493ad8542a606b3223b323d1d365fa518478ca9c2691fb03bfb7bf97a275/httpcloak-1.7.3-py3-none-win_amd64.whl", hash = "sha256:207c5083d87bc28e8026fb08d5b92800e240c52da56081d9e2df37863226c894", size = 5166218, upload-time = "2026-10-13T23:35:56.3Z" },
 ]
 
 [[package]]
@@ -1837,7 +1837,7 @@ requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.118.0" },
     { name = "gallery-dl", specifier = ">=1.30.8" },
     { name = "google-genai", specifier = ">=1.39.1" },
-    { name = "httpcloak", specifier = ">=1.6.7" },
+    { name = "httpcloak", specifier = ">=1.7.3" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "instaloader", specifier = ">4.15.2" },
     { name = "loguru", specifier = ">=0.7.3" },
