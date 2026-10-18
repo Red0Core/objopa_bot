@@ -668,7 +668,7 @@ class InstagramWebDownloader:
             payload = response.json()
         except (ValueError, TypeError):
             if _is_login_wall(response.text):
-                raise InstagramAuthRequiredError("Instagram вернул страницу входа вместо данных.")
+                raise InstagramAuthRequiredError("Instagram вернул страницу входа вместо данных.") from None
             raise InstagramDownloadError("Instagram вернул не-JSON ответ API.") from None
         _payload_problem(payload)
         return payload
