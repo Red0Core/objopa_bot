@@ -72,29 +72,8 @@ class DownloaderManager:
         effective_use_cookies = instagram_use_cookies if is_instagram else use_cookies
 
         if is_instagram:
-            web_parser_result = await self._try_instagram_web_parser(url, use_cookies=effective_use_cookies)
-            if web_parser_result.success:
-                return web_parser_result
-
-            # Do not hammer the same Instagram cookies through yt-dlp/gallery-dl after 403/429.
-            if self._is_terminal_instagram_error(web_parser_result.error or ""):
-                return DownloadResult(
-                    success=False,
-                    files=[],
-                    caption=None,
-                    error=self._instagram_error_message(use_cookies=effective_use_cookies),
-                    downloader_used=None,
-                )
-
-            # Never let yt-dlp guest hit Instagram: it downloads the login wall
-            # ("Create an account or log in") and sends it as media.
-            return DownloadResult(
-                success=False,
-                files=[],
-                caption=None,
-                error=self._instagram_error_message(use_cookies=effective_use_cookies),
-                downloader_used=None,
-            )
+            # Preserve actionable auth/network errors, never use unrelated downloaders.
+            return await self._try_instagram_web_parser(url, use_cookies=effective_use_cookies)
 
         custom_result = await self._try_custom_downloaders(url, use_cookies=effective_use_cookies)
         if custom_result.success:
@@ -268,6 +247,7 @@ class DownloaderManager:
                 caption = file_path.read_text(encoding="utf-8")
                 if len(caption) > 8000:
                     caption = caption[:8000]
+                file_path.unlink(missing_ok=True)
             else:
                 media_files.append(file_path)
 
