@@ -17,6 +17,12 @@ router = Router()
 @router.message(Command("ua_current"))
 async def current_user_agent_handler(message: Message):
     """Показывает статус User-Agent для Instagram."""
+    from core.config import COOKIES_ALLOW_USERS_ID
+
+    if not message.from_user or message.from_user.id not in COOKIES_ALLOW_USERS_ID:
+        await message.reply("❌ Недостаточно прав.")
+        return
+
     try:
         current_ua = await instagram_ua_service.get_current_user_agent_from_redis()
 
@@ -35,6 +41,12 @@ async def current_user_agent_handler(message: Message):
 @router.message(Command("ua_set"))
 async def set_user_agent_handler(message: Message, command: CommandObject):
     """Устанавливает новый User-Agent для Instagram."""
+    from core.config import COOKIES_ALLOW_USERS_ID
+
+    if not message.from_user or message.from_user.id not in COOKIES_ALLOW_USERS_ID:
+        await message.reply("❌ Недостаточно прав.")
+        return
+
     if not command.args:
         await message.reply(
             markdownify(
@@ -69,6 +81,12 @@ async def set_user_agent_handler(message: Message, command: CommandObject):
 @router.message(Command("ua_reset"))
 async def reset_user_agent_handler(message: Message):
     """Сбрасывает User-Agent на дефолтный."""
+    from core.config import COOKIES_ALLOW_USERS_ID
+
+    if not message.from_user or message.from_user.id not in COOKIES_ALLOW_USERS_ID:
+        await message.reply("❌ Недостаточно прав.")
+        return
+
     try:
         success = await instagram_ua_service.reset_to_default()
 
@@ -84,59 +102,42 @@ async def reset_user_agent_handler(message: Message):
 
 @router.message(Command("insta_session"))
 async def instagram_session_info_handler(message: Message):
-    """Показывает общую информацию о состоянии Instagram системы."""
-    try:
-        session_info = []
+    """Report actual active Instagram provider and Redis health, never legacy Instaloader."""
+    from core.config import COOKIES_ALLOW_USERS_ID
 
-        # Проверяем статус User-Agent (без отображения самого UA)
-        current_ua = await instagram_ua_service.get_current_user_agent_from_redis()
-        if current_ua:
-            session_info.append("🎯 **User-Agent:** ✅ Установлен")
-        else:
-            session_info.append("⚠️ **User-Agent:** ❌ Не установлен")
+    if not message.from_user or message.from_user.id not in COOKIES_ALLOW_USERS_ID:
+        await message.reply("❌ Недостаточно прав.")
+        return
+    from tg_bot.downloaders.instagram_web_parser import get_instagram_session_status
 
-        # Проверяем готовность системы
-        try:
-            from tg_bot.downloaders.instagram import get_instaloader_session
-
-            session = await get_instaloader_session()
-            if session:
-                session_info.append("✅ **Instagram система:** Готова к работе")
-            else:
-                session_info.append("⚠️ **Instagram система:** Ошибка инициализации")
-        except Exception:
-            session_info.append("❌ **Instagram система:** Ошибка инициализации")
-
-        info_text = "📊 **Статус Instagram системы:**\n\n" + "\n".join(session_info)
-        await message.reply(markdownify(info_text), parse_mode="MarkdownV2")
-
-    except Exception as e:
-        logger.error(f"Error getting Instagram session info: {e}")
-        await message.reply(f"❌ Ошибка при получении информации: {str(e)}")
+    status = await get_instagram_session_status()
+    active = ", ".join(status["slots"]) if status["slots"] else "нет"
+    cooling = ", ".join(status["cooling"]) if status["cooling"] else "нет"
+    details = (
+        "📊 **Instagram:** HTTPCloak / Chrome 155 Android (browser context)\n"
+        f"🔴 **Redis:** {'✅' if status['redis'] else '❌'}\n"
+        f"🍪 **Cookie slots:** {active}\n"
+        f"⏸ **Slots cooldown:** {cooling}\n"
+        f"⚠️ **Global rate limit:** {'ДА' if status['rate_limited'] else 'нет'}\n"
+        "Статус локальный: не проверяет авторизацию запросом к Instagram."
+    )
+    await message.reply(markdownify(details), parse_mode="MarkdownV2")
 
 
 @router.message(Command("insta_reset"))
 async def instagram_reset_handler(message: Message):
-    """Сбрасывает кэш Instaloader для пересоздания с новым User-Agent."""
-    try:
-        from tg_bot.downloaders.instagram import reset_instaloader_session
+    """Compatibility command: do not destroy cookies or disable rate limiting."""
+    from core.config import COOKIES_ALLOW_USERS_ID
 
-        # Сбрасываем кэш
-        await reset_instaloader_session()
+    if not message.from_user or message.from_user.id not in COOKIES_ALLOW_USERS_ID:
+        await message.reply("❌ Недостаточно прав.")
+        return
+    from tg_bot.downloaders.instagram_web_parser import reset_instagram_web_parser
 
-        await message.reply(
-            markdownify(
-                "🔄 **Instagram система сброшена!**\n\n"
-                "✅ Кэш очищен\n"
-                "✅ При следующем запросе будет создан новый инстанс с актуальным User-Agent\n\n"
-                "💡 Это может помочь при проблемах с блокировками Instagram."
-            ),
-            parse_mode="MarkdownV2",
-        )
-
-    except Exception as e:
-        logger.error(f"Error resetting Instagram session: {e}")
-        await message.reply(f"❌ Ошибка при сбросе: {str(e)}")
+    await reset_instagram_web_parser()
+    await message.reply(
+        "✅ Instagram-загрузчик не держит сессию в памяти. Cookies сохранены в Redis; защитная пауза не сбрасывается."
+    )
 
 
 @router.message(Command("ua_help"))

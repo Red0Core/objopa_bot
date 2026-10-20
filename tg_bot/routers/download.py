@@ -337,7 +337,9 @@ async def set_cookies_handler(message: Message):
 
     try:
         # Скачиваем во временный файл
-        temp_file = STORAGE_DIR / "temp_cookies_file.txt"
+        import secrets
+
+        temp_file = STORAGE_DIR / f"temp_cookies_file_{secrets.token_hex(8)}.txt"
         temp_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Используем download_to_path
