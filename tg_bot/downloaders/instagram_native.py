@@ -160,9 +160,12 @@ class NativeInstagramClient:
         if not path.startswith("/api/v1/") or "//" in path or "\\" in path:
             raise NativeInstagramError("Invalid API path")
         try:
-            response = await self.session.get_async(
+            # Native Instagram API is not a Chrome navigation: avoid the
+            # browser's preset HTTP headers while retaining HTTPCloak TLS/H2.
+            response = await self.session.request_async(
+                "GET",
                 "https://i.instagram.com" + path,
-                headers=self.headers,
+                exact_headers=list(self.headers.items()),
                 allow_redirects=False,
             )
             status = int(response.status_code)
