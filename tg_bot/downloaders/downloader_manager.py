@@ -27,6 +27,7 @@ class DownloaderType(Enum):
     TWITTER = "twitter"
     INSTAGRAM = "instagram"
     INSTAGRAM_WEB = "instagram_web_parser"
+    INSTAGRAM_NATIVE = "instagram_native"
     INSTALOADER = "instaloader"
 
 
@@ -72,7 +73,54 @@ class DownloaderManager:
         effective_use_cookies = instagram_use_cookies if is_instagram else use_cookies
 
         if is_instagram:
-            # Preserve actionable auth/network errors, never use unrelated downloaders.
+            # Native API first when configured; preserve the existing Web API intact.
+            # Never retry HTTP 429 through Web: that would evade the rate limit.
+            try:
+                from .instagram_native import (
+                    NativeInstagramError,
+                    NativeRateLimited,
+                    download_instagram_native_media,
+                    get_native_bearer,
+                    mark_native_rate_limited,
+                )
+
+                bearer = await get_native_bearer()
+                if bearer:
+                    # Respect the Web downloader's global Instagram cooldown too.
+                    from core.redis_client import get_redis
+
+                    try:
+                        redis = await get_redis()
+                        if await redis.exists("instagram:global:cooldown"):
+                            return DownloadResult(
+                                success=False, files=[], caption=None,
+                                error="Instagram: временное ограничение запросов (cooldown).",
+                                downloader_used=None,
+                            )
+                    except Exception:
+                        pass  # Existing Web downloader will check Redis again.
+                    try:
+                        prefix = await download_instagram_native_media(url, bearer)
+                        native_result = self._collect_instagram_download(
+                            shortcode=prefix,
+                            downloader_used=DownloaderType.INSTAGRAM_NATIVE,
+                            attempt_label="Instagram native API",
+                        )
+                        if native_result.success:
+                            return native_result
+                    except NativeRateLimited:
+                        await mark_native_rate_limited()
+                        return DownloadResult(
+                            success=False, files=[], caption=None,
+                            error="Instagram: HTTP 429 — запросы временно приостановлены.",
+                            downloader_used=None,
+                        )
+                    except NativeInstagramError as exc:
+                        # Exception messages are deliberately sanitized, never contain Bearer.
+                        logger.info("Instagram native API unavailable: {}", type(exc).__name__)
+            except Exception as exc:
+                # A native adapter failure cannot disable the working Web path.
+                logger.warning("Instagram native adapter failed: {}", type(exc).__name__)
             return await self._try_instagram_web_parser(url, use_cookies=effective_use_cookies)
 
         custom_result = await self._try_custom_downloaders(url, use_cookies=effective_use_cookies)
