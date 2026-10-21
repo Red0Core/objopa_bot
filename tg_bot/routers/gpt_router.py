@@ -272,8 +272,7 @@ async def handle_gpt_chat(message: Message):
     chat_session = cast(GeminiChatModel, chat_session)
 
     if not chat_session:
-        if message.chat.type == "private":
-            await message.answer("Пожалуйста, начните чат с помощью команды /chat.")
+        # /ask is standalone; ordinary messages outside an explicit /chat session stay quiet.
         return
 
     # Список для хранения объектов GeminiFile, скачанных из ТЕКУЩЕГО сообщения Telegram.

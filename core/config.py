@@ -52,6 +52,12 @@ OPENROUTER_API_KEY = get_required_env("OPENROUTER_API_KEY")
 CHATGPT_API_KEY = get_required_env("CHATGPT_API_KEY")
 GEMINI_API_KEY = get_required_env("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+GEMINI_URL_CONTEXT_ENABLED = os.getenv("GEMINI_URL_CONTEXT_ENABLED", "true").strip().lower() in {
+    "true",
+    "1",
+    "yes",
+    "on",
+}
 SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
 WOLFRAMALPHA_TOKEN = get_required_env("WOLFRAMALPHA_TOKEN")
 ALPHAVANTAGE_API_KEY = get_required_env("ALPHAVANTAGE_API_KEY")
