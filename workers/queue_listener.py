@@ -10,6 +10,7 @@ os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 from datetime import datetime, timedelta, timezone
+from importlib import import_module
 from typing import Any
 
 from redis.exceptions import BusyLoadingError, ConnectionError, TimeoutError
@@ -19,17 +20,7 @@ from core.locks import LockAcquireError
 from core.logger import logger
 from core.memory import trim_memory
 from core.redis_client import get_redis
-from workers.animation_generation_pipeline import (
-    AnimationGenerationPipeline,
-    SetAnimationsForcePipeline,
-)
-from workers.base_pipeline import BasePipeline
-from workers.concat_generation_pipeline import ConcatAnimationsPipeline
-from workers.delete_images_folder_pipeline import DeleteImagesFolderPipeline
-from workers.image_generation_pipeline import ImageGenerationPipeline
-from workers.reset_worker_state_pipeline import ResetWorkerStatePipeline
 from workers.utils import send_notification
-from workers.video_generation_pipeline import VideoGenerationPipeline
 
 WHO_LAUNCHED_WORKER = "Mihuil"  # ENGLISH NAME
 CHAT_ID = OBZHORA_CHAT_ID
@@ -39,14 +30,15 @@ NEED_TO_RETURN_TO_QUEUE = True
 queue_name = "hailuo_tasks"
 
 # Возможные типы задач и воркеры для них
-PIPELINE_TYPE_REGISTRY = {
-    "video_generation": VideoGenerationPipeline,
-    "image_generation": ImageGenerationPipeline,
-    "animation_generation": AnimationGenerationPipeline,
-    "delete_image_folder": DeleteImagesFolderPipeline,
-    "concat_animations": ConcatAnimationsPipeline,
-    "reset_worker_session": ResetWorkerStatePipeline,
-    "set_animations_force": SetAnimationsForcePipeline,
+# Keep idle worker light; load one pipeline when its queue task is actually dequeued.
+PIPELINE_TYPE_REGISTRY: dict[str, str] = {
+    "video_generation": "workers.video_generation_pipeline:VideoGenerationPipeline",
+    "image_generation": "workers.image_generation_pipeline:ImageGenerationPipeline",
+    "animation_generation": "workers.animation_generation_pipeline:AnimationGenerationPipeline",
+    "delete_image_folder": "workers.delete_images_folder_pipeline:DeleteImagesFolderPipeline",
+    "concat_animations": "workers.concat_generation_pipeline:ConcatAnimationsPipeline",
+    "reset_worker_session": "workers.reset_worker_state_pipeline:ResetWorkerStatePipeline",
+    "set_animations_force": "workers.animation_generation_pipeline:SetAnimationsForcePipeline",
 }
 
 
@@ -114,13 +106,15 @@ class QueueListener:
     async def process_task(self, task: dict[str, Any]):
         task_type = task.get("type", "")
         task["worker_id"] = WHO_LAUNCHED_WORKER
-        worker_cls = PIPELINE_TYPE_REGISTRY.get(task_type)
+        worker_spec = PIPELINE_TYPE_REGISTRY.get(task_type)
 
-        if not worker_cls:
+        if not worker_spec:
             logger.warning(f"Неизвестный тип задачи: {task_type}")
             return
 
-        pipeline: BasePipeline = worker_cls(**task)
+        module_name, _, class_name = worker_spec.partition(":")
+        worker_cls = getattr(import_module(module_name), class_name)
+        pipeline = worker_cls(**task)
         logger.info(f"Запускаю пайплайн для задачи: {task_type}")
         try:
             await pipeline.run()

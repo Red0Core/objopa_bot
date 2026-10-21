@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -14,7 +16,10 @@ from tg_bot.services.gpt import (
 )
 
 router = Router()
-AI_CLIENT = GeminiModel(api_key=GEMINI_API_KEY, model=GEMINI_MODEL)
+@lru_cache(maxsize=1)
+def get_ai_client() -> GeminiModel:
+    """Initialize Gemini on the first /dice or daily tracker use, not at startup."""
+    return GeminiModel(api_key=GEMINI_API_KEY, model=GEMINI_MODEL)
 
 
 @router.message(Command("dice"))
@@ -55,7 +60,7 @@ async def handle_mention(message: Message, bot: Bot):
 
     try:
         # Генерируем объяснение через OpenAI API
-        text = await AI_CLIENT.get_response(action_prompt, system_prompt)
+        text = await get_ai_client().get_response(action_prompt, system_prompt)
         for chunk in get_gpt_formatted_chunks(text):
             await message.reply(chunk, parse_mode="MarkdownV2")
     except APIKeyError:
