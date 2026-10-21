@@ -301,6 +301,12 @@ class DownloaderManager:
 
         self.download_attempts.append(f"{attempt_label}: {'Success' if media_files else 'No media files found'}")
 
+        # instagram-download-source-log-v1
+        if media_files and downloader_used == DownloaderType.INSTAGRAM_NATIVE:
+            logger.info("Instagram: downloaded via BEARER (native API), files={}", len(media_files))
+        elif media_files and downloader_used == DownloaderType.INSTAGRAM_WEB:
+            logger.info("Instagram: downloaded via WEB API, files={}", len(media_files))
+
         return DownloadResult(
             success=bool(media_files),
             files=media_files,
