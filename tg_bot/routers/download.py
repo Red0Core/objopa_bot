@@ -427,3 +427,108 @@ async def delete_cookies_handler(message: Message, command: CommandObject):
             telegramify_markdown.markdownify("❌ Не удалось удалить cookies!"),
             parse_mode="MarkdownV2",
         )
+
+
+# The native Android Bearer is separate from Chrome/WebView cookies.
+# Use this only in the administrator's private chat.
+@router.message(Command("set_ig_bearer"))
+async def set_instagram_native_bearer(message: Message, command: CommandObject):
+    """Save a native Instagram Bearer from command text or a UTF-8 .txt document.
+
+    Accepted: /set_ig_bearer <token>; attach .txt with command caption;
+    or reply /set_ig_bearer to a document. Do not log/reply with secrets.
+    """
+    import io
+
+    from tg_bot.downloaders.instagram_native import TOKEN_KEY
+
+    if (
+        message.from_user is None
+        or message.from_user.id not in COOKIES_ALLOW_USERS_ID
+        or message.chat.type != "private"
+    ):
+        await message.answer("❌ Доступно только администратору в личных сообщениях.")
+        return
+
+    raw = (command.args or "").strip()
+    document_message = message if message.document else message.reply_to_message
+    document = document_message.document if document_message else None
+    if not raw and document:
+        if not (document.file_name or "").lower().endswith(".txt") or (document.file_size or 0) > 8192:
+            await message.answer("❌ Нужен UTF-8 .txt файл размером до 8 КБ.")
+            return
+        try:
+            file_info = await message.bot.get_file(document.file_id)
+            if not file_info.file_path:
+                raise ValueError("missing file path")
+            buffer = io.BytesIO()
+            await message.bot.download_file(file_info.file_path, destination=buffer)
+            content = buffer.getvalue()
+            if len(content) > 8192:
+                raise ValueError("file too large")
+            raw = content.decode("utf-8-sig").strip()
+        except (UnicodeDecodeError, ValueError):
+            await message.answer("❌ Не удалось прочитать токен из .txt.")
+            return
+        except Exception:
+            await message.answer("❌ Не получилось получить файл от Telegram.")
+            return
+    if raw.lower().startswith("bearer "):
+        raw = raw[7:].strip()
+    if not (10 <= len(raw) <= 4096) or any(ord(c) < 33 or ord(c) > 126 for c in raw):
+        await message.answer("❌ Укажи один Bearer-токен без пробелов, 10–4096 ASCII-символов.")
+        return
+    try:
+        redis = await get_redis()
+        # Persist until explicitly replaced/deleted. Redis TTL != token lifetime.
+        await redis.set(TOKEN_KEY, raw)
+    except Exception:
+        await message.answer("❌ Redis недоступен: Bearer не сохранён.")
+        return
+    # Message deletion is best effort; Telegram may retain server-side records.
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    if document_message and document_message != message:
+        try:
+            await document_message.delete()
+        except Exception:
+            pass
+    await message.answer("✅ Instagram Native Bearer сохранён в Redis. Сам токен не показываю.")
+
+
+@router.message(Command("ig_bearer_status"))
+async def instagram_native_bearer_status(message: Message):
+    from tg_bot.downloaders.instagram_native import get_native_bearer
+
+    if (
+        message.from_user is None
+        or message.from_user.id not in COOKIES_ALLOW_USERS_ID
+        or message.chat.type != "private"
+    ):
+        return
+    found = await get_native_bearer()
+    await message.answer(
+        "✅ Native Bearer присутствует в Redis (валидность не проверялась)."
+        if found else "⚠️ Native Bearer отсутствует или Redis недоступен."
+    )
+
+
+@router.message(Command("delete_ig_bearer"))
+async def delete_instagram_native_bearer(message: Message):
+    from tg_bot.downloaders.instagram_native import TOKEN_KEY
+
+    if (
+        message.from_user is None
+        or message.from_user.id not in COOKIES_ALLOW_USERS_ID
+        or message.chat.type != "private"
+    ):
+        return
+    try:
+        redis = await get_redis()
+        await redis.delete(TOKEN_KEY)
+    except Exception:
+        await message.answer("❌ Redis недоступен: Bearer не удалён.")
+        return
+    await message.answer("✅ Native Bearer удалён из Redis. Web cookies не изменены.")
