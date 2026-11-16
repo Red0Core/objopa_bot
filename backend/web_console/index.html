@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f9fc">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Objopa API: живой каталог маршрутов FastAPI, проверка GET-запросов и локальный генератор TOTP-кодов.">
+  <title>Objopa API | Cynet Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/docs/assets/style.css">
+  <script type="module" src="/docs/assets/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Перейти к содержимому</a>
+  <div class="app-shell">
+    <aside class="rail" aria-label="Навигация">
+      <a class="brand" href="/docs" aria-label="Cynet Console, главная">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <span><strong>Cynet</strong><small>console</small></span>
+      </a>
+      <div class="rail-links">
+        <a class="rail-link is-current" href="#overview" aria-current="page">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></svg>
+          Обзор
+        </a>
+        <a class="rail-link" href="#routes">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6 3 12l6 6m6-12 6 6-6 6M13 4l-2 16"/></svg>
+          Маршруты API
+        </a>
+        <a class="rail-link" href="#totp">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></svg>
+          2FA-коды
+        </a>
+        <a class="rail-link" href="#request">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 8-4 4 4 4m8-8 4 4-4 4m-3-11-2 14"/></svg>
+          Запросы
+        </a>
+      </div>
+      <div class="rail-bottom">
+        <span class="rail-caption">Инструменты разработчика</span>
+        <a class="rail-external" href="/reference">
+          Открыть Swagger
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5m0-5-9 9"/><path d="M19 13v6H5V5h6"/></svg>
+        </a>
+        <a class="rail-external" href="/openapi.json">
+          OpenAPI JSON
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5m0-5-9 9"/><path d="M19 13v6H5V5h6"/></svg>
+        </a>
+        <div class="rail-host"><span>Приложение</span><strong>api.cynet.lol</strong></div>
+      </div>
+    </aside>
+
+    <div class="content-wrap">
+      <header class="topbar">
+        <div class="breadcrumbs"><span class="crumb-root">Cynet</span><span class="crumb-divider">/</span><span>Objopa API</span></div>
+        <div class="topbar-actions">
+          <span id="schema-state" class="connection-state" role="status">Подключаем OpenAPI…</span>
+          <a class="top-link" href="/reference">Swagger UI <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5m0-5-9 9"/><path d="M19 13v6H5V5h6"/></svg></a>
+        </div>
+      </header>
+
+      <main id="main">
+        <section id="overview" class="intro">
+          <div class="intro-copy">
+            <h1>Objopa API.<br>Всё под рукой.</h1>
+            <p>Маршруты бота, рыночные данные и инструменты разработки в одном рабочем окне.</p>
+            <a class="intro-link" href="#routes">Посмотреть маршруты <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+          </div>
+          <div class="intro-figure" aria-label="Количество маршрутов по OpenAPI">
+            <div class="figure-rule"><span>Источник: /openapi.json</span><span id="schema-version">FastAPI</span></div>
+            <span class="figure-number num" id="route-total">…</span>
+            <div class="figure-bottom"><span>доступных операций</span><span class="figure-slash">/</span><span id="method-summary">Читаем схему</span></div>
+            <div class="figure-track" aria-hidden="true"><div id="method-track"></div></div>
+          </div>
+        </section>
+
+        <div class="workspace">
+          <section class="route-section" id="routes" aria-labelledby="routes-heading">
+            <div class="section-head">
+              <div>
+                <h2 id="routes-heading">Маршруты API</h2>
+                <p class="section-note">Список берётся прямо из схемы запущенного сервера.</p>
+              </div>
+              <span class="count-label num" id="visible-count">…</span>
+            </div>
+            <div class="search-wrap">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
+              <label class="visually-hidden" for="route-search">Поиск маршрута</label>
+              <input id="route-search" name="route-search" type="search" placeholder="Поиск по пути, методу или описанию" autocomplete="off" spellcheck="false">
+              <kbd>/</kbd>
+            </div>
+            <div class="filter-bar" role="group" aria-label="Фильтр методов">
+              <button type="button" class="filter is-active" data-filter="ALL" aria-pressed="true">Все</button>
+              <button type="button" class="filter" data-filter="GET" aria-pressed="false">GET</button>
+              <button type="button" class="filter" data-filter="POST" aria-pressed="false">POST</button>
+              <button type="button" class="filter" data-filter="OTHER" aria-pressed="false">Другие</button>
+            </div>
+            <div class="route-table-heading" aria-hidden="true"><span>Метод / путь</span><span>Раздел</span></div>
+            <div class="routes-list" id="routes-list" aria-live="polite" aria-busy="true">
+              <div class="list-message">Читаем /openapi.json…</div>
+            </div>
+            <p class="route-footnote">Для полного редактирования тела запросов используй <a href="/reference">Swagger UI</a>.</p>
+          </section>
+
+          <div class="tools-column">
+            <section class="totp-panel" id="totp" aria-labelledby="totp-heading">
+              <div class="panel-title-row">
+                <h2 id="totp-heading">2FA локально.</h2>
+                <svg class="shield-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5.3 3.3 9 8 11 4.7-2 8-5.7 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+              </div>
+              <p class="totp-intro">Коды создаются в браузере. Секрет не покидает вкладку.</p>
+              <label class="field-label" for="totp-secret">Base32-секрет или otpauth://</label>
+              <div class="secret-row">
+                <input id="totp-secret" name="totp-secret" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="JBSWY3DPEHPK3PXP" aria-describedby="totp-message">
+                <button type="button" class="icon-button" id="toggle-secret" aria-label="Показать секрет" aria-pressed="false">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+              <p class="field-helper" id="totp-message" role="status">Ничего не сохраняется в истории или на сервере.</p>
+              <div class="code-display">
+                <span id="totp-code" class="otp-code num" aria-label="Текущий одноразовый код">••• •••</span>
+                <div class="timer-meta"><span id="totp-period">Код на 30 секунд</span><span class="num" id="totp-timer">30 c</span></div>
+                <div class="timer-track" role="progressbar" id="totp-progress" aria-label="Осталось до обновления кода" aria-valuemin="0" aria-valuemax="30" aria-valuenow="30"><span id="timer-fill"></span></div>
+              </div>
+              <div class="totp-actions">
+                <button type="button" id="copy-code" class="key key-primary" disabled>Скопировать код</button>
+                <button type="button" id="clear-secret" class="key key-quiet">Очистить</button>
+              </div>
+            </section>
+
+            <section class="request-panel" id="request" aria-labelledby="request-heading">
+              <div class="request-top">
+                <h2 id="request-heading">Запрос</h2>
+                <span class="request-context" id="selected-method">Выбери маршрут</span>
+              </div>
+              <p class="request-description" id="selected-description">Выбери строку слева, чтобы увидеть параметры и готовую команду cURL.</p>
+              <form id="request-form" autocomplete="off">
+                <div id="parameter-fields"></div>
+                <div class="request-actions">
+                  <button type="button" id="copy-curl" class="key key-dark" disabled>Скопировать cURL</button>
+                  <button type="submit" id="run-request" class="text-button" disabled>Выполнить GET</button>
+                </div>
+              </form>
+              <div class="code-window">
+                <div class="code-window-head"><span>terminal</span><span>cURL</span></div>
+                <pre><code id="curl-code"># Выбери маршрут из каталога</code></pre>
+              </div>
+              <div id="response-box" class="response-box" hidden>
+                <div class="response-head"><span id="response-status">Ответ</span><button type="button" id="close-response">Скрыть</button></div>
+                <pre id="response-body"></pre>
+              </div>
+            </section>
+          </div>
+        </div>
+      </main>
+
+      <footer class="footer">
+        <span>Objopa ecosystem</span>
+        <div><a href="/openapi.json">OpenAPI</a><a href="/reference">Swagger</a><a href="https://github.com/Red0Core/objopa_bot" rel="noopener noreferrer">GitHub</a></div>
+        <span>Собрано для своих инструментов.</span>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>
