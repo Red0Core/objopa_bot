@@ -3,6 +3,7 @@
 Приоритет: кастомные версии -> yt-dlp -> gallery-dl
 """
 
+import asyncio
 import re
 import traceback
 from dataclasses import dataclass
@@ -62,6 +63,8 @@ class DownloaderManager:
                 trim_memory()
 
     async def _download_media_unlocked(self, url: str, use_cookies: bool = False) -> DownloadResult:
+        from .spotify import SPOTIFY_ALBUM_REGEX, SPOTIFY_TRACK_REGEX
+
         self.download_attempts = []
 
         is_instagram = bool(INSTAGRAM_REGEX.search(url))
@@ -74,6 +77,11 @@ class DownloaderManager:
         if is_instagram:
             # Preserve actionable auth/network errors, never use unrelated downloaders.
             return await self._try_instagram_web_parser(url, use_cookies=effective_use_cookies)
+
+        if track_match := SPOTIFY_TRACK_REGEX.fullmatch(url):
+            return await self._try_spotify(track_match.group(1), is_album=False)
+        if album_match := SPOTIFY_ALBUM_REGEX.fullmatch(url):
+            return await self._try_spotify(album_match.group(1), is_album=True)
 
         custom_result = await self._try_custom_downloaders(url, use_cookies=effective_use_cookies)
         if custom_result.success:
@@ -129,43 +137,6 @@ class DownloaderManager:
 
                 self.download_attempts.append(f"Twitter: {error or 'No media found'}")
 
-            else:
-                from .spotify import SPOTIFY_TRACK_REGEX, download_spotify_track, extract_track_id
-
-                if SPOTIFY_TRACK_REGEX.match(url):
-                    logger.info(f"Attempting Spotify download for: {url}")
-                    track_id = extract_track_id(url)
-                    if not track_id:
-                        self.download_attempts.append("Spotify: Invalid track URL")
-                        return DownloadResult(
-                            success=False,
-                            files=[],
-                            caption=None,
-                            error="Invalid Spotify track URL",
-                            downloader_used=DownloaderType.SPOTIFY,
-                        )
-                    track_info = download_spotify_track(track_id)
-
-                    if track_info and track_info.local_path.exists():
-                        self.download_attempts.append("Spotify: Success")
-
-                        files = (
-                            [track_info.local_path, track_info.local_cover_path]
-                            if track_info.local_cover_path
-                            else [track_info.local_path]
-                        )
-                        caption = f"{track_info.title} - {track_info.artist}"
-
-                        return DownloadResult(
-                            success=True,
-                            files=files,
-                            caption=caption,
-                            error=None,
-                            downloader_used=DownloaderType.SPOTIFY,
-                        )
-
-                    self.download_attempts.append("Spotify: No track downloaded")
-
         except Exception as e:
             logger.error(f"Custom downloader error: {e}\n{traceback.format_exc()}")
             self.download_attempts.append(f"Custom: Exception - {self._clean_error_text(str(e))}")
@@ -177,6 +148,27 @@ class DownloaderManager:
             error="\n".join(self.download_attempts),
             downloader_used=None,
         )
+
+    async def _try_spotify(self, spotify_id: str, *, is_album: bool) -> DownloadResult:
+        from .spotify import download_spotify_album, download_spotify_track
+
+        try:
+            if is_album:
+                caption, tracks = await asyncio.to_thread(download_spotify_album, spotify_id)
+            else:
+                track = await asyncio.to_thread(download_spotify_track, spotify_id)
+                tracks = [track]
+                caption = f"{track.title or spotify_id} - {track.artist or 'Unknown'}"
+        except Exception as exc:
+            logger.exception("Spotify download failed for {}", spotify_id)
+            error = f"Spotify: {self._clean_error_text(str(exc))}"
+            self.download_attempts.append(error)
+            return DownloadResult(success=False, files=[], error=error, downloader_used=DownloaderType.SPOTIFY)
+
+        files = [track.local_path for track in tracks]
+        files.extend(track.local_cover_path for track in tracks if track.local_cover_path)
+        self.download_attempts.append("Spotify: Success")
+        return DownloadResult(success=True, files=files, caption=caption, downloader_used=DownloaderType.SPOTIFY)
 
     async def _try_instagram_web_parser(self, url: str, use_cookies: bool = False) -> DownloadResult:
         web_parser_error = None
