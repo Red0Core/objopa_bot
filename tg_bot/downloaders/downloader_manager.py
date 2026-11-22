@@ -9,14 +9,17 @@ import traceback
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from core.config import DOWNLOADS_DIR
 from core.logger import logger
-from core.memory import DOWNLOAD_SLOT, trim_memory
+from core.memory import DOWNLOAD_SLOT, cleanup_paths, trim_memory
 from tg_bot.utils.cookies_manager import cookies_manager
 
 from .patterns import INSTAGRAM_REGEX, TWITTER_REGEX
+
+if TYPE_CHECKING:
+    from .spotify import TrackInfo
 
 
 class DownloaderType(Enum):
@@ -41,6 +44,7 @@ class DownloadResult:
     caption: Optional[str] = None
     error: Optional[str] = None
     downloader_used: Optional[DownloaderType] = None
+    spotify_tracks: list["TrackInfo"] | None = None
 
 
 class DownloaderManager:
@@ -199,7 +203,9 @@ class DownloaderManager:
 
     async def _try_spotify(self, spotify_id: str, *, is_album: bool) -> DownloadResult:
         from .spotify import download_spotify_album, download_spotify_track
+        from .spotify_audio import prepare_spotify_audio
 
+        tracks: list[TrackInfo] = []
         try:
             if is_album:
                 caption, tracks = await asyncio.to_thread(download_spotify_album, spotify_id)
@@ -207,16 +213,21 @@ class DownloaderManager:
                 track = await asyncio.to_thread(download_spotify_track, spotify_id)
                 tracks = [track]
                 caption = f"{track.title or spotify_id} - {track.artist or 'Unknown'}"
+            await asyncio.to_thread(prepare_spotify_audio, tracks)
         except Exception as exc:
+            cleanup_paths([track.local_path for track in tracks])
+            cleanup_paths([track.local_cover_path for track in tracks if track.local_cover_path])
             logger.exception("Spotify download failed for {}", spotify_id)
             error = f"Spotify: {self._clean_error_text(str(exc))}"
             self.download_attempts.append(error)
             return DownloadResult(success=False, files=[], error=error, downloader_used=DownloaderType.SPOTIFY)
 
         files = [track.local_path for track in tracks]
-        files.extend(track.local_cover_path for track in tracks if track.local_cover_path)
+        files.extend(dict.fromkeys(track.local_cover_path for track in tracks if track.local_cover_path))
         self.download_attempts.append("Spotify: Success")
-        return DownloadResult(success=True, files=files, caption=caption, downloader_used=DownloaderType.SPOTIFY)
+        return DownloadResult(
+            success=True, files=files, caption=caption, downloader_used=DownloaderType.SPOTIFY, spotify_tracks=tracks
+        )
 
     async def _try_instagram_web_parser(self, url: str, use_cookies: bool = False) -> DownloadResult:
         web_parser_error = None

@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from aiogram.types import (
     FSInputFile,
@@ -15,6 +15,9 @@ from core.logger import logger
 from core.memory import MAX_MEDIA_BYTES, cleanup_paths
 from tg_bot.utils.caption_formatter import caption_formatter
 
+if TYPE_CHECKING:
+    from tg_bot.downloaders.spotify import TrackInfo
+
 
 class MediaSender:
     """Простой отправщик медиа без логики форматирования."""
@@ -24,7 +27,14 @@ class MediaSender:
     AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".m4a", ".flac", ".opus"}
 
     @staticmethod
-    async def send(message: Message, files: list[Path], caption: str | None = None, **_: object) -> bool:
+    async def send(
+        message: Message,
+        files: list[Path],
+        caption: str | None = None,
+        *,
+        spotify_tracks: list["TrackInfo"] | None = None,
+        **_: object,
+    ) -> bool:
         if not files:
             if caption:
                 parts = caption_formatter.format_and_split(caption, first_max=4096, rest_max=4096)
@@ -45,7 +55,9 @@ class MediaSender:
                     continue
                 sendable.append(path)
 
-            images = [f for f in sendable if f.suffix.lower() in MediaSender.IMAGE_EXTS]
+            audio_metadata = {track.local_path: track for track in spotify_tracks or ()}
+            audio_covers = {track.local_cover_path for track in audio_metadata.values()}
+            images = [f for f in sendable if f.suffix.lower() in MediaSender.IMAGE_EXTS and f not in audio_covers]
             videos = [f for f in sendable if f.suffix.lower() in MediaSender.VIDEO_EXTS]
             audio = [f for f in sendable if f.suffix.lower() in MediaSender.AUDIO_EXTS]
             docs = [
@@ -67,7 +79,7 @@ class MediaSender:
 
             if audio:
                 first_caption = caption_parts[0] if caption_parts and not caption_used else None
-                await MediaSender._send_audio(message, audio, first_caption)
+                await MediaSender._send_audio(message, audio, first_caption, audio_metadata)
                 caption_used = True
 
             if docs:
@@ -119,25 +131,39 @@ class MediaSender:
             )
 
     @staticmethod
-    async def _send_audio(message: Message, audio: list[Path], caption: str | None):
+    async def _send_audio(message: Message, audio: list[Path], caption: str | None, metadata: dict[Path, "TrackInfo"]):
         for i in range(0, len(audio), 10):
             chunk = audio[i : i + 10]
             media_group = []
 
-            for a in chunk:
-                cover_path = a.parent / f"{a.parent.name}.jpg"
-                thumbnail = FSInputFile(cover_path) if cover_path.exists() else None
-                media_group.append(InputMediaAudio(media=FSInputFile(a), thumbnail=thumbnail))
-
-            chunk_caption = caption if i == 0 and caption else None
-            if chunk_caption and media_group:
-                cover_path = chunk[0].parent / f"{chunk[0].parent.name}.jpg"
-                thumbnail = FSInputFile(cover_path) if cover_path.exists() else None
-                media_group[0] = InputMediaAudio(
-                    media=FSInputFile(chunk[0]), caption=chunk_caption, parse_mode="MarkdownV2", thumbnail=thumbnail
+            for index, path in enumerate(chunk, start=i):
+                track = metadata.get(path)
+                cover_path = track.local_cover_path if track else path.parent / f"{path.parent.name}.jpg"
+                thumbnail = FSInputFile(cover_path) if cover_path and cover_path.is_file() else None
+                track_caption = caption if index == 0 else None
+                media_group.append(
+                    InputMediaAudio(
+                        media=FSInputFile(path),
+                        caption=track_caption,
+                        parse_mode="MarkdownV2" if track_caption else None,
+                        title=track.title if track else None,
+                        performer=track.artist if track else None,
+                        thumbnail=thumbnail,
+                    )
                 )
 
-            await message.reply_media_group(media=cast(list[MediaUnion], media_group))
+            if len(media_group) == 1:
+                item = media_group[0]
+                await message.reply_audio(
+                    item.media,
+                    caption=item.caption,
+                    parse_mode=item.parse_mode,
+                    title=item.title,
+                    performer=item.performer,
+                    thumbnail=cast(FSInputFile | None, item.thumbnail),
+                )
+            else:
+                await message.reply_media_group(media=cast(list[MediaUnion], media_group))
 
             if i + 10 < len(audio):
                 await asyncio.sleep(5)

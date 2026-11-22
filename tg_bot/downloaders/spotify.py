@@ -42,7 +42,11 @@ def _session() -> Session:
 
 def _cover_url(album: dict) -> str | None:
     images = album.get("images") or []
-    return images[0].get("url") if images else None
+    thumbnails = [
+        image for image in images if 0 < (image.get("width") or 0) <= 320 and 0 < (image.get("height") or 0) <= 320
+    ]
+    cover = max(thumbnails, key=lambda image: image["width"], default={})
+    return cover.get("url")
 
 
 def _download_binary(session: Session, url: str, path: Path) -> None:

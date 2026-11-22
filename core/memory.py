@@ -9,6 +9,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Generic, Hashable, Mapping, TypeVar
 
+from core.ffmpeg_cap import ffmpeg_memory_mb
 from core.logger import logger
 
 K = TypeVar("K", bound=Hashable)
@@ -24,7 +25,6 @@ GPT_SESSION_TIMEOUT_SEC = max(60, int(os.getenv("GPT_SESSION_TIMEOUT_SEC", "1200
 REDIS_MAX_CONNECTIONS = max(2, int(os.getenv("REDIS_MAX_CONNECTIONS", "8")))
 AIOHTTP_CONNECTOR_LIMIT = max(4, int(os.getenv("AIOHTTP_CONNECTOR_LIMIT", "16")))
 DOWNLOAD_TTL_SEC = max(60, int(os.getenv("DOWNLOAD_TTL_SEC", "1800")))
-FFMPEG_MEMORY_MB = max(64, int(os.getenv("FFMPEG_MEMORY_MB", "256")))
 
 
 class MediaTooLargeError(Exception):
@@ -129,7 +129,7 @@ def memory_report() -> str:
         f"Download slots: {MAX_CONCURRENT_DOWNLOADS}\n"
         f"GPT sessions cap: {MAX_GPT_SESSIONS} / timeout {GPT_SESSION_TIMEOUT_SEC}s\n"
         f"Media cap: {MAX_MEDIA_BYTES / (1024 * 1024):.0f} MB\n"
-        f"FFmpeg AS cap: {FFMPEG_MEMORY_MB} MB"
+        f"FFmpeg AS cap: {ffmpeg_memory_mb()} MB"
     )
 
 

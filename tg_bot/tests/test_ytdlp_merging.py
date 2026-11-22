@@ -1,287 +1,197 @@
-"""Regression tests for yt-dlp -> FFmpeg stream-copy -> Telegram file contract."""
-
-import asyncio
-import importlib.util
-import os
+import json
+import shutil
 import subprocess
-import sys
-import types
+import threading
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "downloaders" / "ytdlp.py"
+from core.ffmpeg_cap import FFmpegError, probe_streams
+from tg_bot.downloaders import ytdlp
+
+SHORT = "https://www.youtube.com/shorts/xyz"
 
 
-@pytest.fixture
-def downloader(monkeypatch, tmp_path):
-    # The downloader module is tested in isolation from the bot's Redis/config.
-    logger = types.SimpleNamespace(info=lambda *_: None, warning=lambda *_: None, error=lambda *_: None)
-    stub_modules = {
-        "core": types.ModuleType("core"),
-        "core.config": types.ModuleType("core.config"),
-        "core.logger": types.ModuleType("core.logger"),
-        "core.memory": types.ModuleType("core.memory"),
-        "tg_bot": types.ModuleType("tg_bot"),
-        "tg_bot.utils": types.ModuleType("tg_bot.utils"),
-        "tg_bot.utils.cookies_manager": types.ModuleType("tg_bot.utils.cookies_manager"),
-    }
-    stub_modules["core.config"].DOWNLOADS_DIR = tmp_path
-    stub_modules["core.logger"].logger = logger
-    stub_modules["core.memory"].FFMPEG_MEMORY_MB = 256
-    stub_modules["core.memory"].MAX_MEDIA_BYTES = 50 * 1024 * 1024
-    stub_modules["core.memory"].trim_memory = lambda: None
-    stub_modules["tg_bot.utils.cookies_manager"].cookies_manager = types.SimpleNamespace(
-        get_site_name=lambda url: "youtube", get_cookies=lambda url: None, has_cookies_error=lambda s: False
-    )
-    for name, module in stub_modules.items():
-        monkeypatch.setitem(sys.modules, name, module)
-    spec = importlib.util.spec_from_file_location("isolated_ytdlp", MODULE_PATH)
-    instance = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(instance)
-    return instance
+def _attempt_directory(cmd: list[str]) -> Path:
+    return Path(cmd[cmd.index("-o") + 1]).parent
 
 
-def test_format_and_ffmpeg_commands(downloader, tmp_path):
-    temp = tmp_path / "run"
-    temp.mkdir()
-    tools = downloader._prepare_ffmpeg_tools(temp)
-    assert (tools / "ffmpeg").is_file()
-    assert (tools / "ffprobe").is_file()
-    assert os.access(tools / "ffmpeg", os.X_OK)
-    for executable in ("ffmpeg", "ffprobe"):
-        version = subprocess.run(
-            [str(tools / executable), "-version"],
-            capture_output=True,
-            text=True,
-            check=False,
-            env={**os.environ, "FFMPEG_MEMORY_MB": "512"},
-        )
-        assert version.returncode == 0, version.stderr
-    assert "avc1" in downloader.FORMAT_SELECTOR
-    assert "ba[ext=m4a]" in downloader.FORMAT_SELECTOR
+def _record(path: Path, *, tracks=()) -> str:
+    return json.dumps({"media": {"title": "Clip 🎬", "filepath": str(path)}, "tracks": tracks})
 
 
-def test_ffmpeg_streamcopy_merges_under_memory_cap(downloader, tmp_path):
-    temp = tmp_path / "run"
-    temp.mkdir()
-    tools = downloader._prepare_ffmpeg_tools(temp)
-    video = tmp_path / "video.mp4"
-    audio = tmp_path / "audio.m4a"
-    merged = tmp_path / "merged.mp4"
+def _split_result(cmd, _cwd):
+    attempt = _attempt_directory(cmd)
+    video = attempt / "clip.f137.mp4"
+    audio = attempt / "clip.f140.m4a"
+    video.write_bytes(b"video")
+    audio.write_bytes(b"audio")
+    tracks = [
+        {"filepath": str(audio), "acodec": "mp4a", "vcodec": "none"},
+        {"filepath": str(video), "acodec": "none", "vcodec": "avc1"},
+    ]
+    return subprocess.CompletedProcess(cmd, 0, _record(attempt / "clip.mp4", tracks=tracks), "")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [None, "mux", "size"])
+async def test_split_tracks_are_muxed_and_size_is_enforced(monkeypatch, tmp_path, failure):
+    attempts = []
+
+    def mux(args):
+        output = Path(args[-1])
+        attempts.append(output.parent.name)
+        assert args[args.index("-i") + 1].endswith(".f137.mp4")
+        assert args[args.index("-c") + 1] == "copy"
+        assert args[args.index("-map") + 1] == "0:v:0"
+        assert "1:a:0" in args and args.count("-threads") == 2
+        if output.parent.name == "height_1080" and failure == "mux":
+            raise FFmpegError("mux failed")
+        length = 21 if output.parent.name == "height_1080" and failure == "size" else 13
+        output.write_bytes(b"x" * length)
+
+    monkeypatch.setattr(ytdlp, "MAX_OUTPUT_BYTES", 20)
+    monkeypatch.setattr(ytdlp, "_run_ytdlp", _split_result)
+    monkeypatch.setattr(ytdlp, "run_ffmpeg", mux)
+    files, title, error = await ytdlp.download_with_ytdlp(SHORT, tmp_path)
+
+    assert attempts == (["height_1080", "height_720"] if failure else ["height_1080"])
+    assert files == [tmp_path / "clip.mp4"] and files[0].stat().st_size == 13
+    assert title == "Clip 🎬" and error is None
+    assert list(tmp_path.iterdir()) == files
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("url", "filename", "streams", "expected"),
+    [
+        (SHORT, "clip.mp4", {"video", "audio"}, True),
+        (SHORT, "clip.mp4", {"video"}, False),
+        ("https://example.com/audio", "song.m4a", {"audio"}, True),
+    ],
+)
+async def test_already_downloaded_media_checks_youtube_streams(monkeypatch, tmp_path, url, filename, streams, expected):
+    def download(cmd, _cwd):
+        path = _attempt_directory(cmd) / filename
+        path.write_bytes(b"ready media")
+        return subprocess.CompletedProcess(cmd, 0, _record(path), "")
+
+    monkeypatch.setattr(ytdlp, "_run_ytdlp", download)
+    monkeypatch.setattr(ytdlp, "probe_streams", lambda _: streams)
+    monkeypatch.setattr(ytdlp, "run_ffmpeg", lambda _: pytest.fail("Single file must not be converted"))
+
+    files, title, error = await ytdlp.download_with_ytdlp(url, tmp_path)
+
+    assert title == "Clip 🎬"
+    if expected:
+        assert files == [tmp_path / filename] and error is None
+    else:
+        assert not files and "combined audio+video" in error
+    assert list(tmp_path.iterdir()) == files
+
+
+def _make_media(path, input_type, source_filter, *options):
     subprocess.run(
         [
             "ffmpeg",
             "-v",
             "error",
+            "-filter_threads",
+            "1",
             "-f",
-            "lavfi",
+            input_type,
             "-i",
-            "color=black:s=160x90:r=10",
+            source_filter,
             "-t",
             "1",
-            "-an",
-            "-c:v",
-            "mpeg4",
+            *options,
             "-threads",
             "1",
-            "-y",
-            str(video),
+            str(path),
         ],
         check=True,
     )
-    subprocess.run(
+
+
+def _packet_hashes(path, stream):
+    result = subprocess.check_output(
         [
-            "ffmpeg",
+            "ffprobe",
             "-v",
             "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:duration=1",
-            "-c:a",
-            "aac",
-            "-y",
-            str(audio),
+            "-select_streams",
+            stream,
+            "-show_packets",
+            "-show_data_hash",
+            "sha256",
+            "-show_entries",
+            "packet=data_hash",
+            "-of",
+            "json",
+            str(path),
         ],
-        check=True,
-    )
-    result = subprocess.run(
-        [
-            str(tools / "ffmpeg"),
-            "-v",
-            "error",
-            "-i",
-            str(video),
-            "-i",
-            str(audio),
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
-            "-c",
-            "copy",
-            "-threads",
-            "1",
-            "-y",
-            str(merged),
-        ],
-        capture_output=True,
         text=True,
-        check=False,
-        env={**os.environ, "FFMPEG_MEMORY_MB": "512"},
     )
-    assert result.returncode == 0, result.stderr
-    assert downloader._probe_streams(merged) == {"video", "audio"}
+    return [packet["data_hash"] for packet in json.loads(result)["packets"]]
 
 
-def test_youtube_only_returns_combined_video(downloader, tmp_path, monkeypatch):
-    sample = tmp_path / "silent.mp4"
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=black:s=160x90:r=10",
-            "-t",
-            "1",
-            "-an",
-            "-c:v",
-            "mpeg4",
-            "-threads",
-            "1",
-            "-y",
-            str(sample),
-        ],
-        check=True,
-    )
-    original = sample.read_bytes()
-
-    def fake_run(cmd, cwd):
-        assert "--ffmpeg-location" in cmd
-        assert (cwd / "ffmpeg_tools" / "ffprobe").exists()
-        assert "--remux-video" not in cmd
-        assert "--merge-output-format" in cmd
-        (cwd / "silent.mp4").write_bytes(original)
-        (cwd / "silent.m4a").write_bytes(b"audio sidecar")
-        return subprocess.CompletedProcess(cmd, 0, stdout="test title\n", stderr="")
-
-    monkeypatch.setattr(downloader, "_run_ytdlp", fake_run)
-    files, title, error = asyncio.run(downloader.download_with_ytdlp("https://www.youtube.com/watch?v=xyz", tmp_path))
-    assert files == []
-    assert title == "test title"
-    assert "combined audio+video" in error
-    assert list(tmp_path.glob("ydl_*")) == []
+class _QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
 
 
-def test_failed_merge_does_not_return_separate_tracks(downloader, tmp_path, monkeypatch):
-    def fake_run(cmd, cwd):
-        (cwd / "video.mp4").write_bytes(b"incomplete")
-        (cwd / "audio.m4a").write_bytes(b"audio")
-        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="ffmpeg failed to merge")
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="requires FFmpeg and FFprobe")
+@pytest.mark.asyncio
+async def test_native_ytdlp_and_ffmpeg_copy_both_packets(monkeypatch, tmp_path):
+    server_dir = tmp_path / "server"
+    server_dir.mkdir()
+    video = server_dir / "video.mp4"
+    audio = server_dir / "audio.m4a"
+    _make_media(video, "lavfi", "color=black:s=180x320:r=10", "-an", "-c:v", "libx264")
+    _make_media(audio, "lavfi", "sine=frequency=440:duration=1", "-c:a", "aac")
+    original_download = ytdlp._run_ytdlp
 
-    monkeypatch.setattr(downloader, "_run_ytdlp", fake_run)
-    files, title, error = asyncio.run(downloader.download_with_ytdlp("https://youtu.be/xyz", tmp_path))
-    assert files == []
-    assert title is None
-    assert error == "ffmpeg failed to merge"
+    with ThreadingHTTPServer(("127.0.0.1", 0), partial(_QuietHandler, directory=server_dir)) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        info = {
+            "id": "xyz",
+            "title": "Separate media",
+            "webpage_url": SHORT,
+            "extractor": "generic",
+            "formats": [
+                {
+                    "url": f"{base}/video.mp4",
+                    "format_id": "137",
+                    "acodec": "none",
+                    "vcodec": "avc1",
+                    "ext": "mp4",
+                    "height": 320,
+                },
+                {"url": f"{base}/audio.m4a", "format_id": "140", "vcodec": "none", "acodec": "mp4a", "ext": "m4a"},
+            ],
+        }
+        info_path = tmp_path / "info.json"
+        info_path.write_text(json.dumps(info), encoding="utf-8")
 
+        def download(cmd, cwd):
+            assert cmd[cmd.index("--downloader") + 1] == "native"
+            assert not Path(cmd[cmd.index("--ffmpeg-location") + 1]).exists()
+            return original_download(cmd[:-1] + ["--load-info-json", str(info_path)], cwd)
 
-def test_non_youtube_audio_download_preserved(downloader, tmp_path, monkeypatch):
-    def fake_run(cmd, cwd):
-        (cwd / "song.mp3").write_bytes(b"music")
-        return subprocess.CompletedProcess(cmd, 0, stdout="My song", stderr="")
+        monkeypatch.setattr(ytdlp, "_run_ytdlp", download)
+        try:
+            files, title, error = await ytdlp.download_with_ytdlp(SHORT, tmp_path / "downloads")
+        finally:
+            server.shutdown()
+            thread.join()
 
-    monkeypatch.setattr(downloader, "_run_ytdlp", fake_run)
-    files, title, error = asyncio.run(downloader.download_with_ytdlp("https://example.com/song", tmp_path))
-    assert len(files) == 1 and files[0].name == "song.mp3"
-    assert title == "My song" and error is None
-
-
-def test_invalid_non_youtube_not_moved_if_exit_failure(downloader, tmp_path, monkeypatch):
-    def fake_run(cmd, cwd):
-        (cwd / "partial.mp4").write_bytes(b"partial")
-        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="extractor failed")
-
-    monkeypatch.setattr(downloader, "_run_ytdlp", fake_run)
-    files, _, error = asyncio.run(downloader.download_with_ytdlp("https://example.com/video", tmp_path))
-    assert not files and error == "extractor failed"
-
-
-def test_youtube_returns_one_merged_mp4(downloader, tmp_path, monkeypatch):
-    video = tmp_path / "v.mp4"
-    audio = tmp_path / "a.m4a"
-    merged = tmp_path / "merged.mp4"
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=black:s=160x90:r=10",
-            "-t",
-            "1",
-            "-an",
-            "-c:v",
-            "mpeg4",
-            "-threads",
-            "1",
-            "-y",
-            str(video),
-        ],
-        check=True,
-    )
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:duration=1",
-            "-c:a",
-            "aac",
-            "-y",
-            str(audio),
-        ],
-        check=True,
-    )
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-v",
-            "error",
-            "-i",
-            str(video),
-            "-i",
-            str(audio),
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
-            "-c",
-            "copy",
-            "-y",
-            str(merged),
-        ],
-        check=True,
-    )
-    original = merged.read_bytes()
-
-    def fake_run(cmd, cwd):
-        (cwd / "merged.mp4").write_bytes(original)
-        (cwd / "unused.m4a").write_bytes(b"unused")
-        return subprocess.CompletedProcess(cmd, 0, stdout="merged title", stderr="")
-
-    monkeypatch.setattr(downloader, "_run_ytdlp", fake_run)
-    files, title, error = asyncio.run(downloader.download_with_ytdlp("https://youtube.com/watch?v=123", tmp_path))
-    assert error is None and title == "merged title"
-    assert len(files) == 1 and files[0].name.startswith("merged") and files[0].suffix == ".mp4"
-    assert downloader._probe_streams(files[0]) == {"video", "audio"}
+    assert len(files) == 1 and title == "Separate media" and error is None
+    result = files[0]
+    assert probe_streams(result) == {"video", "audio"}
+    for source, stream in ((video, "v:0"), (audio, "a:0")):
+        hashes = _packet_hashes(source, stream)
+        assert hashes and _packet_hashes(result, stream) == hashes

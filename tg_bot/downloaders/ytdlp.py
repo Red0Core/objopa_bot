@@ -1,6 +1,7 @@
-"""Low-resource yt-dlp downloader with reliable FFmpeg stream-copy merging."""
+"""Download with yt-dlp and mux separate tracks without transcoding."""
 
 import asyncio
+import json
 import os
 import re
 import secrets
@@ -11,8 +12,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from core.config import DOWNLOADS_DIR
+from core.ffmpeg_cap import FFmpegError, probe_streams, run_ffmpeg
 from core.logger import logger
-from core.memory import FFMPEG_MEMORY_MB, MAX_MEDIA_BYTES, trim_memory
+from core.memory import MAX_MEDIA_BYTES, MediaTooLargeError, trim_memory
 from tg_bot.utils.cookies_manager import cookies_manager
 
 # Telegram/file checks may permit 50 MiB, but keep this downloader at a
@@ -21,6 +23,10 @@ MAX_OUTPUT_BYTES = min(MAX_MEDIA_BYTES, 50_000_000)
 RESOLUTION_STEPS = (1080, 720, 480, 360)
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 VIDEO_EXTS = {".mp4", ".mkv", ".mov", ".webm"}
+AUDIO_EXTS = {".m4a", ".mp3", ".opus", ".ogg", ".flac", ".wav"}
+MEDIA_TEMPLATE = (
+    '{"media":%(.{title,filepath,vcodec,acodec})j,"tracks":%(requested_formats.:.{filepath,vcodec,acodec})j}'
+)
 
 
 def _format_selector(max_height: int) -> str:
@@ -45,47 +51,87 @@ def _is_youtube(url: str) -> bool:
     )
 
 
-def _prepare_ffmpeg_tools(tmp: Path) -> Path:
-    """Provide FFmpeg and FFprobe in a directory yt-dlp can actually discover.
-
-    yt-dlp expects a binary named ffmpeg plus sibling ffprobe. Pointing it to
-    core/ffmpeg_cap.py leaves FFprobe undiscoverable and may silently skip merging.
-    """
-    ffmpeg_bin = shutil.which("ffmpeg")
-    ffprobe_bin = shutil.which("ffprobe")
-    if not ffmpeg_bin or not ffprobe_bin:
-        raise RuntimeError("FFmpeg and FFprobe are required for combined audio/video downloads")
-
-    launcher = Path(__file__).resolve().parents[2] / "core" / "ffmpeg_cap.py"
-    if not launcher.is_file():
-        raise RuntimeError(f"FFmpeg resource limiter not found: {launcher}")
-
-    # Git checkout may not preserve executable mode on the Python launcher.
-    launcher.chmod(launcher.stat().st_mode | 0o111)
-
-    tools = tmp / "ffmpeg_tools"
-    tools.mkdir()
-    # Resolves to the existing Python launcher; yt-dlp sees standard executable names.
-    (tools / "ffmpeg").symlink_to(launcher)
-    (tools / "ffprobe").symlink_to(Path(ffprobe_bin))
-    return tools
+def _file_path(info: dict, directory: Path) -> Path | None:
+    filename = info.get("filepath")
+    if isinstance(filename, str) and filename:
+        path = Path(filename).resolve()
+        if path.parent == directory:
+            return path
+    return None
 
 
-def _probe_streams(path: Path) -> set[str]:
-    """Only accept a YouTube video when both streams are present."""
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=15,
-        check=False,
-    )
-    if result.returncode != 0:
-        return set()
-    return set(result.stdout.split())
+def _has_codec(info: dict, field: str) -> bool:
+    value = info.get(field)
+    return isinstance(value, str) and value not in ("", "none", "unknown")
+
+
+def _download_records(stdout: str) -> list[dict]:
+    records = []
+    for line in stdout.splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(record, dict) and isinstance(record.get("media"), dict):
+            records.append(record)
+    return records
+
+
+def _ready_file(record: dict, directory: Path, *, youtube: bool) -> Path | None:
+    media = record["media"]
+    expected = _file_path(media, directory)
+    if expected is None:
+        return None
+    tracks = record.get("tracks") or []
+    if tracks:
+        if len(tracks) != 2:
+            return None
+        video = next((_file_path(track, directory) for track in tracks if _has_codec(track, "vcodec")), None)
+        audio = next((_file_path(track, directory) for track in tracks if _has_codec(track, "acodec")), None)
+        if video is None or audio is None or video == audio or not video.is_file() or not audio.is_file():
+            return None
+        video_size, audio_size = video.stat().st_size, audio.stat().st_size
+        if not video_size or not audio_size:
+            return None
+        size = video_size + audio_size
+        if size > MAX_OUTPUT_BYTES:
+            raise MediaTooLargeError(size)
+        output = expected.with_suffix(".mp4")
+        if output in (video, audio):
+            return None
+        run_ffmpeg(
+            [
+                "-protocol_whitelist",
+                "file",
+                "-threads",
+                "1",
+                "-i",
+                str(video),
+                "-protocol_whitelist",
+                "file",
+                "-threads",
+                "1",
+                "-i",
+                str(audio),
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c",
+                "copy",
+                "-movflags",
+                "+faststart",
+                "-n",
+                str(output),
+            ]
+        )
+        return output
+
+    if not expected.is_file() or expected.suffix.lower() not in (VIDEO_EXTS | AUDIO_EXTS):
+        return None
+    if youtube and (expected.suffix.lower() not in VIDEO_EXTS or not {"video", "audio"} <= probe_streams(expected)):
+        return None
+    return expected
 
 
 def _run_ytdlp(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -94,10 +140,6 @@ def _run_ytdlp(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     env.setdefault("OMP_NUM_THREADS", "1")
     env.setdefault("OPENBLAS_NUM_THREADS", "1")
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    # RLIMIT_AS limits *virtual address space*, not resident RAM. 256 MiB
-    # prevents FFmpeg from even starting on common Linux builds (pthread_create).
-    # 512 MiB virtual is a conservative floor for reliable stream-copy remuxing.
-    env["FFMPEG_MEMORY_MB"] = str(max(512, FFMPEG_MEMORY_MB))
     return subprocess.run(
         cmd,
         cwd=str(cwd),
@@ -117,6 +159,7 @@ async def download_with_ytdlp(
     use_cookies: bool = False,
 ) -> tuple[list[Path], str | None, str | None]:
     """Download and merge into one playable video without transcoding."""
+    download_path = download_path.resolve()
     download_path.mkdir(parents=True, exist_ok=True)
     tmp = download_path / f"ydl_{secrets.token_hex(8)}"
     tmp.mkdir()
@@ -134,11 +177,11 @@ async def download_with_ytdlp(
             if not cookies_path:
                 return [], None, "No cookies available"
 
-        tools_dir = _prepare_ffmpeg_tools(tmp)
         base_cmd = [
             sys.executable,
             "-m",
             "yt_dlp",
+            "--ignore-config",
             "--no-playlist",
             "--no-cache-dir",
             "--no-warnings",
@@ -160,21 +203,21 @@ async def download_with_ytdlp(
             "1",
             "--no-write-comments",
             "--no-mtime",
-            "--no-keep-video",
+            "--no-abort-on-error",
+            "--fixup",
+            "never",
+            "--downloader",
+            "native",
+            # An explicit nonexistent location prevents discovery of system FFmpeg.
             "--ffmpeg-location",
-            str(tools_dir),
-            "--merge-output-format",
-            "mp4",
-            # Keep PR #16's stream-copy merging and FFprobe validation.
-            "--postprocessor-args",
-            "Merger+ffmpeg:-nostdin -threads 1 -filter_threads 1 -c copy",
+            str(tmp / "no-local-media-tools"),
             # Best-effort early abort; only stat() below enforces final filesize.
             "--max-filesize",
             str(MAX_OUTPUT_BYTES),
             "--extractor-args",
             "generic:impersonate=chrome",
             "--print",
-            "after_move:%(title)s",
+            f"after_move:{MEDIA_TEMPLATE}",
         ]
         if cookies_path:
             base_cmd.extend(("--cookies", str(cookies_path)))
@@ -186,60 +229,63 @@ async def download_with_ytdlp(
             attempt_dir = tmp / f"height_{max_height}"
             attempt_dir.mkdir()
             cmd = base_cmd + [
-                "-f", _format_selector(max_height),
-                "-o", str(attempt_dir / "%(id)s.%(ext)s"),
+                "-f",
+                _format_selector(max_height),
+                "-o",
+                str(attempt_dir / "%(id)s.%(ext)s"),
                 url,
             ]
             result = await asyncio.to_thread(_run_ytdlp, cmd, tmp)
-            stdout = (result.stdout or "").strip()
             stderr = _clean_error_text((result.stderr or "")[-2000:])
-            if stdout and not title:
-                title = stdout.splitlines()[0].strip() or None
 
             if result.returncode != 0:
                 error = stderr or f"yt-dlp exited with code {result.returncode}"
                 # Authentication, network/HTTP, and extractor failures are not
                 # improved by immediately retrying the same URL four times.
                 fatal = (
-                    "http error 403", "http error 429", "login required",
-                    "sign in", "authentication", "unable to extract",
-                    "unsupported url", "timed out", "connection error",
-                    "this video is unavailable", "private video",
+                    "http error 403",
+                    "http error 429",
+                    "login required",
+                    "sign in",
+                    "authentication",
+                    "unable to extract",
+                    "unsupported url",
+                    "timed out",
+                    "connection error",
+                    "this video is unavailable",
+                    "private video",
                 )
                 if cookies_manager.has_cookies_error(error):
                     logger.warning(f"Cookies required for {cookies_manager.get_site_name(url)}")
                     break
                 if any(marker in error.lower() for marker in fatal):
                     break
-                # No format at this height, an oversized stream, or an FFmpeg
-                # merge issue may be resolved by trying a lower resolution.
+                # A missing format or an oversized stream may work at a lower resolution.
                 logger.info(f"yt-dlp {max_height}p attempt failed; trying a lower resolution")
                 shutil.rmtree(attempt_dir, ignore_errors=True)
                 continue
 
-            candidates = sorted(
-                (p for p in attempt_dir.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTS),
-                key=lambda path: path.name,
-            )
-            if not youtube and not candidates:
-                candidates = sorted(
-                    (
-                        p for p in attempt_dir.iterdir()
-                        if p.is_file() and p.suffix.lower() in {".m4a", ".mp3", ".opus", ".ogg", ".flac", ".wav"}
-                    ),
-                    key=lambda path: path.name,
-                )
+            candidates = []
+            error = None
+            for record in _download_records(result.stdout or ""):
+                if title is None:
+                    title = record["media"].get("title")
+                try:
+                    candidate = await asyncio.to_thread(_ready_file, record, attempt_dir, youtube=youtube)
+                except (FFmpegError, MediaTooLargeError) as exc:
+                    error = str(exc)
+                    continue
+                if candidate is not None:
+                    candidates.append(candidate)
 
-            for src in candidates:
+            videos = [path for path in candidates if path.suffix.lower() in VIDEO_EXTS]
+            for src in dict.fromkeys(videos or candidates):
                 actual_bytes = src.stat().st_size
-                if actual_bytes > MAX_OUTPUT_BYTES:
+                if not 0 < actual_bytes <= MAX_OUTPUT_BYTES:
                     logger.warning(
                         f"Drop {src.name}: {actual_bytes} bytes > {MAX_OUTPUT_BYTES} bytes "
                         f"(after merging; {max_height}p attempt)"
                     )
-                    continue
-                if youtube and not {"audio", "video"}.issubset(await asyncio.to_thread(_probe_streams, src)):
-                    logger.warning(f"Reject YouTube media {src.name}: missing audio or video stream")
                     continue
                 dest = download_path / src.name
                 if dest.exists():
@@ -251,7 +297,8 @@ async def download_with_ytdlp(
                 logger.info(f"yt-dlp download OK: <= {max_height}p, all files <= {MAX_OUTPUT_BYTES} bytes")
                 error = None
                 break
-            error = f"No valid media <= {MAX_OUTPUT_BYTES} bytes at {max_height}p"
+            requirement = "combined audio+video" if youtube else "media"
+            error = error or f"No valid {requirement} <= {MAX_OUTPUT_BYTES} bytes at {max_height}p"
             shutil.rmtree(attempt_dir, ignore_errors=True)
 
         if not files:

@@ -7,6 +7,7 @@ from aiogram.types import FSInputFile, Message
 
 from core.config import COOKIES_ALLOW_USERS_ID, STORAGE_DIR
 from core.logger import logger
+from core.memory import cleanup_paths
 from core.redis_client import Redis, get_redis
 from tg_bot.downloaders import (
     INSTAGRAM_REGEX,
@@ -105,8 +106,11 @@ async def universal_download_handler(message: Message, command: CommandObject):
                 f"Media downloaded successfully using {result.downloader_used.value if result.downloader_used else 'unknown'} from: {url}"
             )
 
-        await media_sender.send(message, result.files, result.caption)
-        await status_message.delete()
+        sent = await media_sender.send(message, result.files, result.caption, spotify_tracks=result.spotify_tracks)
+        if sent or not result.spotify_tracks:
+            await status_message.delete()
+        else:
+            await status_message.edit_text("❌ Не удалось отправить музыку в Telegram.")
 
     except Exception as e:
         logger.error(f"Error in universal download handler: {e}")
@@ -178,7 +182,16 @@ async def download_handler(message: Message, command: CommandObject):
             suffix = first_file.suffix.lower()
 
             try:
-                if suffix in (".jpg", ".jpeg", ".png", ".webp"):
+                if result.spotify_tracks:
+                    track = result.spotify_tracks[0]
+                    files = [track.local_path]
+                    if track.local_cover_path:
+                        files.append(track.local_cover_path)
+                    try:
+                        await media_sender.send(message, files, "Пример скачанного трека", spotify_tracks=[track])
+                    finally:
+                        cleanup_paths(result.files)
+                elif suffix in (".jpg", ".jpeg", ".png", ".webp"):
                     await message.reply_photo(FSInputFile(first_file), caption="📷 Пример скачанного файла")
                 elif suffix in (".mp4", ".mov", ".mkv", ".webm"):
                     await message.reply_video(
@@ -281,8 +294,11 @@ async def download_with_cookies_handler(message: Message, command: CommandObject
             return
 
         # Отправляем медиа
-        await media_sender.send(message, result.files, result.caption)
-        await status_message.delete()
+        sent = await media_sender.send(message, result.files, result.caption, spotify_tracks=result.spotify_tracks)
+        if sent or not result.spotify_tracks:
+            await status_message.delete()
+        else:
+            await status_message.edit_text("❌ Не удалось отправить музыку в Telegram.")
 
     except Exception as e:
         logger.error(f"Error downloading with cookies: {traceback.format_exc()}")

@@ -45,7 +45,7 @@ services:
       - MAX_GPT_SESSIONS=8
       - GPT_SESSION_TIMEOUT_SEC=1200
       - RSS_TRIM_THRESHOLD_MB=280
-      - FFMPEG_MEMORY_MB=256
+      - FFMPEG_MEMORY_MB=512
     depends_on:
       - redis
       - backend
