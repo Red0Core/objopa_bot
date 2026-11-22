@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import mimetypes
 import time
@@ -6,19 +8,44 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import httpx
-import openai
-from google import genai
-from google.genai import types
-from google.genai.chats import AsyncChat
+from typing import TYPE_CHECKING
 
 from core.config import SERPER_API_KEY
 from core.logger import logger
-from tg_bot.services.gemini_tools import SearchContext, build_gemini_config, run_gemini_turn
-from tg_bot.services.web_search import WebSearchService
 from tg_bot.utils.text_split import get_gpt_formatted_chunks, split_message_by_paragraphs, split_text_smart
 
-WEB_SEARCH = WebSearchService(SERPER_API_KEY)
+# AI SDKs and tools are expensive. Import them only when a request creates a model.
+# Router imports and shared exception classes must stay cheap.
+if TYPE_CHECKING:
+    import httpx
+    from google import genai
+    from google.genai import types
+    from google.genai.chats import AsyncChat
+    from tg_bot.services.gemini_tools import SearchContext
+
+
+def _load_gemini_runtime() -> None:
+    global httpx, genai, types, SearchContext, build_gemini_config, run_gemini_turn, WEB_SEARCH
+    if "genai" in globals():
+        return
+    import httpx as _httpx
+    from google import genai as _genai
+    from google.genai import types as _types
+    from tg_bot.services.gemini_tools import (
+        SearchContext as _SearchContext,
+        build_gemini_config as _build_gemini_config,
+        run_gemini_turn as _run_gemini_turn,
+    )
+    from tg_bot.services.web_search import WebSearchService
+
+    search = WebSearchService(SERPER_API_KEY)
+    httpx = _httpx
+    types = _types
+    SearchContext = _SearchContext
+    build_gemini_config = _build_gemini_config
+    run_gemini_turn = _run_gemini_turn
+    WEB_SEARCH = search
+    genai = _genai  # Assignment last: marks the runtime fully initialized.
 
 # Re-export split helpers for existing imports.
 _ = (get_gpt_formatted_chunks, split_message_by_paragraphs, split_text_smart)
@@ -96,6 +123,8 @@ class BaseOpenAIModel(AIModelInterface):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
+
+        import openai
 
         self.client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key)
 
@@ -236,6 +265,7 @@ class GeminiModel(AIModelInterface):
         if not api_key:
             raise APIKeyError("API ключ для Gemini не может быть пустым")
 
+        _load_gemini_runtime()
         self.api_key = api_key
         self.model = model
         self.client = genai.Client(
@@ -336,6 +366,7 @@ class GeminiChatModel(AIChatInterface):
         if not api_key:
             raise APIKeyError("API ключ для Gemini Chat не может быть пустым")
 
+        _load_gemini_runtime()
         self.client = genai.Client(
             api_key=api_key,
             http_options=types.HttpOptions(

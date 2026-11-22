@@ -3,9 +3,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from html import escape
 
-import httpcloak
 import httpx
-from lxml import html
 
 import tg_bot.redis_workers.base_notifications as base_notifications
 import tg_bot.routers.day_tracker as day_tracker
@@ -182,6 +180,10 @@ async def get_stream_promotion_prices() -> dict[str, dict]:
         ...
     }
     """
+
+    # Browser/TLS engine and lxml are needed only for the promotion scrape.
+    import httpcloak
+    from lxml import html
 
     session = httpcloak.Session(
         preset="chrome-latest",
