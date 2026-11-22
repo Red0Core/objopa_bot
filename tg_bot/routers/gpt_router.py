@@ -23,6 +23,7 @@ from tg_bot.services.gpt import (
     UnexpectedResponseError,
 )
 from tg_bot.services.gptchat_manager import ChatSessionManager
+from tg_bot.services.message_context import extract_message_text, extract_reply_context
 from tg_bot.services.pastebin import upload_to_pastebin
 
 router = Router()
@@ -95,12 +96,7 @@ async def handle_ask_gpt(message: Message):
         source_message = message.reply_to_message if message.reply_to_message else message
 
         # 2.1. Если есть ответ на сообщение, добавляем его текст в контекст
-        replied_text = ""
-        if message.reply_to_message:
-            if message.reply_to_message.text:
-                replied_text = message.reply_to_message.text
-            elif message.reply_to_message.caption:
-                replied_text = message.reply_to_message.caption
+        replied_text = await extract_reply_context(message)
 
         # Формируем итоговый промпт
         final_prompt_text = ""
@@ -256,6 +252,7 @@ async def add_user_to_whitelist(message: Message):
     | F.photo
     | F.audio
     | F.video
+    | F.rich_message
 )
 async def handle_gpt_chat(message: Message):
     chat_id = message.chat.id
@@ -265,7 +262,7 @@ async def handle_gpt_chat(message: Message):
     if (message.text and message.text.startswith("/")) or (message.caption and message.caption.startswith("/")):
         return
 
-    text_content: str | None = message.text or message.caption
+    text_content: str | None = extract_message_text(message)
 
     chat_manager = ChatSessionManager()
     chat_session = await chat_manager.get_chat(chat_id)
@@ -342,12 +339,7 @@ async def handle_gpt_chat(message: Message):
             logger.info(f"GPT запрос от {user_name} в чате {chat_id} ({from_user.username})")
 
             # 1. Извлекаем текст из сообщения, на которое отвечают
-            replied_text = ""
-            if message.reply_to_message:
-                if message.reply_to_message.text:
-                    replied_text = message.reply_to_message.text
-                elif message.reply_to_message.caption:
-                    replied_text = message.reply_to_message.caption
+            replied_text = await extract_reply_context(message)
 
             # 2. Формируем итоговый промпт с учетом контекста из ответа
             prompt_text_for_model = ""

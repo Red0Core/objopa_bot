@@ -5,6 +5,7 @@ from aiogram.types import InputRichMessage, Message
 
 from core.logger import logger
 from tg_bot.services.gpt import get_gpt_formatted_chunks
+from tg_bot.services.message_context import remember_response
 
 RICH_MAX_CHARS = 32768
 
@@ -38,6 +39,7 @@ async def send_ai_response(message: Message, placeholder: Message | None, respon
             if placeholder is not None:
                 try:
                     await placeholder.edit_text(rich_message=rich)
+                    await remember_response(placeholder, response_text)
                     return
                 except TelegramBadRequest as exc:
                     reason = exc.message.lower()
@@ -45,7 +47,8 @@ async def send_ai_response(message: Message, placeholder: Message | None, respon
                         return
                     if "message to edit not found" not in reason and "message can't be edited" not in reason:
                         raise
-            await message.answer_rich(rich, reply_parameters=message.as_reply_parameters())
+            sent = await message.answer_rich(rich, reply_parameters=message.as_reply_parameters())
+            await remember_response(sent, response_text)
         except (TelegramBadRequest, TelegramNotFound, NotImplementedError):
             logger.info("Rich AI response rejected; using MarkdownV2 fallback")
         else:
@@ -79,11 +82,13 @@ async def _send_legacy(
                 try:
                     await placeholder.edit_text(chunk, parse_mode=mode)
                     previous = placeholder
+                    await remember_response(placeholder, chunk)
                     continue
                 except TelegramBadRequest as exc:
                     reason = exc.message.lower()
                     if "message is not modified" in reason:
                         previous = placeholder
+                        await remember_response(placeholder, chunk)
                         continue
                     if "message to edit not found" not in reason and "message can't be edited" not in reason:
                         raise
@@ -97,7 +102,10 @@ async def _send_legacy(
                     return
                 for start in range(0, len(chunk), 2000):
                     previous = await previous.reply(chunk[start : start + 2000], parse_mode=None)
+                    await remember_response(previous, chunk[start : start + 2000])
+                continue
             else:
                 raise
+        await remember_response(previous, chunk)
         if index == 0:
             await _remove_placeholder(placeholder)
