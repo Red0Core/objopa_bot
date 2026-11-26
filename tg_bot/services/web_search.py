@@ -2,12 +2,12 @@ import asyncio
 import re
 import time
 from dataclasses import dataclass
+from enum import StrEnum
 from urllib.parse import urlsplit
 
 import httpx
 
 from core.logger import logger
-from tg_bot.services.url_context import redact_urls
 
 MAX_QUERY_LENGTH = 400
 MAX_RESULTS = 6
@@ -26,10 +26,41 @@ class SearchSource:
     snippet: str
 
 
+class SearchError(StrEnum):
+    INVALID_QUERY = "invalid_query"
+    MISSING_KEY = "missing_key"
+    RATE_LIMIT = "rate_limit"
+    SERVER_ERROR = "server_error"
+    HTTP_ERROR = "http_error"
+    TIMEOUT = "timeout"
+    NETWORK_ERROR = "network_error"
+    INVALID_RESPONSE = "invalid_response"
+    BUDGET = "budget_exhausted"
+
+
 @dataclass(frozen=True)
 class SearchResult:
     sources: tuple[SearchSource, ...] = ()
     error: str | None = None
+    error_kind: SearchError | None = None
+
+
+@dataclass
+class SerperBudget:
+    limit: int
+    http_requests: int = 0
+    cache_hits: int = 0
+
+    @property
+    def exhausted(self) -> bool:
+        return self.http_requests >= self.limit
+
+    def reserve_request(self) -> bool:
+        # No await between checking and reserving the slot.
+        if self.exhausted:
+            return False
+        self.http_requests += 1
+        return True
 
 
 class WebSearchService:
@@ -39,34 +70,34 @@ class WebSearchService:
         self._cache: dict[str, tuple[float, SearchResult]] = {}
         self._lock = asyncio.Lock()
 
-    async def search(self, query: str) -> SearchResult:
+    async def search(self, query: str, *, budget: SerperBudget | None = None) -> SearchResult:
         query = normalize_query(query)
         if not query or len(query) > MAX_QUERY_LENGTH:
-            return SearchResult(error=f"Search query must contain 1–{MAX_QUERY_LENGTH} characters.")
-        cache_key = query.casefold()
-        safe_query = redact_urls(query).replace(self.api_key, "[REDACTED]") if self.api_key else redact_urls(query)
+            return SearchResult(
+                error=f"Search query must contain 1–{MAX_QUERY_LENGTH} characters.",
+                error_kind=SearchError.INVALID_QUERY,
+            )
         if not self.api_key:
             logger.warning("Web search unavailable: SERPER_API_KEY is not configured")
-            return SearchResult(error="Web search failed: search is not configured; fresh facts cannot be verified.")
+            return SearchResult(error="Web search is not configured.", error_kind=SearchError.MISSING_KEY)
 
+        cache_key = query.casefold()
         async with self._lock:
             now = time.monotonic()
             self._cache = {key: entry for key, entry in self._cache.items() if entry[0] > now}
             cached = self._cache.get(cache_key)
             if cached:
-                logger.info(
-                    "Web search cache hit: query={!r}, cache_hit=True, results={}, domains={}",
-                    safe_query,
-                    len(cached[1].sources),
-                    [
-                        (urlsplit(s.link).hostname or "").replace(self.api_key, "[REDACTED]")
-                        for s in cached[1].sources[:3]
-                    ],
-                )
+                if budget is not None:
+                    budget.cache_hits += 1
+                logger.info("Web search cache hit: cache_hit=True, results={}", len(cached[1].sources))
                 return cached[1]
-            logger.info("Web search cache miss: query={!r}", safe_query)
             try:
                 async with httpx.AsyncClient(timeout=15.0, transport=self.transport, trust_env=False) as client:
+                    if budget is not None and not budget.reserve_request():
+                        return SearchResult(
+                            error="Serper HTTP request limit reached; use the evidence already collected.",
+                            error_kind=SearchError.BUDGET,
+                        )
                     response = await client.post(
                         "https://google.serper.dev/search",
                         headers={"X-API-KEY": self.api_key, "Content-Type": "application/json"},
@@ -79,19 +110,24 @@ class WebSearchService:
                     result = SearchResult(sources=self._parse_sources(data, query))
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
-                logger.warning("Web search HTTP error: status={}, query={!r}", status, safe_query)
-                return SearchResult(error=f"Web search failed: HTTP {status}; fresh facts cannot be verified.")
+                if status == 429:
+                    kind = SearchError.RATE_LIMIT
+                elif status >= 500:
+                    kind = SearchError.SERVER_ERROR
+                else:
+                    kind = SearchError.HTTP_ERROR
+                logger.warning("Web search HTTP error: status={}", status)
+                return SearchResult(error=f"Web search failed: HTTP {status}.", error_kind=kind)
             except (httpx.RequestError, ValueError) as exc:
-                logger.warning("Web search failed: type={}, query={!r}", type(exc).__name__, safe_query)
-                return SearchResult(
-                    error="Web search failed: timeout or unavailable service; fresh facts cannot be verified."
-                )
-            logger.info(
-                "Web search complete: query={!r}, results={}, cache_hit=False, domains={}",
-                safe_query,
-                len(result.sources),
-                [(urlsplit(s.link).hostname or "").replace(self.api_key, "[REDACTED]") for s in result.sources[:3]],
-            )
+                if isinstance(exc, httpx.TimeoutException):
+                    kind = SearchError.TIMEOUT
+                elif isinstance(exc, httpx.RequestError):
+                    kind = SearchError.NETWORK_ERROR
+                else:
+                    kind = SearchError.INVALID_RESPONSE
+                logger.warning("Web search failed: kind={}", kind)
+                return SearchResult(error=f"Web search failed: {kind}.", error_kind=kind)
+            logger.info("Web search complete: results={}, cache_hit=False", len(result.sources))
             if len(self._cache) >= MAX_CACHE_ENTRIES:
                 self._cache.pop(next(iter(self._cache)))
             self._cache[cache_key] = (time.monotonic() + CACHE_TTL, result)

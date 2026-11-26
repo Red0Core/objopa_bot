@@ -5,7 +5,13 @@ import pytest
 from google.genai import types
 
 from core.logger import logger
-from tg_bot.services.gemini_tools import SEARCH_FAILURE_NOTICE, SearchContext, build_base_system_prompt, run_gemini_turn
+from tg_bot.services.gemini_tools import (
+    SEARCH_EMPTY_NOTICE,
+    SEARCH_FAILURE_NOTICE,
+    SearchContext,
+    build_base_system_prompt,
+    run_gemini_turn,
+)
 from tg_bot.services.web_search import WebSearchService
 from tg_bot.tests.test_gemini_web_search import response, sdk_chat, search_call, search_service, successful_search
 
@@ -81,10 +87,27 @@ async def test_failed_search_is_a_structured_tool_error_and_never_exposes_stale_
 
     chat, modules = sdk_chat([response(calls=[search_call()]), response("Outdated fact is current")])
     answer = await run_gemini_turn(chat, ["ласт версия питона"], search_service(handler), "model")
-    assert answer == SEARCH_FAILURE_NOTICE
+    if failure == "empty":
+        assert answer == SEARCH_EMPTY_NOTICE
+    else:
+        assert answer.startswith(SEARCH_FAILURE_NOTICE)
+    assert "Outdated fact" not in answer
     assert modules.generate_content.await_count == 2
     payload = modules.generate_content.call_args.kwargs["contents"][-1].parts[0].function_response.response
     assert payload["error"] and "test-serper-key" not in str(payload)
+    assert (
+        payload["status"]
+        == {
+            "timeout": "timeout",
+            401: "http_error",
+            403: "http_error",
+            429: "rate_limit",
+            500: "server_error",
+            "empty": "no_results",
+            "malformed": "invalid_response",
+            "invalid-json": "invalid_response",
+        }[failure]
+    )
 
 
 @pytest.mark.asyncio
@@ -143,7 +166,7 @@ async def test_search_logs_hide_credentials_and_show_tool_and_cache():
     text = "".join(logs)
     assert "test-serper-key" not in text and "test-serper-key" not in answer
     assert "cache_hit=False" in text and "cache_hit=True" in text
-    assert "tool=web_search" in text and "tool_calls=1" in text
+    assert "tool=web_search" in text and "search_calls=1" in text
 
 
 @pytest.mark.asyncio
@@ -192,6 +215,7 @@ async def test_real_installed_sdk_uses_direct_transport_for_generation_and_file_
             },
         )
 
+    gpt._load_gemini_runtime()
     monkeypatch.setattr(gpt.httpx, "AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(handler))
     model = (
         gpt.GeminiModel("fake-sdk-key", "configured-model")
