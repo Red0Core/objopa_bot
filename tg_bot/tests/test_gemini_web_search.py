@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
@@ -8,7 +9,7 @@ from google.genai import types
 from google.genai.chats import AsyncChats
 
 from core.logger import logger
-from tg_bot.services.gemini_tools import MAX_TOOL_CALLS, build_gemini_config, run_gemini_turn
+from tg_bot.services.gemini_tools import MAX_SEARCH_CALLS, MAX_SERPER_REQUESTS, build_gemini_config, run_gemini_turn
 from tg_bot.services.web_search import MAX_QUERY_LENGTH, MAX_RESULTS, WebSearchService
 
 
@@ -119,9 +120,9 @@ async def test_repeated_queries_use_one_http_request_and_loop_is_bounded():
         requests.append(request)
         return successful_search(request)
 
-    chat, modules = sdk_chat([response(calls=[search_call()])] * MAX_TOOL_CALLS + [response("Answer [1]")])
+    chat, modules = sdk_chat([response(calls=[search_call()])] * MAX_SEARCH_CALLS + [response("Answer [1]")])
     text = await run_gemini_turn(chat, ["Latest?"], search_service(handler), "model")
-    assert len(requests) == 1 and modules.generate_content.await_count == MAX_TOOL_CALLS + 1
+    assert len(requests) == 1 and modules.generate_content.await_count == MAX_SEARCH_CALLS + 1
     assert modules.generate_content.call_args.kwargs["config"].tool_config.function_calling_config.mode == "NONE"
     assert text == "Answer"
     assert "https://www.python.org/downloads/" not in text
@@ -139,11 +140,11 @@ async def test_parallel_tool_calls_cannot_exceed_credit_limit():
         [response(calls=[search_call(f"query-{i}", str(i)) for i in range(6)]), response("Summary [1]")]
     )
     text = await run_gemini_turn(chat, ["News"], search_service(handler), "model")
-    assert len(requests) == MAX_TOOL_CALLS
+    assert len(requests) == MAX_SERPER_REQUESTS
     tool_parts = modules.generate_content.call_args.kwargs["contents"][-1].parts
     assert len(tool_parts) == 6
     assert "limit" in tool_parts[-1].function_response.response["error"]
-    assert "Свежие данные сейчас проверить не удалось" in text
+    assert text == "Summary"
 
 
 @pytest.mark.asyncio
@@ -154,7 +155,7 @@ async def test_failed_query_is_not_retried_within_one_turn():
         requests.append(request)
         return httpx.Response(429)
 
-    chat, _ = sdk_chat([response(calls=[search_call()])] * MAX_TOOL_CALLS + [response("Cannot verify")])
+    chat, _ = sdk_chat([response(calls=[search_call()])] * MAX_SEARCH_CALLS + [response("Cannot verify")])
     await run_gemini_turn(chat, ["News"], search_service(handler), "model")
     assert len(requests) == 1
 
@@ -215,7 +216,7 @@ async def test_api_key_not_in_logs_even_when_exception_or_query_contains_it():
     finally:
         logger.remove(sink)
     assert "test-serper-key" not in "".join(messages)
-    assert "[REDACTED]" in "".join(messages)
+    assert "kind=network_error" in "".join(messages)
 
 
 @pytest.mark.asyncio
@@ -279,6 +280,7 @@ async def test_existing_file_api_upload_active_wait_and_tool_call(monkeypatch, t
     client.aio.chats = AsyncChats(modules)
     client.aio.files.upload = AsyncMock(return_value=pending)
     client.aio.files.get = AsyncMock(return_value=active)
+    gpt._load_gemini_runtime()
     monkeypatch.setattr(gpt.genai, "Client", lambda **kwargs: client)
     monkeypatch.setattr(gpt.asyncio, "sleep", AsyncMock())
     monkeypatch.setattr(gpt, "WEB_SEARCH", search_service(successful_search))
@@ -323,7 +325,7 @@ async def test_empty_search_results_are_disclosed():
     service = search_service(lambda request: httpx.Response(200, json={"organic": []}))
     chat, modules = sdk_chat([response(calls=[search_call()]), response("No evidence")])
     text = await run_gemini_turn(chat, ["Latest?"], service, "model")
-    assert "Свежие данные сейчас проверить не удалось" in text
+    assert "Веб-поиск не нашёл результатов" in text
     assert "Источники:" not in text
     assert (
         "No results"
@@ -385,3 +387,140 @@ def test_search_instructions_require_natural_answers_and_primary_sources():
     assert "Prefer official sites and primary sources" in config.system_instruction
     assert "state uncertainty rather than guess" in config.system_instruction
     assert "YouTube, Reddit or random" in config.system_instruction
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("search_count", [1, 2, 3, 4])
+async def test_stops_when_model_has_enough_evidence(search_count):
+    requests = []
+    logs = []
+    sink = logger.add(lambda message: logs.append(str(message)))
+
+    def handler(request):
+        requests.append(json.loads(request.content)["q"])
+        return successful_search(request)
+
+    queries = [f"distinct query {i}" for i in range(search_count)]
+    chat, modules = sdk_chat([response(calls=[search_call(q)]) for q in queries] + [response("Evidence-based answer")])
+    try:
+        assert await run_gemini_turn(chat, ["Question"], search_service(handler), "model") == "Evidence-based answer"
+        logger.complete()
+    finally:
+        logger.remove(sink)
+    assert requests == queries
+    assert modules.generate_content.await_count == search_count + 1
+    config = modules.generate_content.call_args.kwargs["config"]
+    exhausted = search_count == MAX_SERPER_REQUESTS
+    assert config.tool_config.function_calling_config.mode == ("NONE" if exhausted else "AUTO")
+    summary = next(line for line in logs if "AI turn finished" in line)
+    assert f"search_calls={search_count}, serper_http_requests={search_count}, cache_hits=0" in summary
+    assert f"budget_exhausted={exhausted}, search_failed=False" in summary
+    if exhausted:
+        assert "identify it and explain the uncertainty" in config.system_instruction
+
+
+@pytest.mark.asyncio
+async def test_partial_answer_and_sources_survive_real_error():
+    def handler(request):
+        if json.loads(request.content)["q"] == "second query":
+            return httpx.Response(429)
+        return successful_search(request)
+
+    chat, modules = sdk_chat(
+        [
+            response(calls=[search_call(), search_call("second query", "call-2")]),
+            response("Confirmed release."),
+        ]
+    )
+    answer = await run_gemini_turn(chat, ["Give sources"], search_service(handler), "model")
+    assert "Confirmed release." in answer and "HTTP 429" in answer
+    assert "https://www.python.org/downloads/" in answer
+    result = modules.generate_content.call_args.kwargs["contents"][-1].parts[-1].function_response
+    assert result.response["status"] == "rate_limit"
+
+
+@pytest.mark.asyncio
+async def test_http_budget_allows_cached_items_in_same_batch_and_rejects_extra_post():
+    requests = []
+    logs = []
+
+    def handler(request):
+        requests.append(json.loads(request.content)["q"])
+        return successful_search(request)
+
+    service = search_service(handler)
+    await service.search("cached query")
+    requests.clear()
+    queries = ["q1", "q2", "q3", "q4", "blocked", "cached query", "too many"]
+    chat, modules = sdk_chat(
+        [
+            response(calls=[search_call(q, str(i)) for i, q in enumerate(queries)]),
+            response("Collected answer"),
+        ]
+    )
+    sink = logger.add(lambda message: logs.append(str(message)))
+    try:
+        assert await run_gemini_turn(chat, ["Question"], service, "model") == "Collected answer"
+        logger.complete()
+    finally:
+        logger.remove(sink)
+    assert requests == queries[:4]
+    parts = modules.generate_content.call_args.kwargs["contents"][-1].parts
+    assert [part.function_response.id for part in parts] == [str(i) for i in range(len(queries))]
+    assert [part.function_response.response["status"] for part in parts[4:]] == [
+        "budget_exhausted",
+        "success",
+        "budget_exhausted",
+    ]
+    assert "search_calls=6, serper_http_requests=4, cache_hits=1" in "".join(logs)
+    assert "budget_exhausted=True, search_failed=False" in "".join(logs)
+
+
+@pytest.mark.asyncio
+async def test_parallel_chats_have_independent_http_budgets():
+    requests = []
+
+    async def handler(request):
+        await asyncio.sleep(0)
+        requests.append(json.loads(request.content)["q"])
+        return successful_search(request)
+
+    service = search_service(handler)
+
+    async def run(prefix):
+        calls = [search_call(f"{prefix}-{i}", str(i)) for i in range(MAX_SEARCH_CALLS)]
+        chat, _ = sdk_chat([response(calls=calls), response(prefix)])
+        return await run_gemini_turn(chat, ["Question"], service, "model")
+
+    assert await asyncio.gather(run("first"), run("second")) == ["first", "second"]
+    assert set(requests) == {f"{prefix}-{i}" for prefix in ("first", "second") for i in range(MAX_SERPER_REQUESTS)}
+
+
+@pytest.mark.asyncio
+async def test_ignores_search_requested_again_on_final_round():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return successful_search(request)
+
+    initial_calls = [search_call(f"query {i}", str(i)) for i in range(MAX_SERPER_REQUESTS)]
+    chat, modules = sdk_chat([response(calls=initial_calls), response(calls=[search_call("must not run", "late")])])
+    answer = await run_gemini_turn(chat, ["Question"], search_service(handler), "model")
+    assert "A current release" in answer
+    assert len(requests) == MAX_SERPER_REQUESTS and modules.generate_content.await_count == 2
+    assert chat.get_history()[-2].parts[0].function_response.id == "late"
+
+
+@pytest.mark.asyncio
+async def test_unknown_tool_calls_are_bounded_without_consuming_serper_budget():
+    from tg_bot.services.gemini_tools import MAX_FUNCTION_ROUNDS
+
+    invalid = types.FunctionCall(name="unknown_tool", id="unknown")
+    chat, modules = sdk_chat([response(calls=[invalid])] * MAX_FUNCTION_ROUNDS)
+    answer = await run_gemini_turn(
+        chat, ["Question"], search_service(lambda request: pytest.fail("No Serper")), "model"
+    )
+    assert modules.generate_content.await_count == MAX_FUNCTION_ROUNDS
+    assert modules.generate_content.call_args.kwargs["config"].tool_config.function_calling_config.mode == "NONE"
+    assert "Не удалось получить итоговый ответ" in answer

@@ -336,9 +336,11 @@ async def test_actual_sdk_serializes_combined_tools_and_circulates_server_parts(
 @pytest.mark.asyncio
 async def test_combined_loop_exhaustion_keeps_validated_and_disables_serper_declarations():
     url = "https://example.com/a"
+    from tg_bot.services.gemini_tools import MAX_SEARCH_CALLS
+
     first = url_response("", [url], calls=[search_call()])
     chat, modules = sdk_chat(
-        [first, response(calls=[search_call()]), response(calls=[search_call()]), response("Final")]
+        [first, *[response(calls=[search_call()]) for _ in range(MAX_SEARCH_CALLS - 1)], response("Final")]
     )
     calls = []
 
